@@ -155,44 +155,44 @@ Stopping one makes it become stale/offline without affecting the rest of the sys
 
 ### Build
 
-- [ ] Design the minimum workstation, node-credential, heartbeat, and inventory data
+- [x] Design the minimum workstation, node-credential, heartbeat, and inventory data
       model.
-- [ ] Implement an admin workflow to create/approve a workstation identity and issue
+- [x] Implement an admin workflow to create/approve a workstation identity and issue
       a revocable credential.
-- [ ] Store node credential verifiers securely and show raw credentials only when
+- [x] Store node credential verifiers securely and show raw credentials only when
       necessary.
-- [ ] Authenticate every node request and prevent one node from reporting for another.
-- [ ] Implement the Go node configuration loader with environment/file-based secrets.
-- [ ] Implement node registration/activation as narrowly as the chosen credential
+- [x] Authenticate every node request and prevent one node from reporting for another.
+- [x] Implement the Go node configuration loader with environment/file-based secrets.
+- [x] Implement node registration/activation as narrowly as the chosen credential
       bootstrap flow requires.
-- [ ] Implement periodic heartbeat and inventory reporting for:
-  - [ ] hostname and node version
-  - [ ] uptime
-  - [ ] CPU inventory and utilization
-  - [ ] RAM inventory and utilization
-  - [ ] local filesystem capacity and utilization
-  - [ ] logged-in users/sessions
-- [ ] Add retry/backoff behavior for temporary control-plane outages.
-- [ ] Implement `NODE_SIMULATE=true` in the normal node binary.
-- [ ] Add configurable simulation scenarios for normal load, high CPU, high disk,
+- [x] Implement periodic heartbeat and inventory reporting for:
+  - [x] hostname and node version
+  - [x] uptime
+  - [x] CPU inventory and utilization
+  - [x] RAM inventory and utilization
+  - [x] local filesystem capacity and utilization
+  - [x] logged-in users/sessions
+- [x] Add retry/backoff behavior for temporary control-plane outages.
+- [x] Implement `NODE_SIMULATE=true` in the normal node binary.
+- [x] Add configurable simulation scenarios for normal load, high CPU, high disk,
       multiple logged-in users, and paused/offline reporting.
-- [ ] Run simulated `ws01` and `ws02` from `docker-compose.dev.yml` using separate
+- [x] Run simulated `ws01` and `ws02` from `docker-compose.dev.yml` using separate
       credentials.
-- [ ] Add the admin workstation list/detail UI.
-- [ ] Derive online/stale/offline presentation from heartbeat age.
-- [ ] Make duplicate or out-of-order reports safe.
-- [ ] Add credential revocation and rotation support.
+- [x] Add the admin workstation list/detail UI.
+- [x] Derive online/stale/offline presentation from heartbeat age.
+- [x] Make duplicate or out-of-order reports safe.
+- [x] Add credential revocation and rotation support.
 
 ### Tests and acceptance
 
-- [ ] Starting the development stack shows `ws01` and `ws02` with useful simulated
+- [x] Starting the development stack shows `ws01` and `ws02` with useful simulated
       inventory and recent heartbeats.
-- [ ] Stopping one node causes only that workstation to become stale/offline after the
+- [x] Stopping one node causes only that workstation to become stale/offline after the
       configured interval.
-- [ ] Restarting it restores online status without creating a duplicate workstation.
-- [ ] A missing, invalid, revoked, or wrong-workstation credential is rejected.
-- [ ] Platform downtime does not crash the node; it resumes reporting after recovery.
-- [ ] Node API, authentication, heartbeat, stale-state, and simulation tests pass.
+- [x] Restarting it restores online status without creating a duplicate workstation.
+- [x] A missing, invalid, revoked, or wrong-workstation credential is rejected.
+- [x] Platform downtime does not crash the node; it resumes reporting after recovery.
+- [x] Node API, authentication, heartbeat, stale-state, and simulation tests pass.
 
 ### Explicitly not included yet
 
@@ -551,7 +551,7 @@ concrete while leaving room to make a deliberate choice before the feature is bu
 
 - [x] **Before Milestone 1 — account onboarding:** use an admin-issued generated
       temporary password and force replacement on first login.
-- [ ] **Before Milestone 2 — node bootstrap:** confirm how operators prefer to create
+- [x] **Before Milestone 2 — node bootstrap:** confirm how operators prefer to create
       and deliver node credentials. Provisional default: an admin creates the
       workstation in the UI and copies a one-time enrollment token to the machine.
 - [ ] **Before Milestone 3 — Linux usernames:** confirm whether usernames are chosen by
@@ -579,7 +579,7 @@ concrete while leaving room to make a deliberate choice before the feature is bu
 
 - [x] Milestone 0 complete
 - [x] Milestone 1 complete
-- [ ] Milestone 2 complete
+- [x] Milestone 2 complete
 - [ ] Milestone 3 complete
 - [ ] Milestone 4 complete
 - [ ] Milestone 5 complete

@@ -10,19 +10,23 @@ implementation plan.
 
 ## Current status
 
-Milestone 1 is complete. The repository currently provides:
+Milestone 2 is complete. The repository currently provides:
 
 - SvelteKit and TypeScript platform
 - PostgreSQL with Drizzle migrations
 - database-backed readiness endpoint
-- minimal Go node executable
+- a Go node with enrollment, persistent credentials, Linux inventory, and retry/backoff
 - Docker Compose development and production configurations
 - platform login with secure server-side sessions
 - administrator-managed users, roles, account status, and credential resets
 - forced replacement of generated temporary passwords
 - audit history for user and credential administration
+- administrator-managed workstation identities and credential rotation/revocation
+- authenticated heartbeat and inventory ingestion with out-of-order protection
+- online, stale, and offline workstation presentation
+- two independently enrolled simulated workstations in the development stack
 
-Workstation connectivity, GPU monitoring, and reservations are not implemented yet.
+GPU monitoring, access reconciliation, and reservations are not implemented yet.
 
 ## Requirements
 
@@ -54,7 +58,8 @@ make up
 
 Then open <http://localhost:5173>. A healthy installation displays **Platform and
 database are ready**. The machine-readable readiness endpoint is available at
-<http://localhost:5173/health>.
+<http://localhost:5173/health>. The stack also starts `ws01` and `ws02` with separate
+persistent credentials and useful simulated inventory.
 
 ### Create the initial administrator
 
@@ -73,6 +78,11 @@ Administrators can then create users, change display names and roles, enable or
 disable accounts, reset credentials, and inspect audit history from the
 **Administration** area. Generated/reset credentials are displayed only in the action
 response and must be copied before leaving the page.
+
+The **Workstations** administration page shows node connection state and inventory.
+Creating a workstation displays a one-time, 30-minute enrollment token. Deliver that
+token to the intended machine, then configure the node with the matching workstation
+name. Issuing a new enrollment token revokes the previous node credential.
 
 Source changes under `platform/` are mounted into the development container and are
 picked up by Vite. PostgreSQL data and container-installed npm dependencies are kept
@@ -172,7 +182,7 @@ of the production-readiness milestone.
 
 ## Go node skeleton
 
-The node does not connect to the platform yet. It can be checked independently:
+The node can be checked independently:
 
 ```bash
 cd node
@@ -181,6 +191,24 @@ go vet ./...
 go run ./cmd/cluster-manager-node --version
 ```
 
-The production node will eventually run directly on Ubuntu under systemd, not in a
-container. Its Dockerfile exists for reproducible builds and later development
-simulation.
+For a real Ubuntu node, set at least `NODE_PLATFORM_URL`, `NODE_WORKSTATION_NAME`, and
+`NODE_ENROLLMENT_TOKEN` on first start. The platform URL must use HTTPS unless
+`NODE_ALLOW_INSECURE_HTTP=true` is explicitly set for local development. The node
+stores its generated credential at `/var/lib/cluster-manager/node-credential` by
+default; `NODE_CREDENTIAL_FILE` changes that location. Configuration can alternatively
+be supplied as JSON through `NODE_CONFIG_FILE`, and an enrollment token may be read
+from `NODE_ENROLLMENT_TOKEN_FILE`.
+
+Simulation uses the normal node binary with `NODE_SIMULATE=true`. Supported scenarios
+are `normal`, `high-cpu`, `high-disk`, `multi-user`, and `offline` through
+`NODE_SIMULATION_SCENARIO`. The production node is intended to run directly on Ubuntu
+under systemd; its container is for reproducible builds and development simulation.
+
+The integration smoke test requires a running development stack:
+
+```bash
+docker compose -f docker-compose.dev.yml exec platform npm run test:node-smoke
+```
+
+It verifies enrollment replay safety, credential isolation and revocation, heartbeat
+acceptance, and protection against out-of-order inventory.
