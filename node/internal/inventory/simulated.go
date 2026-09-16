@@ -61,7 +61,7 @@ func (s *Simulated) gpuInventory() ([]protocol.GPU, []protocol.GPUProcess) {
 		{UUID: "GPU-" + s.Name + "-0001", Index: 1, Model: "NVIDIA RTX PRO 6000 Blackwell", MemoryTotalBytes: 96_000_000_000, TemperatureC: &temperature1},
 	}
 	processes := []protocol.GPUProcess{}
-	busy := s.Scenario == "busy-gpus" || s.Scenario == "multi-process" || s.Scenario == "multi-user" || (s.Scenario == "normal" && sample%2 == 0)
+	busy := s.Scenario == "busy-gpus" || s.Scenario == "multi-process" || s.Scenario == "multi-user" || s.Scenario == "owner-use" || s.Scenario == "reservation-conflict" || s.Scenario == "mixed-owner" || s.Scenario == "unknown-owner" || (s.Scenario == "normal" && sample%2 == 0)
 	if !busy || s.Scenario == "free-gpus" {
 		return gpus, processes
 	}
@@ -70,6 +70,19 @@ func (s *Simulated) gpuInventory() ([]protocol.GPU, []protocol.GPUProcess) {
 	temperature0 = 67
 	gpus[0].TemperatureC = &temperature0
 	processes = append(processes, protocol.GPUProcess{GPUUUID: gpus[0].UUID, PID: 4102, UID: 1001, Username: "researcher", Command: "python", MemoryUsedBytes: 38_000_000_000, ProcessStartTicks: 812345})
+	if s.Scenario == "owner-use" || s.Scenario == "reservation-conflict" || s.Scenario == "mixed-owner" || s.Scenario == "unknown-owner" {
+		username, uid := "alice", uint32(1001)
+		if s.Scenario == "reservation-conflict" {
+			username, uid = "bob", 1002
+		}
+		if s.Scenario == "unknown-owner" {
+			username, uid = "unknown", 65534
+		}
+		processes = []protocol.GPUProcess{{GPUUUID: gpus[0].UUID, PID: 6101, UID: uid, Username: username, Command: "python", MemoryUsedBytes: 30_000_000_000, ProcessStartTicks: 1_012_345}}
+		if s.Scenario == "mixed-owner" {
+			processes = append(processes, protocol.GPUProcess{GPUUUID: gpus[0].UUID, PID: 6102, UID: 1002, Username: "bob", Command: "trainer", MemoryUsedBytes: 8_000_000_000, ProcessStartTicks: 1_012_400})
+		}
+	}
 	if s.Scenario == "multi-process" || s.Scenario == "multi-user" {
 		gpus[1].UtilizationPercent = 54 + float64(sample%10)
 		gpus[1].MemoryUsedBytes = 24_000_000_000

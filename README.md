@@ -293,10 +293,23 @@ default; `NODE_CREDENTIAL_FILE` changes that location. Configuration can alterna
 be supplied as JSON through `NODE_CONFIG_FILE`, and an enrollment token may be read
 from `NODE_ENROLLMENT_TOKEN_FILE`.
 
-Simulation uses the normal node binary with `NODE_SIMULATE=true`. Supported scenarios
-are `normal`, `high-cpu`, `high-disk`, `multi-user`, and `offline` through
-`NODE_SIMULATION_SCENARIO`. The production node is intended to run directly on Ubuntu
-under systemd; its container is for reproducible builds and development simulation.
+Simulation uses the normal node binary with `NODE_SIMULATE=true`. Set
+`NODE_SIMULATION_SCENARIO` to `normal`, `high-cpu`, `high-disk`, `multi-user`,
+`free-gpus`, `busy-gpus`, `multi-process`, `owner-use`, `reservation-conflict`,
+`mixed-owner`, `unknown-owner`, or `offline`. The reservation-focused scenarios use
+the Linux usernames `alice` and `bob`; for example, reserve a GPU for `alice` and use
+`reservation-conflict` to report Bob's process on it.
+
+The development Compose stack exposes this as `NODE_WS01_SIMULATION_SCENARIO` and
+`NODE_WS02_SIMULATION_SCENARIO`. After changing either value in `.env`, recreate just
+that simulated node, for example:
+
+```bash
+docker compose -f docker-compose.dev.yml up -d --force-recreate node-ws01
+```
+
+The production node is intended to run directly on Ubuntu under systemd; its container
+is for reproducible builds and development simulation.
 
 The integration smoke test requires a running development stack:
 

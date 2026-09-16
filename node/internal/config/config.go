@@ -118,7 +118,13 @@ func (c Config) Validate() error {
 	if c.CredentialFile == "" {
 		return errors.New("credential file path is required")
 	}
-	validScenario := c.SimulationScenario == "normal" || c.SimulationScenario == "high-cpu" || c.SimulationScenario == "high-disk" || c.SimulationScenario == "multi-user" || c.SimulationScenario == "offline"
+	validScenarios := map[string]bool{
+		"normal": true, "high-cpu": true, "high-disk": true, "multi-user": true,
+		"free-gpus": true, "busy-gpus": true, "multi-process": true,
+		"owner-use": true, "reservation-conflict": true, "mixed-owner": true,
+		"unknown-owner": true, "offline": true,
+	}
+	validScenario := validScenarios[c.SimulationScenario]
 	if c.Simulate && !validScenario {
 		return fmt.Errorf("unknown simulation scenario %q", c.SimulationScenario)
 	}

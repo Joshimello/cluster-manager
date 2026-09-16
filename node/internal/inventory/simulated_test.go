@@ -25,6 +25,22 @@ func TestSimulationScenarios(t *testing.T) {
 	if len(free.Inventory.GPUProcesses) != 0 || free.Inventory.GPUs[0].UtilizationPercent != 0 {
 		t.Fatalf("free GPU scenario not applied: %#v", free.Inventory)
 	}
+	for scenario, usernames := range map[string][]string{
+		"owner-use":            {"alice"},
+		"reservation-conflict": {"bob"},
+		"mixed-owner":          {"alice", "bob"},
+		"unknown-owner":        {"unknown"},
+	} {
+		report, scenarioErr := NewSimulated("ws03", scenario).Collect(context.Background(), "test")
+		if scenarioErr != nil || len(report.Inventory.GPUProcesses) != len(usernames) {
+			t.Fatalf("%s process count: %#v, %v", scenario, report.Inventory.GPUProcesses, scenarioErr)
+		}
+		for index, username := range usernames {
+			if report.Inventory.GPUProcesses[index].Username != username {
+				t.Fatalf("%s process %d should belong to %s: %#v", scenario, index, username, report.Inventory.GPUProcesses[index])
+			}
+		}
+	}
 	_, err = NewSimulated("ws03", "offline").Collect(context.Background(), "test")
 	if !errors.Is(err, ErrReportingPaused) {
 		t.Fatalf("expected paused reporting, got %v", err)

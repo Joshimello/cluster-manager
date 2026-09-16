@@ -34,3 +34,18 @@ func TestRejectsHTTPByDefault(t *testing.T) {
 		t.Fatalf("development HTTP should be allowed explicitly: %v", err)
 	}
 }
+
+func TestAcceptsDocumentedSimulationScenarios(t *testing.T) {
+	base := Config{PlatformURL: "https://platform.example", WorkstationName: "ws01", CredentialFile: "/tmp/credential", HeartbeatInterval: 10 * time.Second, Simulate: true}
+	for _, scenario := range []string{"normal", "free-gpus", "busy-gpus", "multi-process", "owner-use", "reservation-conflict", "mixed-owner", "unknown-owner", "offline"} {
+		cfg := base
+		cfg.SimulationScenario = scenario
+		if err := cfg.Validate(); err != nil {
+			t.Errorf("scenario %q should be valid: %v", scenario, err)
+		}
+	}
+	base.SimulationScenario = "surprise"
+	if err := base.Validate(); err == nil {
+		t.Fatal("expected undocumented scenario to be rejected")
+	}
+}
