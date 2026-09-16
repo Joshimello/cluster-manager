@@ -503,6 +503,21 @@ Bob is using GPU0
 
 Do not assume GPU utilization determines ownership.
 
+For the current instant, an active reservation uses the same half-open boundary rule as
+booking: `start <= now < end`. Correlation uses the immutable platform username, which
+is also the Linux username, and requires an exact username match. Multiple processes
+from the reservation owner remain booked-active. Any observed non-owner, system, or
+unresolved process on a reserved GPU makes the state a conflict, including a sample
+that mixes owner and non-owner processes. A process on a GPU with no reservation is
+unbooked use. A reservation with no observed process is booked-idle.
+
+Only fresh telemetry may produce available, booked-idle, booked-active, unbooked-use,
+or conflict. Stale, offline, or never-observed telemetry produces unknown; utilization
+alone never counts as observed use. Normal users may see the coordination state,
+privacy-safe process counts, their own process details, and whether a reservation is
+theirs, but not another user's reservation identity or process details. Administrators
+may see full attribution.
+
 ---
 
 # 14. Stop Request Workflow

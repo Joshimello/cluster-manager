@@ -509,44 +509,56 @@ available, booked-idle, booked-active, unbooked-use, and conflicting-use states.
 
 ### Build
 
-- [ ] Define the correlation rules for the current instant, including how to treat:
-  - [ ] multiple processes from the reservation owner
-  - [ ] mixed owner and non-owner processes
-  - [ ] system/unknown UIDs
-  - [ ] stale node telemetry
-  - [ ] the exact start and end boundaries of a reservation
-- [ ] Correlate platform users with local Linux account identities safely.
-- [ ] Compute a stable status for each GPU from reservation and observed state.
-- [ ] Do not infer ownership from utilization percentage alone.
-- [ ] Add clear visual states for:
-  - [ ] available
-  - [ ] booked and idle
-  - [ ] booked and active by the owner
-  - [ ] unbooked use
-  - [ ] reservation conflict
-  - [ ] unknown because telemetry is stale
-- [ ] Show relevant owner/process context without exposing unnecessary information to
+- [x] Define the correlation rules for the current instant, including how to treat:
+  - [x] multiple processes from the reservation owner
+  - [x] mixed owner and non-owner processes
+  - [x] system/unknown UIDs
+  - [x] stale node telemetry
+  - [x] the exact start and end boundaries of a reservation
+- [x] Correlate platform users with local Linux account identities safely.
+- [x] Compute a stable status for each GPU from reservation and observed state.
+- [x] Do not infer ownership from utilization percentage alone.
+- [x] Add clear visual states for:
+  - [x] available
+  - [x] booked and idle
+  - [x] booked and active by the owner
+  - [x] unbooked use
+  - [x] reservation conflict
+  - [x] unknown because telemetry is stale
+- [x] Show relevant owner/process context without exposing unnecessary information to
       normal users.
-- [ ] Add filters and summaries to the admin dashboard for active conflicts and
+- [x] Add filters and summaries to the admin dashboard for active conflicts and
       unbooked use.
-- [ ] Add easy development controls or configuration for switching simulation
+- [x] Add easy development controls or configuration for switching simulation
       scenarios, including the Alice-reserves/Bob-runs conflict example.
 
 ### Tests and acceptance
 
-- [ ] Each defined state can be produced deterministically in simulation mode.
-- [ ] Alice reserving a GPU while Alice's process uses it is shown as booked-active,
+- [x] Each defined state can be produced deterministically in simulation mode.
+- [x] Alice reserving a GPU while Alice's process uses it is shown as booked-active,
       not a conflict.
-- [ ] Alice reserving a GPU while Bob's process uses it is shown as a conflict.
-- [ ] A busy GPU without a reservation is shown as unbooked use.
-- [ ] Mixed-owner and unknown-owner process cases are represented accurately.
-- [ ] Stale telemetry produces an unknown/stale state rather than a false conflict or
+- [x] Alice reserving a GPU while Bob's process uses it is shown as a conflict.
+- [x] A busy GPU without a reservation is shown as unbooked use.
+- [x] Mixed-owner and unknown-owner process cases are represented accurately.
+- [x] Stale telemetry produces an unknown/stale state rather than a false conflict or
       false availability result.
-- [ ] Correlation and authorization tests pass.
+- [x] Correlation and authorization tests pass.
 
 ### Explicitly not included yet
 
 No process is stopped and no GPU permissions are changed.
+
+### Completion record
+
+Completed on 2026-09-16. The shared correlation engine uses exact platform/Linux
+username identity and half-open current reservations, ignores utilization as ownership
+evidence, and degrades every non-fresh sample to unknown. The user dashboard exposes
+state and privacy-safe counts while filtering reservation identity, session data, and
+process rows; admins receive full attribution in a fleet-wide GPU status view with
+state summaries and filters. Compose-selectable simulation scenarios cover free,
+owner, conflict, mixed, unknown-owner, and offline cases. Unit and PostgreSQL-backed
+smoke tests cover the complete state matrix, owner/non-owner behavior, privacy, and
+route authorization.
 
 ---
 

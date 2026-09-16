@@ -166,7 +166,7 @@
                 >
                 <Badge variant={gpu.processCount > 0 ? 'default' : 'secondary'}>
                   {gpu.processCount > 0
-                    ? `${gpu.processCount} observed processes`
+                    ? `${gpu.processCount} observed process${gpu.processCount === 1 ? '' : 'es'}`
                     : 'No observed processes'}
                 </Badge>
               </div>
