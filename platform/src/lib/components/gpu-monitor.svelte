@@ -47,11 +47,13 @@
   let {
     gpus,
     gpuStatus = 'available',
-    processScope = 'all'
+    processScope = 'all',
+    autoRefresh = true
   }: {
     gpus: GPU[];
     gpuStatus?: 'available' | 'unavailable';
     processScope?: 'all' | 'user';
+    autoRefresh?: boolean;
   } = $props();
 
   const dateTime = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'medium' });
@@ -73,6 +75,7 @@
   };
 
   onMount(() => {
+    if (!autoRefresh) return;
     const timer = window.setInterval(() => void invalidateAll(), 10_000);
     return () => window.clearInterval(timer);
   });

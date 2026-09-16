@@ -2,6 +2,7 @@
   import ClipboardListIcon from '@lucide/svelte/icons/clipboard-list';
   import CalendarCogIcon from '@lucide/svelte/icons/calendar-cog';
   import MonitorCogIcon from '@lucide/svelte/icons/monitor-cog';
+  import ScanSearchIcon from '@lucide/svelte/icons/scan-search';
   import UsersIcon from '@lucide/svelte/icons/users';
   import { resolve } from '$app/paths';
   import { Button } from '$lib/components/ui/button/index.js';
@@ -22,6 +23,9 @@
     >
     <Button href={resolve('/admin/workstations')} variant="ghost" size="sm"
       ><MonitorCogIcon data-icon="inline-start" />Workstations</Button
+    >
+    <Button href={resolve('/admin/monitoring')} variant="ghost" size="sm"
+      ><ScanSearchIcon data-icon="inline-start" />GPU status</Button
     >
     <Button href={resolve('/admin/reservations')} variant="ghost" size="sm"
       ><CalendarCogIcon data-icon="inline-start" />Reservations</Button
