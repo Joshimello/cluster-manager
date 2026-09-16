@@ -8,8 +8,11 @@ COPY internal ./internal
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/cluster-manager-node ./cmd/cluster-manager-node
 
 FROM alpine:3.22
-RUN addgroup -S cluster-manager && adduser -S -G cluster-manager cluster-manager
+RUN apk add --no-cache ca-certificates \
+    && addgroup -S cluster-manager \
+    && adduser -S -G cluster-manager cluster-manager \
+    && mkdir -p /var/lib/cluster-manager \
+    && chown cluster-manager:cluster-manager /var/lib/cluster-manager
 COPY --from=build /out/cluster-manager-node /usr/local/bin/cluster-manager-node
 USER cluster-manager
 ENTRYPOINT ["cluster-manager-node"]
-
