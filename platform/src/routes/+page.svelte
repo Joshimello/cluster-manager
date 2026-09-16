@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { resolve } from '$app/paths';
   import { product } from '$lib/product';
 
   let { data } = $props();
@@ -14,6 +15,18 @@
     <p class="eyebrow">Research infrastructure</p>
     <h1>{product.name}</h1>
     <p class="description">{product.description}</p>
+    <div class="actions">
+      {#if data.user}
+        <a
+          class="button"
+          href={data.user.mustChangePassword ? resolve('/change-password') : resolve('/dashboard')}
+        >
+          Continue to dashboard
+        </a>
+      {:else}
+        <a class="button" href={resolve('/login')}>Log in to Cluster Manager</a>
+      {/if}
+    </div>
     <div class:ready={data.database.status === 'ready'} class="status">
       <span aria-hidden="true"></span>
       {data.database.status === 'ready'
@@ -58,10 +71,14 @@
   }
 
   .description {
-    margin: 1.5rem 0 2rem;
+    margin: 1.5rem 0;
     color: #5c667a;
     font-size: 1.12rem;
     line-height: 1.6;
+  }
+
+  .actions {
+    margin-bottom: 2rem;
   }
 
   .status {
