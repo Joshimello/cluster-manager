@@ -8,6 +8,7 @@
   <nav aria-label="Administration">
     <strong>Administration</strong>
     <a href={resolve('/admin/users')}>Users</a>
+    <a href={resolve('/admin/workstations')}>Workstations</a>
     <a href={resolve('/admin/audit')}>Audit history</a>
   </nav>
 </div>

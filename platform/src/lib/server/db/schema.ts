@@ -1,6 +1,7 @@
 import { relations } from 'drizzle-orm';
 import {
   boolean,
+  bigint,
   index,
   jsonb,
   pgEnum,
@@ -14,6 +15,7 @@ import {
 
 export const userRole = pgEnum('user_role', ['user', 'admin']);
 export const userStatus = pgEnum('user_status', ['active', 'disabled']);
+export const workstationStatus = pgEnum('workstation_status', ['active', 'disabled']);
 
 export const platformMetadata = pgTable('platform_metadata', {
   key: text('key').primaryKey(),
@@ -57,6 +59,62 @@ export const sessions = pgTable(
 
 export type AuditMetadata = Record<string, boolean | number | string | null>;
 
+export type WorkstationInventory = {
+  cpu: {
+    logicalCores: number;
+    model: string;
+    utilizationPercent: number;
+  };
+  memory: {
+    totalBytes: number;
+    usedBytes: number;
+    utilizationPercent: number;
+  };
+  storage: {
+    path: string;
+    totalBytes: number;
+    usedBytes: number;
+    utilizationPercent: number;
+  };
+  sessions: Array<{
+    username: string;
+    terminal: string;
+    remoteHost?: string;
+  }>;
+  operatingSystem: string;
+};
+
+export const workstations = pgTable(
+  'workstations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    name: varchar('name', { length: 32 }).notNull(),
+    displayName: varchar('display_name', { length: 120 }).notNull(),
+    status: workstationStatus('status').notNull().default('active'),
+    enrollmentTokenHash: varchar('enrollment_token_hash', { length: 64 }),
+    enrollmentExpiresAt: timestamp('enrollment_expires_at', { withTimezone: true }),
+    enrollmentUsedAt: timestamp('enrollment_used_at', { withTimezone: true }),
+    credentialHash: varchar('credential_hash', { length: 64 }),
+    credentialIssuedAt: timestamp('credential_issued_at', { withTimezone: true }),
+    enrolledAt: timestamp('enrolled_at', { withTimezone: true }),
+    lastHeartbeatAt: timestamp('last_heartbeat_at', { withTimezone: true }),
+    inventoryObservedAt: timestamp('inventory_observed_at', { withTimezone: true }),
+    nodeVersion: varchar('node_version', { length: 64 }),
+    hostname: varchar('hostname', { length: 255 }),
+    bootId: varchar('boot_id', { length: 128 }),
+    uptimeSeconds: bigint('uptime_seconds', { mode: 'number' }),
+    inventory: jsonb('inventory').$type<WorkstationInventory>(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => [
+    uniqueIndex('workstations_name_unique').on(table.name),
+    uniqueIndex('workstations_credential_hash_unique').on(table.credentialHash),
+    uniqueIndex('workstations_enrollment_token_hash_unique').on(table.enrollmentTokenHash),
+    index('workstations_last_heartbeat_at_index').on(table.lastHeartbeatAt)
+  ]
+);
+
 export const auditEvents = pgTable(
   'audit_events',
   {
@@ -96,3 +154,5 @@ export const auditEventsRelations = relations(auditEvents, ({ one }) => ({
 export type User = typeof users.$inferSelect;
 export type UserRole = User['role'];
 export type UserStatus = User['status'];
+export type Workstation = typeof workstations.$inferSelect;
+export type WorkstationStatus = Workstation['status'];
