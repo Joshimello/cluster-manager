@@ -1,68 +1,58 @@
 <script lang="ts">
+  import KeyRoundIcon from '@lucide/svelte/icons/key-round';
+  import UserRoundIcon from '@lucide/svelte/icons/user-round';
   import { resolve } from '$app/paths';
+  import PageHeader from '$lib/components/page-header.svelte';
+  import StatusBadge from '$lib/components/status-badge.svelte';
+  import { Button } from '$lib/components/ui/button/index.js';
+  import * as Card from '$lib/components/ui/card/index.js';
 
   let { data } = $props();
 </script>
 
 <svelte:head><title>Dashboard · Cluster Manager</title></svelte:head>
 
-<main class="page-shell">
-  <header class="page-heading">
-    <h1>Welcome, {data.user.displayName}</h1>
-    <p>Your Cluster Manager account is active.</p>
-  </header>
-  <section class="panel account-grid">
-    <div><span class="label">Username</span><strong>{data.user.username}</strong></div>
-    <div><span class="label">Role</span><strong class="badge">{data.user.role}</strong></div>
-    <div><span class="label">Workstation</span><strong>Not assigned yet</strong></div>
-    <div><a class="button secondary" href={resolve('/change-password')}>Change password</a></div>
-  </section>
-  <section class="coming-soon">
-    <h2>Next milestone</h2>
-    <p>Workstation connectivity and status will appear here after the node connection milestone.</p>
-  </section>
-</main>
+<main class="mx-auto grid w-full max-w-7xl gap-6 px-4 py-8 sm:px-6 lg:px-8">
+  <PageHeader
+    title={`Welcome, ${data.user.displayName}`}
+    description="Your Cluster Manager account is active."
+  />
 
-<style>
-  .account-grid {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
-    gap: 1.5rem;
-    align-items: center;
-  }
-  .account-grid > div:not(:last-child) {
-    display: grid;
-    gap: 0.45rem;
-  }
-  .label {
-    color: #667085;
-    font-size: 0.78rem;
-    font-weight: 700;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-  }
-  .coming-soon {
-    margin-top: 2rem;
-    padding: 1.5rem;
-    color: #536075;
-    border: 1px dashed #bdc6d3;
-    border-radius: 0.9rem;
-  }
-  .coming-soon h2 {
-    margin-top: 0;
-    color: #344054;
-  }
-  .coming-soon p {
-    margin-bottom: 0;
-  }
-  @media (max-width: 760px) {
-    .account-grid {
-      grid-template-columns: 1fr 1fr;
-    }
-  }
-  @media (max-width: 480px) {
-    .account-grid {
-      grid-template-columns: 1fr;
-    }
-  }
-</style>
+  <Card.Root>
+    <Card.Header>
+      <Card.Title class="flex items-center gap-2"
+        ><UserRoundIcon class="size-5" />Account</Card.Title
+      >
+      <Card.Description>Your platform identity and current access.</Card.Description>
+    </Card.Header>
+    <Card.Content class="grid gap-6 sm:grid-cols-2 lg:grid-cols-4 lg:items-end">
+      <div class="grid gap-1">
+        <span class="text-muted-foreground text-xs font-medium uppercase">Username</span><strong
+          >{data.user.username}</strong
+        >
+      </div>
+      <div class="grid gap-1">
+        <span class="text-muted-foreground text-xs font-medium uppercase">Role</span><StatusBadge
+          status={data.user.role}
+        />
+      </div>
+      <div class="grid gap-1">
+        <span class="text-muted-foreground text-xs font-medium uppercase">Workstation</span><strong
+          >Not assigned yet</strong
+        >
+      </div>
+      <Button href={resolve('/change-password')} variant="outline"
+        ><KeyRoundIcon data-icon="inline-start" />Change password</Button
+      >
+    </Card.Content>
+  </Card.Root>
+
+  <Card.Root class="border-dashed" size="sm">
+    <Card.Header>
+      <Card.Title>Next milestone</Card.Title>
+      <Card.Description
+        >Workstation assignment and SSH access will appear here in Milestone 3.</Card.Description
+      >
+    </Card.Header>
+  </Card.Root>
+</main>

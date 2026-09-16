@@ -1,5 +1,11 @@
 <script lang="ts">
+  import ArrowRightIcon from '@lucide/svelte/icons/arrow-right';
+  import DatabaseIcon from '@lucide/svelte/icons/database';
+  import ServerCogIcon from '@lucide/svelte/icons/server-cog';
   import { resolve } from '$app/paths';
+  import { Badge } from '$lib/components/ui/badge/index.js';
+  import { Button } from '$lib/components/ui/button/index.js';
+  import * as Card from '$lib/components/ui/card/index.js';
   import { product } from '$lib/product';
 
   let { data } = $props();
@@ -10,104 +16,54 @@
   <meta name="description" content={product.description} />
 </svelte:head>
 
-<main>
-  <section>
-    <p class="eyebrow">Research infrastructure</p>
-    <h1>{product.name}</h1>
-    <p class="description">{product.description}</p>
-    <div class="actions">
-      {#if data.user}
-        <a
-          class="button"
-          href={data.user.mustChangePassword ? resolve('/change-password') : resolve('/dashboard')}
+<main
+  class="mx-auto grid min-h-[calc(100vh-3.5rem)] w-full max-w-7xl place-items-center px-4 py-12 sm:px-6 lg:px-8"
+>
+  <Card.Root class="w-full max-w-2xl">
+    <Card.Header class="gap-4">
+      <div class="bg-muted flex size-11 items-center justify-center rounded-lg border">
+        <ServerCogIcon class="size-5" aria-hidden="true" />
+      </div>
+      <div class="space-y-2">
+        <p class="text-muted-foreground text-xs font-medium tracking-widest uppercase">
+          Research infrastructure
+        </p>
+        <Card.Title class="text-3xl font-semibold tracking-tight sm:text-5xl"
+          >{product.name}</Card.Title
         >
-          Continue to dashboard
-        </a>
-      {:else}
-        <a class="button" href={resolve('/login')}>Log in to Cluster Manager</a>
-      {/if}
-    </div>
-    <div class:ready={data.database.status === 'ready'} class="status">
-      <span aria-hidden="true"></span>
-      {data.database.status === 'ready'
-        ? 'Platform and database are ready'
-        : 'Platform is running; database is unavailable'}
-    </div>
-  </section>
+        <Card.Description class="max-w-xl text-base leading-relaxed"
+          >{product.description}</Card.Description
+        >
+      </div>
+    </Card.Header>
+    <Card.Content class="gap-5">
+      <div>
+        {#if data.user}
+          <Button
+            href={data.user.mustChangePassword
+              ? resolve('/change-password')
+              : resolve('/dashboard')}
+            size="lg"
+          >
+            Continue to dashboard <ArrowRightIcon data-icon="inline-end" />
+          </Button>
+        {:else}
+          <Button href={resolve('/login')} size="lg">
+            Log in to Cluster Manager <ArrowRightIcon data-icon="inline-end" />
+          </Button>
+        {/if}
+      </div>
+      <div class="flex items-center gap-2 border-t pt-5">
+        <DatabaseIcon class="text-muted-foreground size-4" aria-hidden="true" />
+        <Badge variant={data.database.status === 'ready' ? 'default' : 'destructive'}>
+          {data.database.status === 'ready' ? 'Ready' : 'Unavailable'}
+        </Badge>
+        <span class="text-muted-foreground text-sm">
+          {data.database.status === 'ready'
+            ? 'Platform and database are ready'
+            : 'Platform is running; database is unavailable'}
+        </span>
+      </div>
+    </Card.Content>
+  </Card.Root>
 </main>
-
-<style>
-  main {
-    min-height: 100vh;
-    display: grid;
-    place-items: center;
-    padding: 2rem;
-  }
-
-  section {
-    width: min(100%, 42rem);
-    padding: clamp(2rem, 6vw, 4rem);
-    background: white;
-    border: 1px solid #e3e8f0;
-    border-radius: 1.25rem;
-    box-shadow: 0 1.5rem 4rem rgb(23 32 51 / 8%);
-  }
-
-  .eyebrow {
-    margin: 0 0 0.75rem;
-    color: #3262d9;
-    font-size: 0.78rem;
-    font-weight: 700;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-  }
-
-  h1 {
-    margin: 0;
-    color: #111827;
-    font-size: clamp(2.5rem, 8vw, 4.5rem);
-    letter-spacing: -0.055em;
-    line-height: 0.95;
-  }
-
-  .description {
-    margin: 1.5rem 0;
-    color: #5c667a;
-    font-size: 1.12rem;
-    line-height: 1.6;
-  }
-
-  .actions {
-    margin-bottom: 2rem;
-  }
-
-  .status {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.65rem;
-    padding: 0.7rem 0.95rem;
-    color: #71480f;
-    background: #fff7e7;
-    border-radius: 999px;
-    font-size: 0.9rem;
-    font-weight: 650;
-  }
-
-  .status span {
-    width: 0.55rem;
-    height: 0.55rem;
-    background: #c17b20;
-    border-radius: 50%;
-    box-shadow: 0 0 0 0.25rem rgb(193 123 32 / 14%);
-  }
-
-  .status.ready span {
-    background: #2a9d5b;
-    box-shadow: 0 0 0 0.25rem rgb(42 157 91 / 14%);
-  }
-
-  .status.ready {
-    color: #24563b;
-    background: #ecf9f1;
-  }
-</style>

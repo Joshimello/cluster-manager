@@ -1,100 +1,59 @@
 <script lang="ts">
+  import BoxesIcon from '@lucide/svelte/icons/boxes';
+  import LayoutDashboardIcon from '@lucide/svelte/icons/layout-dashboard';
+  import LogOutIcon from '@lucide/svelte/icons/log-out';
+  import SettingsIcon from '@lucide/svelte/icons/settings';
   import { resolve } from '$app/paths';
+  import { Button } from '$lib/components/ui/button/index.js';
   import '../app.css';
 
   let { data, children } = $props();
 </script>
 
-<header class="site-header">
-  <div class="header-inner">
-    <a class="brand" href={resolve('/')}>Cluster Manager</a>
-    <nav aria-label="Primary navigation">
+<header
+  class="bg-background/95 supports-[backdrop-filter]:bg-background/75 sticky top-0 z-50 border-b backdrop-blur"
+>
+  <div
+    class="mx-auto flex h-14 w-full max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8"
+  >
+    <a
+      class="focus-visible:ring-ring flex items-center gap-2 rounded-md font-semibold tracking-tight outline-none focus-visible:ring-2"
+      href={resolve('/')}
+    >
+      <BoxesIcon class="size-5" aria-hidden="true" />
+      <span>Cluster Manager</span>
+    </a>
+    <nav class="flex items-center gap-1" aria-label="Primary navigation">
       {#if data.user}
         {#if !data.user.mustChangePassword}
-          <a href={resolve('/dashboard')}>Dashboard</a>
-          {#if data.user.role === 'admin'}<a href={resolve('/admin/users')}>Administration</a>{/if}
+          <Button href={resolve('/dashboard')} variant="ghost" size="sm">
+            <LayoutDashboardIcon data-icon="inline-start" />
+            <span class="hidden sm:inline">Dashboard</span>
+            <span class="sr-only sm:hidden">Dashboard</span>
+          </Button>
+          {#if data.user.role === 'admin'}
+            <Button href={resolve('/admin/users')} variant="ghost" size="sm">
+              <SettingsIcon data-icon="inline-start" />
+              <span class="hidden sm:inline">Administration</span>
+              <span class="sr-only sm:hidden">Administration</span>
+            </Button>
+          {/if}
         {/if}
-        <span class="identity">{data.user.displayName}</span>
+        <span class="text-muted-foreground hidden max-w-40 truncate px-2 text-sm md:inline"
+          >{data.user.displayName}</span
+        >
         <form method="POST" action="/logout">
-          <button class="secondary compact" type="submit">Log out</button>
+          <Button variant="outline" size="sm" type="submit">
+            <LogOutIcon data-icon="inline-start" />
+            <span class="hidden sm:inline">Log out</span>
+            <span class="sr-only sm:hidden">Log out</span>
+          </Button>
         </form>
       {:else}
-        <a class="button compact" href={resolve('/login')}>Log in</a>
+        <Button href={resolve('/login')} size="sm">Log in</Button>
       {/if}
     </nav>
   </div>
 </header>
 
 {@render children()}
-
-<style>
-  .site-header {
-    position: sticky;
-    z-index: 10;
-    top: 0;
-    background: rgb(255 255 255 / 92%);
-    border-bottom: 1px solid #e3e8f0;
-    backdrop-filter: blur(12px);
-  }
-
-  .header-inner {
-    width: min(100% - 2rem, 76rem);
-    min-height: 4rem;
-    margin: 0 auto;
-    display: flex;
-    justify-content: space-between;
-    gap: 1rem;
-    align-items: center;
-  }
-
-  .brand {
-    color: #18233a;
-    font-size: 1.05rem;
-    font-weight: 800;
-    letter-spacing: -0.02em;
-    text-decoration: none;
-  }
-
-  nav {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-  }
-
-  nav > a:not(.button) {
-    color: #4a566b;
-    font-size: 0.9rem;
-    font-weight: 650;
-    text-decoration: none;
-  }
-
-  nav > a:hover {
-    color: #244eaf;
-  }
-
-  nav form {
-    margin: 0;
-  }
-
-  .identity {
-    color: #667085;
-    font-size: 0.85rem;
-  }
-
-  :global(.compact) {
-    min-height: 2.15rem;
-    padding: 0.5rem 0.75rem;
-    font-size: 0.82rem;
-  }
-
-  @media (max-width: 680px) {
-    .header-inner {
-      width: min(100% - 1rem, 76rem);
-    }
-
-    nav > a:not(.button),
-    .identity {
-      display: none;
-    }
-  }
-</style>

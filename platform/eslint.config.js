@@ -12,6 +12,20 @@ export default ts.config(
   ...ts.configs.recommended,
   ...svelte.configs.recommended,
   {
+    files: ['**/*.svelte'],
+    languageOptions: {
+      parserOptions: {
+        parser: ts.parser
+      }
+    }
+  },
+  {
+    files: ['src/lib/components/ui/**/*.svelte'],
+    rules: {
+      'svelte/no-navigation-without-resolve': 'off'
+    }
+  },
+  {
     languageOptions: {
       globals: {
         ...globals.browser,
