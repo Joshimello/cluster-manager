@@ -2,6 +2,8 @@ package inventory
 
 import (
 	"context"
+	"fmt"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -9,14 +11,16 @@ import (
 )
 
 type Simulated struct {
-	Name      string
-	Scenario  string
-	StartedAt time.Time
-	samples   atomic.Uint64
+	Name       string
+	Scenario   string
+	StartedAt  time.Time
+	samples    atomic.Uint64
+	mu         sync.Mutex
+	terminated map[string]struct{}
 }
 
 func NewSimulated(name, scenario string) *Simulated {
-	return &Simulated{Name: name, Scenario: scenario, StartedAt: time.Now()}
+	return &Simulated{Name: name, Scenario: scenario, StartedAt: time.Now(), terminated: make(map[string]struct{})}
 }
 
 func (s *Simulated) Collect(_ context.Context, version string) (protocol.Heartbeat, error) {
@@ -54,6 +58,8 @@ func (s *Simulated) Collect(_ context.Context, version string) (protocol.Heartbe
 }
 
 func (s *Simulated) gpuInventory() ([]protocol.GPU, []protocol.GPUProcess) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	sample := s.samples.Add(1)
 	temperature0, temperature1 := 41.0, 39.0
 	gpus := []protocol.GPU{
@@ -93,5 +99,50 @@ func (s *Simulated) gpuInventory() ([]protocol.GPU, []protocol.GPUProcess) {
 			protocol.GPUProcess{GPUUUID: gpus[1].UUID, PID: 5277, UID: 1002, Username: "analyst", Command: "llama-server", MemoryUsedBytes: 6_000_000_000, ProcessStartTicks: 923999},
 		)
 	}
-	return gpus, processes
+	remaining := processes[:0]
+	for _, process := range processes {
+		if _, removed := s.terminated[simulatedProcessKey(process.PID, process.UID, process.ProcessStartTicks)]; !removed {
+			remaining = append(remaining, process)
+		}
+	}
+	return gpus, remaining
+}
+
+func (s *Simulated) Execute(_ context.Context, instruction protocol.TerminationInstruction) protocol.TerminationResult {
+	result := protocol.TerminationResult{InstructionID: instruction.InstructionID}
+	if instruction.Workstation.Name != s.Name || !time.Now().Before(instruction.ExpiresAt) {
+		result.Outcome = "refused_identity"
+		result.Detail = "The simulated instruction is expired or belongs to another workstation."
+		return result
+	}
+	_, processes := s.gpuInventory()
+	for _, process := range processes {
+		if process.PID != instruction.PID {
+			continue
+		}
+		if process.GPUUUID != instruction.GPUUUID {
+			result.Outcome = "refused_gpu"
+			result.Detail = "The simulated PID is not using the instructed GPU."
+			return result
+		}
+		if process.UID != instruction.UID || process.ProcessStartTicks != instruction.ProcessStartTicks {
+			result.Outcome = "refused_identity"
+			result.Detail = "The simulated process UID or start identity changed."
+			return result
+		}
+		s.mu.Lock()
+		s.terminated[simulatedProcessKey(process.PID, process.UID, process.ProcessStartTicks)] = struct{}{}
+		s.mu.Unlock()
+		result.Outcome = "terminated"
+		result.Detail = "The simulated process exited after SIGTERM."
+		result.TermSent = true
+		return result
+	}
+	result.Outcome = "already_exited"
+	result.Detail = "The simulated target process had already exited."
+	return result
+}
+
+func simulatedProcessKey(pid int, uid uint32, startTicks uint64) string {
+	return fmt.Sprintf("%d:%d:%d", pid, uid, startTicks)
 }

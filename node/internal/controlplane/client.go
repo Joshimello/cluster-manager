@@ -63,6 +63,42 @@ func (c *Client) ReportReconciliation(ctx context.Context, credential string, re
 	return c.post(ctx, "/api/node/v1/reconciliation", credential, protocol.ReconciliationReport{Results: results})
 }
 
+func (c *Client) NextTermination(ctx context.Context, credential string) (*protocol.TerminationInstruction, error) {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/api/node/v1/termination/next", nil)
+	if err != nil {
+		return nil, fmt.Errorf("create termination request: %w", err)
+	}
+	request.Header.Set("Accept", "application/json")
+	request.Header.Set("Authorization", "Bearer "+credential)
+	request.Header.Set("User-Agent", "cluster-manager-node")
+	response, err := c.httpClient.Do(request)
+	if err != nil {
+		return nil, fmt.Errorf("termination request: %w", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode == http.StatusNoContent {
+		return nil, nil
+	}
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		message, _ := io.ReadAll(io.LimitReader(response.Body, 512))
+		return nil, fmt.Errorf("termination request returned %s: %s", response.Status, strings.TrimSpace(string(message)))
+	}
+	var instruction protocol.TerminationInstruction
+	decoder := json.NewDecoder(io.LimitReader(response.Body, 1<<20))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&instruction); err != nil {
+		return nil, fmt.Errorf("decode termination instruction: %w", err)
+	}
+	if instruction.APIVersion != "v1" || instruction.InstructionID == "" || instruction.Workstation.Name == "" || instruction.GPUUUID == "" || instruction.PID <= 1 || instruction.ProcessStartTicks == 0 || instruction.ExpiresAt.IsZero() {
+		return nil, fmt.Errorf("invalid termination instruction")
+	}
+	return &instruction, nil
+}
+
+func (c *Client) ReportTermination(ctx context.Context, credential string, result protocol.TerminationResult) error {
+	return c.post(ctx, "/api/node/v1/termination/result", credential, result)
+}
+
 func (c *Client) post(ctx context.Context, path, credential string, body any) error {
 	payload, err := json.Marshal(body)
 	if err != nil {

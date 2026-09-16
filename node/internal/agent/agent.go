@@ -15,7 +15,9 @@ import (
 	"github.com/Joshimello/cluster-manager/node/internal/config"
 	"github.com/Joshimello/cluster-manager/node/internal/controlplane"
 	"github.com/Joshimello/cluster-manager/node/internal/inventory"
+	"github.com/Joshimello/cluster-manager/node/internal/protocol"
 	"github.com/Joshimello/cluster-manager/node/internal/reconcile"
+	"github.com/Joshimello/cluster-manager/node/internal/termination"
 )
 
 type Agent struct {
@@ -25,6 +27,7 @@ type Agent struct {
 	client     *controlplane.Client
 	collector  inventory.Collector
 	reconciler reconcile.Reconciler
+	terminator termination.Executor
 }
 
 func New(cfg config.Config, version string, logger *log.Logger) (*Agent, error) {
@@ -33,11 +36,14 @@ func New(cfg config.Config, version string, logger *log.Logger) (*Agent, error) 
 	}
 	var collector inventory.Collector = inventory.NewSystem()
 	var reconciler reconcile.Reconciler = reconcile.NewLinux(cfg.WorkstationName)
+	var terminator termination.Executor = termination.NewLinux(inventory.CollectGPUProcesses)
 	if cfg.Simulate {
-		collector = inventory.NewSimulated(cfg.WorkstationName, cfg.SimulationScenario)
+		simulated := inventory.NewSimulated(cfg.WorkstationName, cfg.SimulationScenario)
+		collector = simulated
 		reconciler = reconcile.NewSimulated(cfg.WorkstationName)
+		terminator = simulated
 	}
-	return &Agent{config: cfg, version: version, logger: logger, client: controlplane.New(cfg.PlatformURL), collector: collector, reconciler: reconciler}, nil
+	return &Agent{config: cfg, version: version, logger: logger, client: controlplane.New(cfg.PlatformURL), collector: collector, reconciler: reconciler, terminator: terminator}, nil
 }
 
 func (a *Agent) Run(ctx context.Context) error {
@@ -82,6 +88,23 @@ func (a *Agent) Run(ctx context.Context) error {
 			}
 			backoff = min(backoff*2, 30*time.Second)
 			continue
+		}
+		instruction, terminationErr := a.client.NextTermination(ctx, credential)
+		if terminationErr != nil {
+			a.logger.Printf("termination instruction unavailable: %v", terminationErr)
+		} else if instruction != nil {
+			result := protocol.TerminationResult{InstructionID: instruction.InstructionID}
+			if instruction.Workstation.Name != a.config.WorkstationName || !time.Now().Before(instruction.ExpiresAt) {
+				result.Outcome = "refused_identity"
+				result.Detail = "Instruction is expired or belongs to another workstation."
+			} else {
+				result = a.terminator.Execute(ctx, *instruction)
+			}
+			if reportErr := a.client.ReportTermination(ctx, credential, result); reportErr != nil {
+				a.logger.Printf("termination result report failed: %v", reportErr)
+			} else {
+				a.logger.Printf("termination instruction %s completed with outcome %s", instruction.InstructionID, result.Outcome)
+			}
 		}
 		state, desiredErr := a.client.DesiredState(ctx, credential)
 		if desiredErr != nil {

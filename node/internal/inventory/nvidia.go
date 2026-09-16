@@ -24,6 +24,14 @@ func collectNVIDIA(ctx context.Context) (string, []protocol.GPU, []protocol.GPUP
 	})
 }
 
+func CollectGPUProcesses(ctx context.Context) ([]protocol.GPUProcess, error) {
+	status, _, processes := collectNVIDIA(ctx)
+	if status != "available" {
+		return nil, errors.New("NVIDIA process discovery is unavailable")
+	}
+	return processes, nil
+}
+
 func collectNVIDIAWithRunner(ctx context.Context, run commandRunner) (string, []protocol.GPU, []protocol.GPUProcess) {
 	output, err := run(ctx, "nvidia-smi",
 		"--query-gpu=uuid,index,name,utilization.gpu,memory.used,memory.total,temperature.gpu",

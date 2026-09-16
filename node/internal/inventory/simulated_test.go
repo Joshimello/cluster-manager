@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
+
+	"github.com/Joshimello/cluster-manager/node/internal/protocol"
 )
 
 func TestSimulationScenarios(t *testing.T) {
@@ -44,5 +47,39 @@ func TestSimulationScenarios(t *testing.T) {
 	_, err = NewSimulated("ws03", "offline").Collect(context.Background(), "test")
 	if !errors.Is(err, ErrReportingPaused) {
 		t.Fatalf("expected paused reporting, got %v", err)
+	}
+}
+
+func TestSimulatedTerminationRemovesOnlyExactTarget(t *testing.T) {
+	simulated := NewSimulated("ws01", "reservation-conflict")
+	report, err := simulated.Collect(context.Background(), "test")
+	if err != nil || len(report.Inventory.GPUProcesses) != 1 {
+		t.Fatalf("expected one simulated conflict: %#v, %v", report.Inventory.GPUProcesses, err)
+	}
+	target := report.Inventory.GPUProcesses[0]
+	instruction := protocol.TerminationInstruction{
+		APIVersion:        "v1",
+		InstructionID:     "instruction-1",
+		ExpiresAt:         time.Now().Add(time.Minute),
+		GPUUUID:           target.GPUUUID,
+		PID:               target.PID,
+		UID:               target.UID,
+		ProcessStartTicks: target.ProcessStartTicks,
+	}
+	instruction.Workstation.Name = "ws01"
+	wrong := instruction
+	wrong.ProcessStartTicks++
+	if result := simulated.Execute(context.Background(), wrong); result.Outcome != "refused_identity" || result.TermSent {
+		t.Fatalf("mismatched identity must be refused: %#v", result)
+	}
+	if result := simulated.Execute(context.Background(), instruction); result.Outcome != "terminated" || !result.TermSent {
+		t.Fatalf("exact target should terminate: %#v", result)
+	}
+	report, _ = simulated.Collect(context.Background(), "test")
+	if len(report.Inventory.GPUProcesses) != 0 {
+		t.Fatalf("terminated process should stay absent: %#v", report.Inventory.GPUProcesses)
+	}
+	if result := simulated.Execute(context.Background(), instruction); result.Outcome != "already_exited" || result.TermSent {
+		t.Fatalf("replay should be harmless: %#v", result)
 	}
 }

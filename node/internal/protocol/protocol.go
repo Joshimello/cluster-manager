@@ -88,3 +88,26 @@ type ReconciliationResult struct {
 type ReconciliationReport struct {
 	Results []ReconciliationResult `json:"results"`
 }
+
+type TerminationInstruction struct {
+	APIVersion    string `json:"apiVersion"`
+	InstructionID string `json:"instructionId"`
+	Workstation   struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	} `json:"workstation"`
+	ExpiresAt         time.Time `json:"expiresAt"`
+	GPUUUID           string    `json:"gpuUuid"`
+	PID               int       `json:"pid"`
+	UID               uint32    `json:"uid"`
+	ProcessStartTicks uint64    `json:"processStartTicks"`
+	AllowSIGKILL      bool      `json:"allowSigkill"`
+}
+
+type TerminationResult struct {
+	InstructionID string `json:"instructionId"`
+	Outcome       string `json:"outcome"`
+	Detail        string `json:"detail"`
+	TermSent      bool   `json:"termSent"`
+	KillSent      bool   `json:"killSent"`
+}

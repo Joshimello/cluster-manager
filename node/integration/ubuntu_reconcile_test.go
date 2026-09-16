@@ -7,10 +7,13 @@ import (
 	"os/user"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/Joshimello/cluster-manager/node/internal/protocol"
 	"github.com/Joshimello/cluster-manager/node/internal/reconcile"
+	"github.com/Joshimello/cluster-manager/node/internal/termination"
 )
 
 const (
@@ -72,6 +75,92 @@ func TestUbuntuAccountPasswordAndRevocation(t *testing.T) {
 	if contents, err := os.ReadFile(marker); err != nil || string(contents) != "user data" {
 		t.Fatalf("home data was not preserved: %q, %v", contents, err)
 	}
+}
+
+func TestUbuntuSafeProcessTermination(t *testing.T) {
+	if os.Getenv("CLUSTER_MANAGER_UBUNTU_INTEGRATION") != "1" {
+		t.Skip("set CLUSTER_MANAGER_UBUNTU_INTEGRATION=1 inside the disposable Ubuntu test image")
+	}
+
+	t.Run("SIGTERM", func(t *testing.T) {
+		command := exec.Command("sleep", "30")
+		if err := command.Start(); err != nil {
+			t.Fatal(err)
+		}
+		defer reap(command)
+		instruction, process := terminationFixture(t, command.Process.Pid)
+		runner := termination.NewLinuxWithGrace(func(context.Context) ([]protocol.GPUProcess, error) {
+			return []protocol.GPUProcess{process}, nil
+		}, 300*time.Millisecond)
+		result := runner.Execute(context.Background(), instruction)
+		if result.Outcome != "terminated" || !result.TermSent || result.KillSent {
+			t.Fatalf("expected graceful termination: %#v", result)
+		}
+	})
+
+	t.Run("SIGKILL escalation", func(t *testing.T) {
+		command := exec.Command("bash", "-c", "trap '' TERM; while :; do sleep 1; done")
+		if err := command.Start(); err != nil {
+			t.Fatal(err)
+		}
+		defer reap(command)
+		time.Sleep(50 * time.Millisecond)
+		instruction, process := terminationFixture(t, command.Process.Pid)
+		instruction.AllowSIGKILL = true
+		runner := termination.NewLinuxWithGrace(func(context.Context) ([]protocol.GPUProcess, error) {
+			return []protocol.GPUProcess{process}, nil
+		}, 150*time.Millisecond)
+		result := runner.Execute(context.Background(), instruction)
+		if result.Outcome != "killed" || !result.TermSent || !result.KillSent {
+			t.Fatalf("expected SIGKILL escalation: %#v", result)
+		}
+	})
+
+	t.Run("identity mismatch", func(t *testing.T) {
+		command := exec.Command("sleep", "30")
+		if err := command.Start(); err != nil {
+			t.Fatal(err)
+		}
+		defer reap(command)
+		instruction, process := terminationFixture(t, command.Process.Pid)
+		instruction.ProcessStartTicks++
+		process.ProcessStartTicks = instruction.ProcessStartTicks
+		runner := termination.NewLinuxWithGrace(func(context.Context) ([]protocol.GPUProcess, error) {
+			return []protocol.GPUProcess{process}, nil
+		}, 100*time.Millisecond)
+		result := runner.Execute(context.Background(), instruction)
+		if result.Outcome != "refused_identity" || result.TermSent {
+			t.Fatalf("identity mismatch must not signal: %#v", result)
+		}
+		if err := syscall.Kill(command.Process.Pid, 0); err != nil {
+			t.Fatalf("mismatched target should remain alive: %v", err)
+		}
+	})
+}
+
+func terminationFixture(t *testing.T, pid int) (protocol.TerminationInstruction, protocol.GPUProcess) {
+	t.Helper()
+	uid, startTicks, err := termination.ReadIdentity(pid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	process := protocol.GPUProcess{GPUUUID: "GPU-test", PID: pid, UID: uid, ProcessStartTicks: startTicks}
+	instruction := protocol.TerminationInstruction{
+		APIVersion:        "v1",
+		InstructionID:     "11111111-1111-4111-8111-111111111111",
+		ExpiresAt:         time.Now().Add(time.Minute),
+		GPUUUID:           process.GPUUUID,
+		PID:               pid,
+		UID:               uid,
+		ProcessStartTicks: startTicks,
+	}
+	instruction.Workstation.Name = "ubuntu-smoke"
+	return instruction, process
+}
+
+func reap(command *exec.Cmd) {
+	_ = command.Process.Kill()
+	_ = command.Wait()
 }
 
 func assertPasswordLogin(t *testing.T, password string, shouldSucceed bool) {
