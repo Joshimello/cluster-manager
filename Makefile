@@ -1,4 +1,6 @@
-.PHONY: setup install up down logs ps test test-ubuntu-reconcile check format build db-migrate
+.PHONY: setup install up down logs ps test test-ubuntu-reconcile check format build build-node-linux db-migrate
+
+VERSION ?= development
 
 setup:
 	@test -f .env || cp .env.example .env
@@ -37,7 +39,10 @@ format:
 
 build:
 	cd platform && npm run build
-	cd node && go build -o bin/cluster-manager-node ./cmd/cluster-manager-node
+	cd node && go build -trimpath -ldflags="-s -w -X github.com/Joshimello/cluster-manager/node/internal/buildinfo.Version=$(VERSION)" -o bin/cluster-manager-node ./cmd/cluster-manager-node
+
+build-node-linux:
+	cd node && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w -X github.com/Joshimello/cluster-manager/node/internal/buildinfo.Version=$(VERSION)" -o bin/cluster-manager-node-linux-amd64 ./cmd/cluster-manager-node
 
 db-migrate:
 	docker compose -f docker-compose.dev.yml exec platform npm run db:migrate:runtime

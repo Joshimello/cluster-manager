@@ -26,4 +26,4 @@ COPY --from=build --chown=node:node /app/scripts ./scripts
 COPY --from=build --chown=node:node /app/package.json ./package.json
 USER node
 EXPOSE 3000
-CMD ["sh", "-c", "npm run db:migrate:runtime && node build"]
+CMD ["npm", "run", "start:production"]

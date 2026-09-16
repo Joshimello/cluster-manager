@@ -8,6 +8,8 @@
   },
   "scripts": {
     "admin:bootstrap": "node scripts/bootstrap-admin.mjs",
+    "admin:recover": "node scripts/recover-admin.mjs",
+    "start:production": "node scripts/validate-env.mjs && node scripts/migrate.mjs && node build",
     "dev": "vite dev",
     "build": "vite build",
     "preview": "vite preview",
