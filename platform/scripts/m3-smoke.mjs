@@ -78,12 +78,15 @@ try {
   userId = result.createdUserId;
   const temporaryPassword = result.temporaryPassword;
 
-  const [workstation] = await sql`select id from workstations where name = 'ws01'`;
-  assert.ok(workstation?.id);
+  const workstations = await sql`select id, name from workstations where name in ('ws01', 'ws02')`;
+  const ws01 = workstations.find((workstation) => workstation.name === 'ws01');
+  const ws02 = workstations.find((workstation) => workstation.name === 'ws02');
+  assert.ok(ws01?.id);
+  assert.ok(ws02?.id);
   result = await actionResult(
     await admin.form('/admin/users?/assignWorkstation', {
       userId,
-      workstationId: workstation.id
+      workstationId: ws01.id
     })
   );
   assert.equal(result.success, true);
@@ -91,6 +94,19 @@ try {
     select id from workstation_assignments where user_id = ${userId} and status = 'active'
   `;
   await waitForApplied(sql, assignment.id, 1);
+
+  result = await actionResult(
+    await admin.form('/admin/users?/assignWorkstation', {
+      userId,
+      workstationId: ws02.id
+    })
+  );
+  assert.equal(result.success, true);
+  await waitForApplied(sql, assignment.id, 2);
+  const [movedAssignment] = await sql`
+    select id from workstation_assignments where user_id = ${userId} and status = 'active'
+  `;
+  await waitForApplied(sql, movedAssignment.id, 1);
 
   const user = new BrowserSession();
   result = await actionResult(await user.form('/login', { username, password: temporaryPassword }));
@@ -103,21 +119,21 @@ try {
     })
   );
   assert.equal(result.redirect, '/dashboard');
-  await waitForApplied(sql, assignment.id, 2);
+  await waitForApplied(sql, movedAssignment.id, 2);
 
   const dashboard = await user.request('/dashboard');
   assert.equal(dashboard.status, 200);
   const dashboardHTML = await dashboard.text();
-  assert.match(dashboardHTML, new RegExp(`ssh ${username}@ws01`));
+  assert.match(dashboardHTML, new RegExp(`ssh ${username}@ws02`));
   assert.match(dashboardHTML, /same password as this platform account/i);
 
   result = await actionResult(await admin.form('/admin/users?/revokeWorkstation', { userId }));
   assert.equal(result.success, true);
-  const revoked = await waitForApplied(sql, assignment.id, 3);
+  const revoked = await waitForApplied(sql, movedAssignment.id, 3);
   assert.equal(revoked.status, 'revoked');
 
   console.log(
-    `Milestone 3 assignment, password synchronization, and revocation passed for ${username}.`
+    `Milestone 3 assignment, move, password synchronization, and revocation passed for ${username}.`
   );
 } finally {
   if (userId) {

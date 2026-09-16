@@ -236,6 +236,10 @@ For v1, use **centrally managed local Linux accounts** rather than LDAP or FreeI
 
 The platform is the source of truth.
 
+The immutable platform username is also the user's Linux username. It must be 3–32
+characters, begin with a lowercase letter, and contain only lowercase letters,
+numbers, underscores, or hyphens. Admins choose this username when creating a user.
+
 The node service is responsible for reconciling the required local Linux users on each workstation.
 
 If Alice is assigned to `ws01`, the node on `ws01` should ensure her Linux account exists.

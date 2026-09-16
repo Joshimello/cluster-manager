@@ -9,7 +9,7 @@ export function normalizeUsername(username: string): string {
 
 export function validateUsername(username: string): string | null {
   if (!usernamePattern.test(username)) {
-    return 'Username must be 3–32 characters and use lowercase letters, numbers, _ or -.';
+    return 'Linux username must be 3–32 characters, begin with a letter, and use only lowercase letters, numbers, _ or -.';
   }
 
   return null;

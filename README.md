@@ -10,7 +10,7 @@ implementation plan.
 
 ## Current status
 
-Milestone 2.1 is complete. The repository currently provides:
+Milestone 3 is complete. The repository currently provides:
 
 - SvelteKit and TypeScript platform
 - PostgreSQL with Drizzle migrations
@@ -27,8 +27,13 @@ Milestone 2.1 is complete. The repository currently provides:
 - two independently enrolled simulated workstations in the development stack
 - a responsive shadcn-svelte component foundation using Tailwind CSS v4
 - shared component treatments for forms, status, feedback, credentials, and tables
+- one-workstation user assignment with audited assign, move, and revoke workflows
+- synchronized platform and Linux password verifiers without plaintext storage
+- authenticated per-node desired state and reconciliation status reporting
+- idempotent Ubuntu account, home, password-only SSH, and rootless Podman provisioning
+- a hardened systemd unit, Ubuntu installation guide, and disposable Ubuntu acceptance test
 
-GPU monitoring, access reconciliation, and reservations are not implemented yet.
+GPU monitoring and reservations are not implemented yet.
 
 ## Requirements
 
@@ -86,6 +91,16 @@ Creating a workstation displays a one-time, 30-minute enrollment token. Deliver 
 token to the intended machine, then configure the node with the matching workstation
 name. Issuing a new enrollment token revokes the previous node credential.
 
+The **Users** administration page assigns, moves, or revokes each user's workstation.
+The immutable platform username is also the Linux username. A user's platform password
+is their workstation SSH password; Cluster Manager derives separate one-way hashes for
+web login and Linux PAM and never stores or sends plaintext. Nodes report pending,
+applied, or errored provisioning state back to both the admin view and the user's
+dashboard.
+
+See [the Ubuntu node installation guide](docs/node-installation.md) for direct node and
+systemd deployment.
+
 Source changes under `platform/` are mounted into the development container and are
 picked up by Vite. PostgreSQL data and container-installed npm dependencies are kept
 in named Docker volumes.
@@ -117,6 +132,20 @@ make test
 make check
 make format
 make build
+```
+
+Run the Milestone 3 workflow smoke test against the development stack:
+
+```bash
+docker compose -f docker-compose.dev.yml exec \
+  -e ADMIN_USERNAME=admin -e ADMIN_PASSWORD='your-admin-password' \
+  platform npm run test:m3-smoke
+```
+
+Run real account and SSH reconciliation in a disposable Ubuntu 24.04 image:
+
+```bash
+make test-ubuntu-reconcile
 ```
 
 ## UI component workflow

@@ -302,61 +302,71 @@ deleting the user's data.
 
 ### Build
 
-- [ ] Add workstation assignment, provisioning-state, and Linux password-hash fields
+- [x] Add workstation assignment, provisioning-state, and Linux password-hash fields
       and constraints. Development data may be reset; no pre-M3 migration/backfill is
       required.
-- [ ] Enforce that a user normally has at most one active workstation assignment.
-- [ ] Add admin assign, move, and revoke workflows.
-- [ ] Add the user's assigned-workstation view and SSH connection instructions.
-- [ ] Derive both the existing platform-login verifier and a separately salted
+- [x] Enforce that a user normally has at most one active workstation assignment.
+- [x] Add admin assign, move, and revoke workflows.
+- [x] Add the user's assigned-workstation view and SSH connection instructions.
+- [x] Derive both the existing platform-login verifier and a separately salted
       Linux/PAM-compatible password hash whenever a password is created, changed, or
       reset; store only the one-way hashes and update them atomically.
-- [ ] Make self-service platform password changes update the desired workstation
+- [x] Make self-service platform password changes update the desired workstation
       password hash for the user's assignment.
-- [ ] Make the existing admin password-reset flow reset the single shared platform/SSH
+- [x] Make the existing admin password-reset flow reset the single shared platform/SSH
       password and require normal first-login replacement.
-- [ ] Audit assignment, revocation, and synchronized password resets/changes without
+- [x] Audit assignment, revocation, and synchronized password resets/changes without
       recording password material or hashes.
-- [ ] Add a versioned, authenticated desired-state endpoint for each node containing
+- [x] Add a versioned, authenticated desired-state endpoint for each node containing
       only that workstation's required users, account state, and Linux-compatible
       password hashes.
-- [ ] Treat desired-state password hashes as sensitive verifiers: return them only to
+- [x] Treat desired-state password hashes as sensitive verifiers: return them only to
       the authenticated assigned node over production HTTPS and never log them.
-- [ ] Implement idempotent node reconciliation for:
-  - [ ] safe Linux username/UID policy
-  - [ ] local account creation
-  - [ ] home directory creation and ownership
-  - [ ] active/disabled login state
-  - [ ] synchronized `/etc/shadow`-compatible password hash application without
+- [x] Implement idempotent node reconciliation for:
+  - [x] safe Linux username/UID policy
+  - [x] local account creation
+  - [x] home directory creation and ownership
+  - [x] active/disabled login state
+  - [x] synchronized `/etc/shadow`-compatible password hash application without
         passing plaintext through command arguments or logs
-  - [ ] SSH password authentication policy scoped to Cluster Manager-managed users
-  - [ ] rootless Podman prerequisites that are safe to configure automatically
-- [ ] Ensure reconciliation never deletes a home directory or user data.
-- [ ] Ensure unavailable or invalid desired state causes no destructive changes.
-- [ ] Report reconciliation status/errors to the platform.
-- [ ] Show provisioning state and actionable errors to admins and the affected user.
-- [ ] Provide Ubuntu installation/configuration instructions for the node.
-- [ ] Provide an initial systemd unit and hardened service configuration.
+  - [x] SSH password authentication policy scoped to Cluster Manager-managed users
+  - [x] rootless Podman prerequisites that are safe to configure automatically
+- [x] Ensure reconciliation never deletes a home directory or user data.
+- [x] Ensure unavailable or invalid desired state causes no destructive changes.
+- [x] Report reconciliation status/errors to the platform.
+- [x] Show provisioning state and actionable errors to admins and the affected user.
+- [x] Provide Ubuntu installation/configuration instructions for the node.
+- [x] Provide an initial systemd unit and hardened service configuration.
 
 ### Tests and acceptance
 
-- [ ] In simulation mode, assignment and password changes produce the expected desired
+- [x] In simulation mode, assignment and password changes produce the expected desired
       state and reported reconciliation status without exposing plaintext credentials.
-- [ ] On a disposable Ubuntu machine/VM, assigning a user creates a usable account and
+- [x] On a disposable Ubuntu machine/VM, assigning a user creates a usable account and
       permits SSH login with the same password used by the platform.
-- [ ] Changing or resetting the platform password rejects the old SSH password and
+- [x] Changing or resetting the platform password rejects the old SSH password and
       accepts the replacement after reconciliation.
-- [ ] SSH public-key authentication is unavailable to Cluster Manager-managed users.
-- [ ] Revoking access disables new login while preserving the account's home directory
+- [x] SSH public-key authentication is unavailable to Cluster Manager-managed users.
+- [x] Revoking access disables new login while preserving the account's home directory
       and files.
-- [ ] Reapplying unchanged desired state is harmless.
-- [ ] Platform or network outage leaves existing accounts and sessions usable.
-- [ ] Assignment authorization, password synchronization, desired-state credential
+- [x] Reapplying unchanged desired state is harmless.
+- [x] Platform or network outage leaves existing accounts and sessions usable.
+- [x] Assignment authorization, password synchronization, desired-state credential
       isolation, and node reconciliation tests pass.
 
 ### Explicitly not included yet
 
 GPU monitoring and reservations.
+
+### Completion record
+
+Completed on 2026-09-16. The simulation smoke test covered assignment, movement between
+both simulated workstations, password replacement, per-node reconciliation reporting,
+user SSH instructions, and revocation. A disposable Ubuntu 24.04 image verified real
+account/home creation, idempotent reapplication, password-only sshd login, password
+replacement, public-key rejection, account locking, rootless subordinate IDs, and
+home-data preservation. Unit/static checks cover invalid desired state and ensure it is
+rejected before any local changes.
 
 ---
 
@@ -659,9 +669,9 @@ concrete while leaving room to make a deliberate choice before the feature is bu
 - [x] **Before Milestone 2 — node bootstrap:** confirm how operators prefer to create
       and deliver node credentials. Provisional default: an admin creates the
       workstation in the UI and copies a one-time enrollment token to the machine.
-- [ ] **Before Milestone 3 — Linux usernames:** confirm whether usernames are chosen by
-      admins or derived from an institutional identifier. Provisional default: admin
-      chooses an immutable POSIX-safe username when creating the user.
+- [x] **Before Milestone 3 — Linux usernames:** the immutable platform username is the
+      Linux username. Admins choose it when creating the user, and validation enforces
+      the conservative POSIX-safe format used by node reconciliation.
 - [x] **Before Milestone 3 — SSH passwords:** use password-only SSH authentication for
       Cluster Manager-managed users. The workstation password must match the platform
       password; derive and store separate one-way platform and Linux-compatible hashes
@@ -687,7 +697,7 @@ concrete while leaving room to make a deliberate choice before the feature is bu
 - [x] Milestone 1 complete
 - [x] Milestone 2 complete
 - [x] Milestone 2.1 complete
-- [ ] Milestone 3 complete
+- [x] Milestone 3 complete
 - [ ] Milestone 4 complete
 - [ ] Milestone 5 complete
 - [ ] Milestone 6 complete

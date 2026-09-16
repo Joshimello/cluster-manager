@@ -56,7 +56,7 @@
         action="?/create"
       >
         <div class="grid gap-2">
-          <Label for="create-username">Username</Label>
+          <Label for="create-username">Username / Linux login</Label>
           <Input
             id="create-username"
             name="username"
@@ -225,6 +225,10 @@
                       type="single"
                       name="workstationId"
                       value={assignment?.workstationId ?? data.workstations[0].id}
+                      items={data.workstations.map((workstation) => ({
+                        value: workstation.id,
+                        label: `${workstation.name} — ${workstation.displayName}`
+                      }))}
                     >
                       <Select.Trigger id={`workstation-${user.id}`} class="w-full"
                         ><Select.Value /></Select.Trigger
