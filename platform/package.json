@@ -24,6 +24,7 @@
     "test": "vitest run",
     "test:auth-smoke": "node scripts/auth-smoke.mjs",
     "test:node-smoke": "node scripts/node-smoke.mjs",
+    "test:m3-smoke": "node scripts/m3-smoke.mjs",
     "test:watch": "vitest"
   },
   "devDependencies": {

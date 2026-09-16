@@ -96,7 +96,7 @@ func applyUser(ctx context.Context, desired protocol.DesiredUser) (string, error
 	if err := os.Chown(account.HomeDir, uid, gid); err != nil {
 		return "", fmt.Errorf("set home ownership: %w", err)
 	}
-	if err := ensureSubordinateIDs(ctx, desired.Username, uid); err != nil {
+	if err := ensureSubordinateIDs(ctx, desired.Username); err != nil {
 		return "", err
 	}
 
@@ -177,7 +177,7 @@ func shadowHash(username string) (string, error) {
 	for scanner.Scan() {
 		fields := strings.Split(scanner.Text(), ":")
 		if len(fields) >= 2 && fields[0] == username {
-			return strings.TrimPrefix(fields[1], "!"), nil
+			return fields[1], nil
 		}
 	}
 	if err := scanner.Err(); err != nil {
@@ -186,25 +186,27 @@ func shadowHash(username string) (string, error) {
 	return "", fmt.Errorf("shadow entry for %s was not found", username)
 }
 
-func ensureSubordinateIDs(ctx context.Context, username string, uid int) error {
-	hasUID, err := hasSubordinateEntry("/etc/subuid", username)
+func ensureSubordinateIDs(ctx context.Context, username string) error {
+	hasUID, uidRanges, err := subordinateRanges("/etc/subuid", username)
 	if err != nil {
 		return err
 	}
-	hasGID, err := hasSubordinateEntry("/etc/subgid", username)
+	hasGID, gidRanges, err := subordinateRanges("/etc/subgid", username)
 	if err != nil {
 		return err
 	}
 	if hasUID && hasGID {
 		return nil
 	}
-	start := 100_000 + uid*65_536
-	end := start + 65_535
 	args := []string{}
 	if !hasUID {
+		start := availableSubordinateRange(uidRanges)
+		end := start + 65_535
 		args = append(args, "--add-subuids", fmt.Sprintf("%d-%d", start, end))
 	}
 	if !hasGID {
+		start := availableSubordinateRange(gidRanges)
+		end := start + 65_535
 		args = append(args, "--add-subgids", fmt.Sprintf("%d-%d", start, end))
 	}
 	args = append(args, username)
@@ -214,22 +216,55 @@ func ensureSubordinateIDs(ctx context.Context, username string, uid int) error {
 	return nil
 }
 
-func hasSubordinateEntry(path, username string) (bool, error) {
+type subordinateRange struct {
+	start int
+	end   int
+}
+
+func subordinateRanges(path, username string) (bool, []subordinateRange, error) {
 	contents, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return false, nil
+		return false, nil, nil
 	}
 	if err != nil {
-		return false, fmt.Errorf("read %s: %w", path, err)
+		return false, nil, fmt.Errorf("read %s: %w", path, err)
 	}
-	prefix := username + ":"
+	found := false
+	ranges := []subordinateRange{}
 	scanner := bufio.NewScanner(bytes.NewReader(contents))
 	for scanner.Scan() {
-		if strings.HasPrefix(scanner.Text(), prefix) {
-			return true, nil
+		fields := strings.Split(scanner.Text(), ":")
+		if len(fields) != 3 {
+			continue
+		}
+		if fields[0] == username {
+			found = true
+			continue
+		}
+		start, startErr := strconv.Atoi(fields[1])
+		count, countErr := strconv.Atoi(fields[2])
+		if startErr == nil && countErr == nil && count > 0 {
+			ranges = append(ranges, subordinateRange{start: start, end: start + count - 1})
 		}
 	}
-	return false, scanner.Err()
+	return found, ranges, scanner.Err()
+}
+
+func availableSubordinateRange(existing []subordinateRange) int {
+	const size = 65_536
+	for candidate := 100_000; ; candidate += size {
+		end := candidate + size - 1
+		available := true
+		for _, current := range existing {
+			if candidate <= current.end && end >= current.start {
+				available = false
+				break
+			}
+		}
+		if available {
+			return candidate
+		}
+	}
 }
 
 func run(ctx context.Context, stdin, name string, args ...string) error {
