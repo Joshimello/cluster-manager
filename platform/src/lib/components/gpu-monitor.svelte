@@ -6,6 +6,7 @@
   import CoordinationBadge from '$lib/components/coordination-badge.svelte';
   import StatusBadge from '$lib/components/status-badge.svelte';
   import { Badge } from '$lib/components/ui/badge/index.js';
+  import { Button } from '$lib/components/ui/button/index.js';
   import * as Card from '$lib/components/ui/card/index.js';
   import * as Table from '$lib/components/ui/table/index.js';
   import type { CoordinationState } from '$lib/server/reservations/correlation';
@@ -48,12 +49,14 @@
     gpus,
     gpuStatus = 'available',
     processScope = 'all',
-    autoRefresh = true
+    autoRefresh = true,
+    allowStopRequests = false
   }: {
     gpus: GPU[];
     gpuStatus?: 'available' | 'unavailable';
     processScope?: 'all' | 'user';
     autoRefresh?: boolean;
+    allowStopRequests?: boolean;
   } = $props();
 
   const dateTime = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'medium' });
@@ -156,6 +159,13 @@
                     gpu.reservation.endAt
                   )}
                 </span>
+              {/if}
+              {#if allowStopRequests && gpu.coordinationState === 'conflict' && gpu.reservation?.isViewer}
+                <form method="POST" action="/stop-requests?/create" class="mt-2">
+                  <input type="hidden" name="gpuId" value={gpu.id} />
+                  <Button type="submit" variant="destructive" size="sm">Request intervention</Button
+                  >
+                </form>
               {/if}
             </div>
 

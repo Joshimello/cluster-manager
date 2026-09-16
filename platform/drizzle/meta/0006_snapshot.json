@@ -91,12 +91,8 @@
           "name": "audit_events_actor_user_id_users_id_fk",
           "tableFrom": "audit_events",
           "tableTo": "users",
-          "columnsFrom": [
-            "actor_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["actor_user_id"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -205,12 +201,8 @@
           "name": "gpu_observations_gpu_id_gpus_id_fk",
           "tableFrom": "gpu_observations",
           "tableTo": "gpus",
-          "columnsFrom": [
-            "gpu_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["gpu_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -319,12 +311,8 @@
           "name": "gpu_process_observations_observation_id_gpu_observations_id_fk",
           "tableFrom": "gpu_process_observations",
           "tableTo": "gpu_observations",
-          "columnsFrom": [
-            "observation_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["observation_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -486,12 +474,8 @@
           "name": "gpus_workstation_id_workstations_id_fk",
           "tableFrom": "gpus",
           "tableTo": "workstations",
-          "columnsFrom": [
-            "workstation_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["workstation_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -699,12 +683,8 @@
           "name": "reservations_gpu_id_gpus_id_fk",
           "tableFrom": "reservations",
           "tableTo": "gpus",
-          "columnsFrom": [
-            "gpu_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["gpu_id"],
+          "columnsTo": ["id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
@@ -712,12 +692,8 @@
           "name": "reservations_user_id_users_id_fk",
           "tableFrom": "reservations",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
@@ -725,12 +701,8 @@
           "name": "reservations_created_by_user_id_users_id_fk",
           "tableFrom": "reservations",
           "tableTo": "users",
-          "columnsFrom": [
-            "created_by_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["created_by_user_id"],
+          "columnsTo": ["id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
@@ -738,12 +710,8 @@
           "name": "reservations_cancelled_by_user_id_users_id_fk",
           "tableFrom": "reservations",
           "tableTo": "users",
-          "columnsFrom": [
-            "cancelled_by_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["cancelled_by_user_id"],
+          "columnsTo": ["id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         }
@@ -852,12 +820,8 @@
           "name": "sessions_user_id_users_id_fk",
           "tableFrom": "sessions",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1084,12 +1048,8 @@
           "name": "stop_requests_reservation_id_reservations_id_fk",
           "tableFrom": "stop_requests",
           "tableTo": "reservations",
-          "columnsFrom": [
-            "reservation_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["reservation_id"],
+          "columnsTo": ["id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
@@ -1097,12 +1057,8 @@
           "name": "stop_requests_gpu_id_gpus_id_fk",
           "tableFrom": "stop_requests",
           "tableTo": "gpus",
-          "columnsFrom": [
-            "gpu_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["gpu_id"],
+          "columnsTo": ["id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
@@ -1110,12 +1066,8 @@
           "name": "stop_requests_workstation_id_workstations_id_fk",
           "tableFrom": "stop_requests",
           "tableTo": "workstations",
-          "columnsFrom": [
-            "workstation_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["workstation_id"],
+          "columnsTo": ["id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
@@ -1123,12 +1075,8 @@
           "name": "stop_requests_requester_user_id_users_id_fk",
           "tableFrom": "stop_requests",
           "tableTo": "users",
-          "columnsFrom": [
-            "requester_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["requester_user_id"],
+          "columnsTo": ["id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
@@ -1136,12 +1084,8 @@
           "name": "stop_requests_decided_by_user_id_users_id_fk",
           "tableFrom": "stop_requests",
           "tableTo": "users",
-          "columnsFrom": [
-            "decided_by_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["decided_by_user_id"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -1337,12 +1281,8 @@
           "name": "termination_instructions_stop_request_id_stop_requests_id_fk",
           "tableFrom": "termination_instructions",
           "tableTo": "stop_requests",
-          "columnsFrom": [
-            "stop_request_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["stop_request_id"],
+          "columnsTo": ["id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
@@ -1350,12 +1290,8 @@
           "name": "termination_instructions_workstation_id_workstations_id_fk",
           "tableFrom": "termination_instructions",
           "tableTo": "workstations",
-          "columnsFrom": [
-            "workstation_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["workstation_id"],
+          "columnsTo": ["id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
@@ -1363,12 +1299,8 @@
           "name": "termination_instructions_requested_by_user_id_users_id_fk",
           "tableFrom": "termination_instructions",
           "tableTo": "users",
-          "columnsFrom": [
-            "requested_by_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["requested_by_user_id"],
+          "columnsTo": ["id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         }
@@ -1615,12 +1547,8 @@
           "name": "workstation_assignments_user_id_users_id_fk",
           "tableFrom": "workstation_assignments",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -1628,12 +1556,8 @@
           "name": "workstation_assignments_workstation_id_workstations_id_fk",
           "tableFrom": "workstation_assignments",
           "tableTo": "workstations",
-          "columnsFrom": [
-            "workstation_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["workstation_id"],
+          "columnsTo": ["id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         }
@@ -1842,73 +1766,42 @@
     "public.assignment_status": {
       "name": "assignment_status",
       "schema": "public",
-      "values": [
-        "active",
-        "revoked"
-      ]
+      "values": ["active", "revoked"]
     },
     "public.provisioning_status": {
       "name": "provisioning_status",
       "schema": "public",
-      "values": [
-        "pending",
-        "applied",
-        "error"
-      ]
+      "values": ["pending", "applied", "error"]
     },
     "public.reservation_status": {
       "name": "reservation_status",
       "schema": "public",
-      "values": [
-        "active",
-        "cancelled"
-      ]
+      "values": ["active", "cancelled"]
     },
     "public.stop_request_status": {
       "name": "stop_request_status",
       "schema": "public",
-      "values": [
-        "pending",
-        "termination_requested",
-        "resolved",
-        "dismissed",
-        "stale",
-        "failed"
-      ]
+      "values": ["pending", "termination_requested", "resolved", "dismissed", "stale", "failed"]
     },
     "public.termination_instruction_status": {
       "name": "termination_instruction_status",
       "schema": "public",
-      "values": [
-        "pending",
-        "dispatched",
-        "completed",
-        "expired"
-      ]
+      "values": ["pending", "dispatched", "completed", "expired"]
     },
     "public.user_role": {
       "name": "user_role",
       "schema": "public",
-      "values": [
-        "user",
-        "admin"
-      ]
+      "values": ["user", "admin"]
     },
     "public.user_status": {
       "name": "user_status",
       "schema": "public",
-      "values": [
-        "active",
-        "disabled"
-      ]
+      "values": ["active", "disabled"]
     },
     "public.workstation_status": {
       "name": "workstation_status",
       "schema": "public",
-      "values": [
-        "active",
-        "disabled"
-      ]
+      "values": ["active", "disabled"]
     }
   },
   "schemas": {},

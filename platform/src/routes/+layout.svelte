@@ -3,6 +3,7 @@
   import CalendarDaysIcon from '@lucide/svelte/icons/calendar-days';
   import LayoutDashboardIcon from '@lucide/svelte/icons/layout-dashboard';
   import LogOutIcon from '@lucide/svelte/icons/log-out';
+  import ShieldAlertIcon from '@lucide/svelte/icons/shield-alert';
   import SettingsIcon from '@lucide/svelte/icons/settings';
   import { resolve } from '$app/paths';
   import { Button } from '$lib/components/ui/button/index.js';
@@ -36,6 +37,11 @@
             <CalendarDaysIcon data-icon="inline-start" />
             <span class="hidden sm:inline">Reservations</span>
             <span class="sr-only sm:hidden">Reservations</span>
+          </Button>
+          <Button href={resolve('/stop-requests')} variant="ghost" size="sm">
+            <ShieldAlertIcon data-icon="inline-start" />
+            <span class="hidden sm:inline">Stop requests</span>
+            <span class="sr-only sm:hidden">Stop requests</span>
           </Button>
           {#if data.user.role === 'admin'}
             <Button href={resolve('/admin/users')} variant="ghost" size="sm">

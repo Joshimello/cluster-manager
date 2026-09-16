@@ -145,6 +145,7 @@
         gpus={data.gpus}
         gpuStatus={data.assignment.inventory?.gpuStatus ?? 'unavailable'}
         processScope="user"
+        allowStopRequests={true}
       />
     </section>
   {:else}
