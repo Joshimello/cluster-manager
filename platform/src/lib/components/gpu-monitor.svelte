@@ -3,10 +3,12 @@
   import ThermometerIcon from '@lucide/svelte/icons/thermometer';
   import { onMount } from 'svelte';
   import { invalidateAll } from '$app/navigation';
+  import CoordinationBadge from '$lib/components/coordination-badge.svelte';
   import StatusBadge from '$lib/components/status-badge.svelte';
   import { Badge } from '$lib/components/ui/badge/index.js';
   import * as Card from '$lib/components/ui/card/index.js';
   import * as Table from '$lib/components/ui/table/index.js';
+  import type { CoordinationState } from '$lib/server/reservations/correlation';
 
   type GPU = {
     id: string;
@@ -19,6 +21,18 @@
     memoryUsedBytes: number;
     memoryTotalBytes: number;
     temperatureC: number | null;
+    coordinationState: CoordinationState;
+    processCount: number;
+    ownerProcessCount: number;
+    otherProcessCount: number;
+    reservation: null | {
+      id: string;
+      ownerLabel: string;
+      username: string | null;
+      startAt: Date;
+      endAt: Date;
+      isViewer: boolean;
+    };
     processes: Array<{
       id: string;
       pid: number;
@@ -47,6 +61,16 @@
     maximumFractionDigits: 1
   });
   const gigabytes = (value: number) => bytes.format(value / 1_000_000_000);
+  const coordinationDescription = (gpu: GPU) => {
+    if (gpu.coordinationState === 'unknown') return 'Fresh telemetry is required to determine use.';
+    if (gpu.coordinationState === 'available') return 'No current reservation or observed process.';
+    if (gpu.coordinationState === 'unbooked-use')
+      return `${gpu.processCount} observed process${gpu.processCount === 1 ? '' : 'es'} without a reservation.`;
+    if (gpu.coordinationState === 'booked-idle') return 'Reserved, with no GPU process observed.';
+    if (gpu.coordinationState === 'booked-active')
+      return `${gpu.ownerProcessCount} owner process${gpu.ownerProcessCount === 1 ? '' : 'es'} observed.`;
+    return `${gpu.otherProcessCount} non-owner or unresolved process${gpu.otherProcessCount === 1 ? '' : 'es'} observed.`;
+  };
 
   onMount(() => {
     const timer = window.setInterval(() => void invalidateAll(), 10_000);
@@ -82,7 +106,10 @@
                 <Card.Title>GPU {gpu.index} · {gpu.model}</Card.Title>
                 <Card.Description class="break-all">{gpu.uuid}</Card.Description>
               </div>
-              <StatusBadge status={gpu.telemetryState} />
+              <div class="flex flex-wrap justify-end gap-2">
+                <CoordinationBadge state={gpu.coordinationState} />
+                <StatusBadge status={gpu.telemetryState} />
+              </div>
             </div>
           </Card.Header>
           <Card.Content class="grid gap-5">
@@ -108,15 +135,36 @@
               </div>
             </div>
 
+            <div class="bg-muted/50 grid gap-1 rounded-md border px-3 py-2 text-sm">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <strong>Coordination</strong>
+                {#if gpu.reservation}
+                  <span>
+                    Reserved by {gpu.reservation.ownerLabel}{gpu.reservation.username
+                      ? ` (${gpu.reservation.username})`
+                      : ''}
+                  </span>
+                {/if}
+              </div>
+              <span class="text-muted-foreground">{coordinationDescription(gpu)}</span>
+              {#if gpu.reservation}
+                <span class="text-muted-foreground text-xs">
+                  {dateTime.format(gpu.reservation.startAt)}–{dateTime.format(
+                    gpu.reservation.endAt
+                  )}
+                </span>
+              {/if}
+            </div>
+
             <div class="grid gap-2">
               <div class="flex items-center justify-between gap-3 text-sm">
                 <span class="flex items-center gap-1.5 font-medium"
                   ><ActivityIcon class="size-4" aria-hidden="true" />GPU load</span
                 >
-                <Badge variant={gpu.processes.length > 0 ? 'default' : 'secondary'}>
-                  {gpu.processes.length > 0
-                    ? `${gpu.processes.length} visible processes`
-                    : 'No visible processes'}
+                <Badge variant={gpu.processCount > 0 ? 'default' : 'secondary'}>
+                  {gpu.processCount > 0
+                    ? `${gpu.processCount} observed processes`
+                    : 'No observed processes'}
                 </Badge>
               </div>
               <div

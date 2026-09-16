@@ -33,6 +33,6 @@ export const load: PageServerLoad = async ({ locals }) => {
   return {
     user,
     assignment: assignment ?? null,
-    gpus: assignment ? await loadWorkstationGpus(assignment.workstationId, user.username) : []
+    gpus: assignment ? await loadWorkstationGpus(assignment.workstationId, { viewer: user }) : []
   };
 };
