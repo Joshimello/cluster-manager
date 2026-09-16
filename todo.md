@@ -448,42 +448,55 @@ own reservations, and admins can inspect and override them.
 
 ### Build
 
-- [ ] Add reservation data, status, indexes, and database-level overlap protection.
-- [ ] Store times in UTC and render them in the user's/displayed local timezone.
-- [ ] Implement backend reservation rules:
-  - [ ] user is active and assigned to the GPU's workstation
-  - [ ] start/end align to 30-minute boundaries
-  - [ ] end is after start
-  - [ ] normal duration is no more than six hours
-  - [ ] normal start is no more than seven days ahead
-  - [ ] the physical GPU exists and is active
-  - [ ] no overlapping active reservation exists for that GPU
-- [ ] Use a transaction/database constraint strategy that remains correct under
+- [x] Add reservation data, status, indexes, and database-level overlap protection.
+- [x] Store times in UTC and render them in the user's/displayed local timezone.
+- [x] Implement backend reservation rules:
+  - [x] user is active and assigned to the GPU's workstation
+  - [x] start/end align to 30-minute boundaries
+  - [x] end is after start
+  - [x] normal duration is no more than six hours
+  - [x] normal start is no more than seven days ahead
+  - [x] the physical GPU exists and is active
+  - [x] no overlapping active reservation exists for that GPU
+- [x] Use a transaction/database constraint strategy that remains correct under
       concurrent booking attempts.
-- [ ] Add user schedule, create, upcoming/current, and cancellation workflows.
-- [ ] Use a helpful default duration such as two hours.
-- [ ] Add admin all-reservations view and explicit override behavior.
-- [ ] Decide and implement override semantics without silently corrupting or hiding
+- [x] Add user schedule, create, upcoming/current, and cancellation workflows.
+- [x] Use a helpful default duration such as two hours.
+- [x] Add admin all-reservations view and explicit override behavior.
+- [x] Decide and implement override semantics without silently corrupting or hiding
       existing bookings.
-- [ ] Audit reservation creation/cancellation and admin overrides.
-- [ ] Keep expired/cancelled history available for audit and troubleshooting.
+- [x] Audit reservation creation/cancellation and admin overrides.
+- [x] Keep expired/cancelled history available for audit and troubleshooting.
 
 ### Tests and acceptance
 
-- [ ] A user can book and cancel a GPU on their assigned workstation.
-- [ ] A user cannot book a GPU on another workstation.
-- [ ] Boundary, duration, horizon, disabled-user, and inactive-GPU rules are enforced
+- [x] A user can book and cancel a GPU on their assigned workstation.
+- [x] A user cannot book a GPU on another workstation.
+- [x] Boundary, duration, horizon, disabled-user, and inactive-GPU rules are enforced
       by the server.
-- [ ] Two simultaneous attempts for the same GPU/time result in exactly one booking.
-- [ ] Adjacent non-overlapping reservations are allowed.
-- [ ] The schedule behaves correctly across timezone and daylight-saving boundaries.
-- [ ] Admin override behavior is explicit in the UI and audit history.
-- [ ] Reservation rule and concurrency integration tests pass against PostgreSQL.
+- [x] Two simultaneous attempts for the same GPU/time result in exactly one booking.
+- [x] Adjacent non-overlapping reservations are allowed.
+- [x] The schedule behaves correctly across timezone and daylight-saving boundaries.
+- [x] Admin override behavior is explicit in the UI and audit history.
+- [x] Reservation rule and concurrency integration tests pass against PostgreSQL.
 
 ### Explicitly not included yet
 
 Reservations do not enforce GPU access, stop workloads, or manipulate device
 permissions.
+
+### Completion record
+
+Completed on 2026-09-16. Reservation instants are stored in UTC and displayed explicitly
+in `Asia/Kuala_Lumpur`; conversion tests also reject ambiguous/nonexistent local times
+at daylight-saving boundaries. Active reservations use half-open PostgreSQL ranges and
+a `btree_gist` exclusion constraint, so adjacent bookings work and simultaneous overlap
+attempts produce exactly one success. User workflows cover assigned-GPU booking,
+privacy-safe schedules, cancellation, and retained history. Admins may exceed only the
+normal duration/horizon with a required reason, and must explicitly cancel an existing
+booking with a second reason before replacing it. The M5 PostgreSQL smoke test covers
+concurrency, eligibility, boundaries, duration, horizon, inactive resources, privacy,
+auditing, override, and cancellation behavior.
 
 ---
 
@@ -691,13 +704,11 @@ concrete while leaving room to make a deliberate choice before the feature is bu
 - [x] **Before Milestone 4 — process privacy:** collect executable names only, never
       command arguments or environment variables. Normal users see only processes
       attributed to their own Linux username; admins see all attributed processes.
-- [ ] **Before Milestone 5 — timezone:** confirm the default display timezone.
-      Provisional default: store UTC and display in `Asia/Kuala_Lumpur`, with the zone
-      stated explicitly in reservation views.
-- [ ] **Before Milestone 5 — admin override:** choose whether an override may cancel an
-      existing reservation or only exceed normal duration/horizon rules. Provisional
-      default: both are possible, but cancellation requires an explicit confirmation,
-      reason, and audit event.
+- [x] **Before Milestone 5 — timezone:** store UTC and display in
+      `Asia/Kuala_Lumpur`, with the zone stated explicitly in reservation views.
+- [x] **Before Milestone 5 — admin override:** an override may exceed duration/horizon
+      rules but never overlap. Cancelling another booking is a separate explicit action
+      requiring a reason and audit event before a replacement can be created.
 - [ ] **Before Milestone 7 — forced termination:** confirm whether `SIGKILL` escalation
       is enabled by default or requires a second admin action. Provisional default:
       require an explicit second action after `SIGTERM` fails.
@@ -710,7 +721,7 @@ concrete while leaving room to make a deliberate choice before the feature is bu
 - [x] Milestone 2.1 complete
 - [x] Milestone 3 complete
 - [x] Milestone 4 complete (real NVIDIA hardware smoke pending availability)
-- [ ] Milestone 5 complete
+- [x] Milestone 5 complete
 - [ ] Milestone 6 complete
 - [ ] Milestone 7 complete
 - [ ] Milestone 8 complete

@@ -96,8 +96,11 @@ export function nextHalfHour(date = new Date()): Date {
 export function formatReservationTime(date: Date, timeZone = reservationTimeZone): string {
   return new Intl.DateTimeFormat('en-MY', {
     timeZone,
-    dateStyle: 'medium',
-    timeStyle: 'short',
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
     timeZoneName: 'short'
   }).format(date);
 }

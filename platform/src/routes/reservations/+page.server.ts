@@ -49,29 +49,31 @@ export const load: PageServerLoad = async ({ locals }) => {
         .orderBy(asc(gpus.localIndex))
     : [];
 
-  const schedule = assignment
-    ? await getDatabase()
-        .select({
-          id: reservations.id,
-          gpuId: gpus.id,
-          gpuIndex: gpus.localIndex,
-          gpuModel: gpus.model,
-          userId: reservations.userId,
-          startAt: reservations.startAt,
-          endAt: reservations.endAt,
-          isAdminOverride: reservations.isAdminOverride
-        })
-        .from(reservations)
-        .innerJoin(gpus, eq(reservations.gpuId, gpus.id))
-        .where(
-          and(
-            eq(gpus.workstationId, assignment.workstationId),
-            eq(reservations.status, 'active'),
-            gt(reservations.endAt, now)
-          )
-        )
-        .orderBy(asc(reservations.startAt), asc(gpus.localIndex))
-    : [];
+  const schedule = await getDatabase()
+    .select({
+      id: reservations.id,
+      gpuId: gpus.id,
+      gpuIndex: gpus.localIndex,
+      gpuModel: gpus.model,
+      workstationName: workstations.name,
+      userId: reservations.userId,
+      startAt: reservations.startAt,
+      endAt: reservations.endAt,
+      isAdminOverride: reservations.isAdminOverride
+    })
+    .from(reservations)
+    .innerJoin(gpus, eq(reservations.gpuId, gpus.id))
+    .innerJoin(workstations, eq(gpus.workstationId, workstations.id))
+    .where(
+      and(
+        assignment
+          ? or(eq(gpus.workstationId, assignment.workstationId), eq(reservations.userId, user.id))
+          : eq(reservations.userId, user.id),
+        eq(reservations.status, 'active'),
+        gt(reservations.endAt, now)
+      )
+    )
+    .orderBy(asc(reservations.startAt), asc(gpus.localIndex));
 
   const history = await getDatabase()
     .select({

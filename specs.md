@@ -351,6 +351,11 @@ Reservations should support:
 - cancellation
 - admin override
 
+Store reservation instants in UTC. In v1, reservation forms and schedules display
+times explicitly in `Asia/Kuala_Lumpur`. Local date-time input must be converted to a
+unique real instant; nonexistent or ambiguous daylight-saving local times must be
+rejected rather than guessed if another display timezone is introduced later.
+
 Normal reservations should have a maximum duration of approximately **6 hours**.
 
 The UI may suggest shorter defaults such as 2 hours.
@@ -359,7 +364,23 @@ Users should only be able to reserve GPUs located on their assigned workstation.
 
 Two reservations for the same GPU must never overlap.
 
+Treat reservation windows as half-open ranges: the start is included and the end is
+excluded. This allows one reservation to begin exactly when another ends. Enforce
+non-overlap with a PostgreSQL database constraint so concurrent requests cannot bypass
+the guarantee.
+
 Admins may override normal booking rules where necessary.
+
+An admin override may exceed only the normal six-hour duration or seven-day horizon.
+It still requires an active user, that user's assigned workstation, an active physical
+GPU, 30-minute boundaries, a future start, and no overlap. The administrator must give
+a reason, and both the reason and action must be audited. Cancelling another user's
+reservation is a separate explicit admin action that also requires a reason; the admin
+must cancel an existing booking before creating a replacement.
+
+Normal users may see that another slot is reserved, but not the other user's identity.
+Cancelled and elapsed reservations remain available as history for their owner and for
+administrators.
 
 A reasonable initial advance booking horizon is roughly 7 days.
 

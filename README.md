@@ -10,7 +10,7 @@ implementation plan.
 
 ## Current status
 
-Milestone 4 is complete. The repository currently provides:
+Milestone 5 is complete. The repository currently provides:
 
 - SvelteKit and TypeScript platform
 - PostgreSQL with Drizzle migrations
@@ -37,9 +37,14 @@ Milestone 4 is complete. The repository currently provides:
 - 24-hour bounded observation retention and explicit stale-telemetry presentation
 - auto-refreshing administrator and per-user GPU views with process visibility isolation
 - free, busy, and multi-process simulation scenarios for GPU-free development
+- per-GPU reservations with 30-minute boundaries, six-hour duration, and seven-day horizon rules
+- PostgreSQL exclusion constraints that prevent concurrent overlapping reservations
+- privacy-safe user schedules, owner cancellation, and retained booking history
+- explicit, reasoned, and audited administrator overrides and cancellations
 
-GPU reservations are not implemented yet. Real NVIDIA discovery is implemented but its
-hardware smoke test remains conditional on access to an NVIDIA Ubuntu workstation.
+Reservation/usage correlation and conflict workflows are not implemented yet. Real
+NVIDIA discovery is implemented, but its hardware smoke test remains conditional on
+access to an NVIDIA Ubuntu workstation.
 
 ## Requirements
 
@@ -161,6 +166,17 @@ docker compose -f docker-compose.dev.yml exec \
   -e ADMIN_USERNAME=admin -e ADMIN_PASSWORD='your-admin-password' \
   platform npm run test:m4-smoke
 ```
+
+Run the Milestone 5 reservation and concurrency workflow:
+
+```bash
+docker compose -f docker-compose.dev.yml exec \
+  -e ADMIN_USERNAME=admin -e ADMIN_PASSWORD='your-admin-password' \
+  platform npm run test:m5-smoke
+```
+
+The reservations migration installs PostgreSQL's `btree_gist` extension so the
+database can enforce non-overlapping active time ranges.
 
 ## UI component workflow
 

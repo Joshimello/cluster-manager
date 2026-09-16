@@ -144,7 +144,9 @@
           <Table.Body>
             {#each data.schedule as reservation (reservation.id)}
               <Table.Row>
-                <Table.Cell class="pl-6 font-medium">GPU {reservation.gpuIndex}</Table.Cell>
+                <Table.Cell class="pl-6 font-medium"
+                  >{reservation.workstationName} · GPU {reservation.gpuIndex}</Table.Cell
+                >
                 <Table.Cell>{reservation.owner}</Table.Cell>
                 <Table.Cell>{dateTime.format(reservation.startAt)}</Table.Cell>
                 <Table.Cell>{dateTime.format(reservation.endAt)}</Table.Cell>

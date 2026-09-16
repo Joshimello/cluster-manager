@@ -14,7 +14,13 @@
     ) {
       return 'destructive';
     }
-    if (value === 'online' || value === 'active' || value === 'enrolled' || value === 'applied')
+    if (
+      value === 'online' ||
+      value === 'active' ||
+      value === 'enrolled' ||
+      value === 'applied' ||
+      value === 'current'
+    )
       return 'default';
     return 'secondary';
   };
