@@ -13,7 +13,30 @@ const report = {
     cpu: { logicalCores: 8, model: 'Simulated CPU', utilizationPercent: 25 },
     memory: { totalBytes: 1000, usedBytes: 400, utilizationPercent: 40 },
     storage: { path: '/', totalBytes: 2000, usedBytes: 500, utilizationPercent: 25 },
-    sessions: [{ username: 'ada', terminal: 'pts/0' }]
+    sessions: [{ username: 'ada', terminal: 'pts/0' }],
+    gpuStatus: 'available',
+    gpus: [
+      {
+        uuid: 'GPU-abc',
+        index: 0,
+        model: 'NVIDIA RTX PRO 6000',
+        utilizationPercent: 72,
+        memoryUsedBytes: 40_000,
+        memoryTotalBytes: 96_000,
+        temperatureC: 67
+      }
+    ],
+    gpuProcesses: [
+      {
+        gpuUuid: 'GPU-abc',
+        pid: 4102,
+        uid: 1001,
+        username: 'ada',
+        command: 'python',
+        memoryUsedBytes: 40_000,
+        processStartTicks: 812345
+      }
+    ]
   }
 };
 
@@ -29,6 +52,18 @@ describe('parseHeartbeatReport', () => {
         inventory: {
           ...report.inventory,
           memory: { totalBytes: 10, usedBytes: 20, utilizationPercent: 200 }
+        }
+      })
+    ).toBeNull();
+  });
+
+  it('rejects processes for an unreported GPU', () => {
+    expect(
+      parseHeartbeatReport({
+        ...report,
+        inventory: {
+          ...report.inventory,
+          gpuProcesses: [{ ...report.inventory.gpuProcesses[0], gpuUuid: 'GPU-other' }]
         }
       })
     ).toBeNull();

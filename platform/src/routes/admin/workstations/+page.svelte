@@ -117,6 +117,7 @@
               <StatusBadge status={workstation.connectionState} />
               <StatusBadge status={workstation.status} />
               <StatusBadge status={workstation.enrolled ? 'enrolled' : 'not enrolled'} />
+              <Badge variant="outline">{workstation.gpuCount} GPUs</Badge>
             </div>
 
             <div class="flex flex-wrap gap-2 lg:justify-end">

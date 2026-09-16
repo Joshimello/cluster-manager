@@ -2,6 +2,7 @@ import { relations, sql } from 'drizzle-orm';
 import {
   boolean,
   bigint,
+  doublePrecision,
   index,
   integer,
   jsonb,
@@ -85,6 +86,7 @@ export type WorkstationInventory = {
     terminal: string;
     remoteHost?: string;
   }>;
+  gpuStatus: 'available' | 'unavailable';
   operatingSystem: string;
 };
 
@@ -148,6 +150,73 @@ export const workstationAssignments = pgTable(
   ]
 );
 
+export const gpus = pgTable(
+  'gpus',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    workstationId: uuid('workstation_id')
+      .notNull()
+      .references(() => workstations.id, { onDelete: 'cascade' }),
+    gpuUuid: varchar('gpu_uuid', { length: 128 }).notNull(),
+    localIndex: integer('local_index').notNull(),
+    model: varchar('model', { length: 255 }).notNull(),
+    active: boolean('active').notNull().default(true),
+    lastObservedAt: timestamp('last_observed_at', { withTimezone: true }).notNull(),
+    utilizationPercent: doublePrecision('utilization_percent').notNull(),
+    memoryUsedBytes: bigint('memory_used_bytes', { mode: 'number' }).notNull(),
+    memoryTotalBytes: bigint('memory_total_bytes', { mode: 'number' }).notNull(),
+    temperatureC: doublePrecision('temperature_c'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => [
+    uniqueIndex('gpus_workstation_uuid_unique').on(table.workstationId, table.gpuUuid),
+    index('gpus_workstation_active_index').on(table.workstationId, table.active),
+    index('gpus_last_observed_at_index').on(table.lastObservedAt)
+  ]
+);
+
+export const gpuObservations = pgTable(
+  'gpu_observations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    gpuId: uuid('gpu_id')
+      .notNull()
+      .references(() => gpus.id, { onDelete: 'cascade' }),
+    observedAt: timestamp('observed_at', { withTimezone: true }).notNull(),
+    utilizationPercent: doublePrecision('utilization_percent').notNull(),
+    memoryUsedBytes: bigint('memory_used_bytes', { mode: 'number' }).notNull(),
+    memoryTotalBytes: bigint('memory_total_bytes', { mode: 'number' }).notNull(),
+    temperatureC: doublePrecision('temperature_c'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => [
+    uniqueIndex('gpu_observations_gpu_time_unique').on(table.gpuId, table.observedAt),
+    index('gpu_observations_observed_at_index').on(table.observedAt)
+  ]
+);
+
+export const gpuProcessObservations = pgTable(
+  'gpu_process_observations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    observationId: uuid('observation_id')
+      .notNull()
+      .references(() => gpuObservations.id, { onDelete: 'cascade' }),
+    pid: integer('pid').notNull(),
+    uid: integer('uid').notNull(),
+    username: varchar('username', { length: 64 }).notNull(),
+    command: varchar('command', { length: 128 }).notNull(),
+    memoryUsedBytes: bigint('memory_used_bytes', { mode: 'number' }).notNull(),
+    processStartTicks: bigint('process_start_ticks', { mode: 'number' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => [
+    index('gpu_process_observations_observation_index').on(table.observationId),
+    index('gpu_process_observations_username_index').on(table.username)
+  ]
+);
+
 export const auditEvents = pgTable(
   'audit_events',
   {
@@ -172,7 +241,25 @@ export const usersRelations = relations(users, ({ many }) => ({
 }));
 
 export const workstationsRelations = relations(workstations, ({ many }) => ({
-  assignments: many(workstationAssignments)
+  assignments: many(workstationAssignments),
+  gpus: many(gpus)
+}));
+
+export const gpusRelations = relations(gpus, ({ one, many }) => ({
+  workstation: one(workstations, { fields: [gpus.workstationId], references: [workstations.id] }),
+  observations: many(gpuObservations)
+}));
+
+export const gpuObservationsRelations = relations(gpuObservations, ({ one, many }) => ({
+  gpu: one(gpus, { fields: [gpuObservations.gpuId], references: [gpus.id] }),
+  processes: many(gpuProcessObservations)
+}));
+
+export const gpuProcessObservationsRelations = relations(gpuProcessObservations, ({ one }) => ({
+  observation: one(gpuObservations, {
+    fields: [gpuProcessObservations.observationId],
+    references: [gpuObservations.id]
+  })
 }));
 
 export const workstationAssignmentsRelations = relations(workstationAssignments, ({ one }) => ({
@@ -205,3 +292,6 @@ export type WorkstationStatus = Workstation['status'];
 export type WorkstationAssignment = typeof workstationAssignments.$inferSelect;
 export type AssignmentStatus = WorkstationAssignment['status'];
 export type ProvisioningStatus = WorkstationAssignment['provisioningStatus'];
+export type Gpu = typeof gpus.$inferSelect;
+export type GpuObservation = typeof gpuObservations.$inferSelect;
+export type GpuProcessObservation = typeof gpuProcessObservations.$inferSelect;

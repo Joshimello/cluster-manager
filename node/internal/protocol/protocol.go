@@ -23,12 +23,33 @@ type Storage struct {
 	UsedBytes          uint64  `json:"usedBytes"`
 	UtilizationPercent float64 `json:"utilizationPercent"`
 }
+type GPU struct {
+	UUID               string   `json:"uuid"`
+	Index              int      `json:"index"`
+	Model              string   `json:"model"`
+	UtilizationPercent float64  `json:"utilizationPercent"`
+	MemoryUsedBytes    uint64   `json:"memoryUsedBytes"`
+	MemoryTotalBytes   uint64   `json:"memoryTotalBytes"`
+	TemperatureC       *float64 `json:"temperatureC,omitempty"`
+}
+type GPUProcess struct {
+	GPUUUID           string `json:"gpuUuid"`
+	PID               int    `json:"pid"`
+	UID               uint32 `json:"uid"`
+	Username          string `json:"username"`
+	Command           string `json:"command"`
+	MemoryUsedBytes   uint64 `json:"memoryUsedBytes"`
+	ProcessStartTicks uint64 `json:"processStartTicks,omitempty"`
+}
 type Inventory struct {
-	OperatingSystem string    `json:"operatingSystem"`
-	CPU             CPU       `json:"cpu"`
-	Memory          Memory    `json:"memory"`
-	Storage         Storage   `json:"storage"`
-	Sessions        []Session `json:"sessions"`
+	OperatingSystem string       `json:"operatingSystem"`
+	CPU             CPU          `json:"cpu"`
+	Memory          Memory       `json:"memory"`
+	Storage         Storage      `json:"storage"`
+	Sessions        []Session    `json:"sessions"`
+	GPUStatus       string       `json:"gpuStatus"`
+	GPUs            []GPU        `json:"gpus"`
+	GPUProcesses    []GPUProcess `json:"gpuProcesses"`
 }
 type Heartbeat struct {
 	ObservedAt    time.Time `json:"observedAt"`

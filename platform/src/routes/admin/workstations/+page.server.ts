@@ -4,7 +4,7 @@ import { fail } from '@sveltejs/kit';
 import { recordAudit } from '$lib/server/audit';
 import { requireAdmin } from '$lib/server/auth/guards';
 import { getDatabase } from '$lib/server/db';
-import { workstations, type WorkstationStatus } from '$lib/server/db/schema';
+import { gpus, workstations, type WorkstationStatus } from '$lib/server/db/schema';
 import {
   isWorkstationId,
   issueEnrollmentToken,
@@ -28,13 +28,24 @@ function uniqueViolation(error: unknown): boolean {
 
 export const load: PageServerLoad = async ({ locals }) => {
   requireAdmin(locals);
-  const rows = await getDatabase().select().from(workstations).orderBy(asc(workstations.name));
+  const [rows, activeGpus] = await Promise.all([
+    getDatabase().select().from(workstations).orderBy(asc(workstations.name)),
+    getDatabase()
+      .select({ workstationId: gpus.workstationId })
+      .from(gpus)
+      .where(eq(gpus.active, true))
+  ]);
+  const gpuCounts = new Map<string, number>();
+  for (const gpu of activeGpus) {
+    gpuCounts.set(gpu.workstationId, (gpuCounts.get(gpu.workstationId) ?? 0) + 1);
+  }
   const now = new Date();
   return {
     workstations: rows.map((row) => {
       return {
         ...presentWorkstation(row),
-        connectionState: deriveConnectionState(row.lastHeartbeatAt, now)
+        connectionState: deriveConnectionState(row.lastHeartbeatAt, now),
+        gpuCount: gpuCounts.get(row.id) ?? 0
       };
     })
   };

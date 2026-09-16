@@ -12,6 +12,24 @@ export type HeartbeatReport = {
   bootId: string;
   uptimeSeconds: number;
   inventory: WorkstationInventory;
+  gpus: Array<{
+    uuid: string;
+    index: number;
+    model: string;
+    utilizationPercent: number;
+    memoryUsedBytes: number;
+    memoryTotalBytes: number;
+    temperatureC: number | null;
+  }>;
+  gpuProcesses: Array<{
+    gpuUuid: string;
+    pid: number;
+    uid: number;
+    username: string;
+    command: string;
+    memoryUsedBytes: number;
+    processStartTicks: number | null;
+  }>;
 };
 
 function object(value: unknown): Record<string, unknown> | null {
@@ -46,6 +64,8 @@ export function parseHeartbeatReport(value: unknown): HeartbeatReport | null {
   const memory = object(inventory?.memory);
   const storage = object(inventory?.storage);
   const sessions = inventory?.sessions;
+  const gpus = inventory?.gpus;
+  const gpuProcesses = inventory?.gpuProcesses;
   const observedAtText = text(root?.observedAt, 64);
   const observedAt = observedAtText ? new Date(observedAtText) : null;
 
@@ -64,6 +84,7 @@ export function parseHeartbeatReport(value: unknown): HeartbeatReport | null {
   const storageTotal = bytes(storage?.totalBytes);
   const storageUsed = bytes(storage?.usedBytes);
   const storageUtilization = utilization(storage?.utilizationPercent);
+  const gpuStatus = inventory?.gpuStatus;
 
   if (
     !observedAt ||
@@ -86,7 +107,12 @@ export function parseHeartbeatReport(value: unknown): HeartbeatReport | null {
     storageUsed > storageTotal ||
     storageUtilization === null ||
     !Array.isArray(sessions) ||
-    sessions.length > 512
+    sessions.length > 512 ||
+    (gpuStatus !== 'available' && gpuStatus !== 'unavailable') ||
+    !Array.isArray(gpus) ||
+    gpus.length > 32 ||
+    !Array.isArray(gpuProcesses) ||
+    gpuProcesses.length > 4096
   ) {
     return null;
   }
@@ -100,6 +126,86 @@ export function parseHeartbeatReport(value: unknown): HeartbeatReport | null {
     const remoteHost = remoteHostValue === undefined ? undefined : text(remoteHostValue, 255);
     if (!username || !terminal || (remoteHostValue !== undefined && !remoteHost)) return null;
     parsedSessions.push({ username, terminal, ...(remoteHost ? { remoteHost } : {}) });
+  }
+
+  const parsedGpus: HeartbeatReport['gpus'] = [];
+  const gpuUuids = new Set<string>();
+  for (const candidate of gpus) {
+    const gpu = object(candidate);
+    const uuid = text(gpu?.uuid, 128);
+    const index = number(gpu?.index, 0, 31);
+    const model = text(gpu?.model, 255);
+    const utilizationPercent = utilization(gpu?.utilizationPercent);
+    const memoryUsedBytes = bytes(gpu?.memoryUsedBytes);
+    const memoryTotalBytes = bytes(gpu?.memoryTotalBytes);
+    const temperatureValue = gpu?.temperatureC;
+    const temperatureC =
+      temperatureValue === undefined || temperatureValue === null
+        ? null
+        : number(temperatureValue, -100, 250);
+    if (
+      !uuid ||
+      gpuUuids.has(uuid) ||
+      index === null ||
+      !Number.isInteger(index) ||
+      !model ||
+      utilizationPercent === null ||
+      memoryUsedBytes === null ||
+      memoryTotalBytes === null ||
+      memoryTotalBytes === 0 ||
+      memoryUsedBytes > memoryTotalBytes ||
+      (temperatureValue !== undefined && temperatureValue !== null && temperatureC === null)
+    ) {
+      return null;
+    }
+    gpuUuids.add(uuid);
+    parsedGpus.push({
+      uuid,
+      index,
+      model,
+      utilizationPercent,
+      memoryUsedBytes,
+      memoryTotalBytes,
+      temperatureC
+    });
+  }
+  if (gpuStatus === 'unavailable' && parsedGpus.length > 0) return null;
+
+  const parsedProcesses: HeartbeatReport['gpuProcesses'] = [];
+  for (const candidate of gpuProcesses) {
+    const process = object(candidate);
+    const gpuUuid = text(process?.gpuUuid, 128);
+    const pid = number(process?.pid, 1, 2_147_483_647);
+    const uid = number(process?.uid, 0, 2_147_483_647);
+    const username = text(process?.username, 64);
+    const command = text(process?.command, 128);
+    const memoryUsedBytes = bytes(process?.memoryUsedBytes);
+    const startValue = process?.processStartTicks;
+    const processStartTicks =
+      startValue === undefined || startValue === null ? null : number(startValue, 0);
+    if (
+      !gpuUuid ||
+      !gpuUuids.has(gpuUuid) ||
+      pid === null ||
+      !Number.isInteger(pid) ||
+      uid === null ||
+      !Number.isInteger(uid) ||
+      !username ||
+      !command ||
+      memoryUsedBytes === null ||
+      (startValue !== undefined && startValue !== null && processStartTicks === null)
+    ) {
+      return null;
+    }
+    parsedProcesses.push({
+      gpuUuid,
+      pid,
+      uid,
+      username,
+      command,
+      memoryUsedBytes,
+      processStartTicks
+    });
   }
 
   return {
@@ -122,8 +228,11 @@ export function parseHeartbeatReport(value: unknown): HeartbeatReport | null {
         usedBytes: storageUsed,
         utilizationPercent: storageUtilization
       },
-      sessions: parsedSessions
-    }
+      sessions: parsedSessions,
+      gpuStatus
+    },
+    gpus: parsedGpus,
+    gpuProcesses: parsedProcesses
   };
 }
 

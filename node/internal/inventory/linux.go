@@ -46,7 +46,8 @@ func (s *System) Collect(ctx context.Context, version string) (protocol.Heartbea
 	if err != nil {
 		return protocol.Heartbeat{}, err
 	}
-	return protocol.Heartbeat{ObservedAt: time.Now().UTC(), NodeVersion: version, Hostname: hostname, BootID: bootID, UptimeSeconds: uptime, Inventory: protocol.Inventory{OperatingSystem: operatingSystem(), CPU: protocol.CPU{LogicalCores: runtime.NumCPU(), Model: cpuModel(), UtilizationPercent: cpuPercent}, Memory: memory, Storage: storage, Sessions: sessions(ctx)}}, nil
+	gpuStatus, gpus, gpuProcesses := collectNVIDIA(ctx)
+	return protocol.Heartbeat{ObservedAt: time.Now().UTC(), NodeVersion: version, Hostname: hostname, BootID: bootID, UptimeSeconds: uptime, Inventory: protocol.Inventory{OperatingSystem: operatingSystem(), CPU: protocol.CPU{LogicalCores: runtime.NumCPU(), Model: cpuModel(), UtilizationPercent: cpuPercent}, Memory: memory, Storage: storage, Sessions: sessions(ctx), GPUStatus: gpuStatus, GPUs: gpus, GPUProcesses: gpuProcesses}}, nil
 }
 
 func firstField(path string) (string, error) {

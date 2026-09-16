@@ -2,6 +2,7 @@ package inventory
 
 import (
 	"context"
+	"sync/atomic"
 	"time"
 
 	"github.com/Joshimello/cluster-manager/node/internal/protocol"
@@ -11,6 +12,7 @@ type Simulated struct {
 	Name      string
 	Scenario  string
 	StartedAt time.Time
+	samples   atomic.Uint64
 }
 
 func NewSimulated(name, scenario string) *Simulated {
@@ -34,6 +36,7 @@ func (s *Simulated) Collect(_ context.Context, version string) (protocol.Heartbe
 	}
 	memoryTotal := uint64(64 * 1024 * 1024 * 1024)
 	storageTotal := uint64(2 * 1024 * 1024 * 1024 * 1024)
+	gpus, gpuProcesses := s.gpuInventory()
 	return protocol.Heartbeat{
 		ObservedAt: time.Now().UTC(), NodeVersion: version, Hostname: s.Name, BootID: "simulation-" + s.Name,
 		UptimeSeconds: uint64(time.Since(s.StartedAt).Seconds()) + 3600,
@@ -43,6 +46,39 @@ func (s *Simulated) Collect(_ context.Context, version string) (protocol.Heartbe
 			Memory:          protocol.Memory{TotalBytes: memoryTotal, UsedBytes: memoryTotal * 43 / 100, UtilizationPercent: 43},
 			Storage:         protocol.Storage{Path: "/", TotalBytes: storageTotal, UsedBytes: uint64(float64(storageTotal) * disk / 100), UtilizationPercent: disk},
 			Sessions:        sessions,
+			GPUStatus:       "available",
+			GPUs:            gpus,
+			GPUProcesses:    gpuProcesses,
 		},
 	}, nil
+}
+
+func (s *Simulated) gpuInventory() ([]protocol.GPU, []protocol.GPUProcess) {
+	sample := s.samples.Add(1)
+	temperature0, temperature1 := 41.0, 39.0
+	gpus := []protocol.GPU{
+		{UUID: "GPU-" + s.Name + "-0000", Index: 0, Model: "NVIDIA RTX PRO 6000 Blackwell", MemoryTotalBytes: 96_000_000_000, TemperatureC: &temperature0},
+		{UUID: "GPU-" + s.Name + "-0001", Index: 1, Model: "NVIDIA RTX PRO 6000 Blackwell", MemoryTotalBytes: 96_000_000_000, TemperatureC: &temperature1},
+	}
+	processes := []protocol.GPUProcess{}
+	busy := s.Scenario == "busy-gpus" || s.Scenario == "multi-process" || s.Scenario == "multi-user" || (s.Scenario == "normal" && sample%2 == 0)
+	if !busy || s.Scenario == "free-gpus" {
+		return gpus, processes
+	}
+	gpus[0].UtilizationPercent = 72 + float64(sample%12)
+	gpus[0].MemoryUsedBytes = 38_000_000_000
+	temperature0 = 67
+	gpus[0].TemperatureC = &temperature0
+	processes = append(processes, protocol.GPUProcess{GPUUUID: gpus[0].UUID, PID: 4102, UID: 1001, Username: "researcher", Command: "python", MemoryUsedBytes: 38_000_000_000, ProcessStartTicks: 812345})
+	if s.Scenario == "multi-process" || s.Scenario == "multi-user" {
+		gpus[1].UtilizationPercent = 54 + float64(sample%10)
+		gpus[1].MemoryUsedBytes = 24_000_000_000
+		temperature1 = 61
+		gpus[1].TemperatureC = &temperature1
+		processes = append(processes,
+			protocol.GPUProcess{GPUUUID: gpus[1].UUID, PID: 5210, UID: 1002, Username: "analyst", Command: "python", MemoryUsedBytes: 18_000_000_000, ProcessStartTicks: 923456},
+			protocol.GPUProcess{GPUUUID: gpus[1].UUID, PID: 5277, UID: 1002, Username: "analyst", Command: "llama-server", MemoryUsedBytes: 6_000_000_000, ProcessStartTicks: 923999},
+		)
+	}
+	return gpus, processes
 }

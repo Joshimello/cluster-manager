@@ -3,6 +3,7 @@ import { and, eq } from 'drizzle-orm';
 import { requireReadyUser } from '$lib/server/auth/guards';
 import { getDatabase } from '$lib/server/db';
 import { workstationAssignments, workstations } from '$lib/server/db/schema';
+import { loadWorkstationGpus } from '$lib/server/nodes/gpu-monitoring';
 
 import type { PageServerLoad } from './$types';
 
@@ -15,6 +16,7 @@ export const load: PageServerLoad = async ({ locals }) => {
       name: workstations.name,
       displayName: workstations.displayName,
       hostname: workstations.hostname,
+      inventory: workstations.inventory,
       provisioningStatus: workstationAssignments.provisioningStatus,
       provisioningMessage: workstationAssignments.provisioningMessage,
       desiredGeneration: workstationAssignments.desiredGeneration,
@@ -28,5 +30,9 @@ export const load: PageServerLoad = async ({ locals }) => {
     )
     .limit(1);
 
-  return { user, assignment: assignment ?? null };
+  return {
+    user,
+    assignment: assignment ?? null,
+    gpus: assignment ? await loadWorkstationGpus(assignment.workstationId, user.username) : []
+  };
 };

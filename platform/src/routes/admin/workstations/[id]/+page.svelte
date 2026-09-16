@@ -4,6 +4,7 @@
   import DatabaseIcon from '@lucide/svelte/icons/database';
   import MemoryStickIcon from '@lucide/svelte/icons/memory-stick';
   import { resolve } from '$app/paths';
+  import GpuMonitor from '$lib/components/gpu-monitor.svelte';
   import PageHeader from '$lib/components/page-header.svelte';
   import StatusBadge from '$lib/components/status-badge.svelte';
   import { Button } from '$lib/components/ui/button/index.js';
@@ -118,6 +119,18 @@
           </p>
         </Card.Content>
       </Card.Root>
+    </section>
+
+    <section class="grid gap-3" aria-labelledby="gpu-monitoring-heading">
+      <div>
+        <h2 id="gpu-monitoring-heading" class="text-xl font-semibold tracking-tight">
+          GPU monitoring
+        </h2>
+        <p class="text-muted-foreground text-sm">
+          Current NVIDIA telemetry refreshes every 10 seconds.
+        </p>
+      </div>
+      <GpuMonitor gpus={data.gpus} gpuStatus={ws.inventory.gpuStatus} />
     </section>
 
     <Card.Root>

@@ -4,6 +4,7 @@
   import TerminalIcon from '@lucide/svelte/icons/terminal';
   import UserRoundIcon from '@lucide/svelte/icons/user-round';
   import { resolve } from '$app/paths';
+  import GpuMonitor from '$lib/components/gpu-monitor.svelte';
   import PageHeader from '$lib/components/page-header.svelte';
   import StatusBadge from '$lib/components/status-badge.svelte';
   import { Button } from '$lib/components/ui/button/index.js';
@@ -96,6 +97,23 @@
           {/if}
         </Card.Content>
       </Card.Root>
+    </section>
+
+    <section class="grid gap-3" aria-labelledby="gpu-monitoring-heading">
+      <div>
+        <h2 id="gpu-monitoring-heading" class="text-xl font-semibold tracking-tight">
+          GPU availability
+        </h2>
+        <p class="text-muted-foreground text-sm">
+          Current telemetry for your assigned workstation. Process details are limited to your Linux
+          account.
+        </p>
+      </div>
+      <GpuMonitor
+        gpus={data.gpus}
+        gpuStatus={data.assignment.inventory?.gpuStatus ?? 'unavailable'}
+        processScope="user"
+      />
     </section>
   {:else}
     <Card.Root class="border-dashed" size="sm">

@@ -1,8 +1,8 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray, lt } from 'drizzle-orm';
 import { json } from '@sveltejs/kit';
 
 import { getDatabase } from '$lib/server/db';
-import { workstations } from '$lib/server/db/schema';
+import { gpuObservations, gpuProcessObservations, gpus, workstations } from '$lib/server/db/schema';
 import { hashNodeSecret, readBearerCredential } from '$lib/server/nodes/credentials';
 import { parseHeartbeatReport } from '$lib/server/nodes/heartbeat';
 
@@ -60,6 +60,93 @@ export const POST: RequestHandler = async ({ request }) => {
           : {})
       })
       .where(eq(workstations.id, workstation.id));
+
+    if (inventoryAccepted) {
+      if (report.inventory.gpuStatus === 'available') {
+        await transaction
+          .update(gpus)
+          .set({ active: false, updatedAt: receivedAt })
+          .where(eq(gpus.workstationId, workstation.id));
+      }
+
+      for (const gpu of report.gpus) {
+        const [storedGpu] = await transaction
+          .insert(gpus)
+          .values({
+            workstationId: workstation.id,
+            gpuUuid: gpu.uuid,
+            localIndex: gpu.index,
+            model: gpu.model,
+            active: true,
+            lastObservedAt: report.observedAt,
+            utilizationPercent: gpu.utilizationPercent,
+            memoryUsedBytes: gpu.memoryUsedBytes,
+            memoryTotalBytes: gpu.memoryTotalBytes,
+            temperatureC: gpu.temperatureC,
+            updatedAt: receivedAt
+          })
+          .onConflictDoUpdate({
+            target: [gpus.workstationId, gpus.gpuUuid],
+            set: {
+              localIndex: gpu.index,
+              model: gpu.model,
+              active: true,
+              lastObservedAt: report.observedAt,
+              utilizationPercent: gpu.utilizationPercent,
+              memoryUsedBytes: gpu.memoryUsedBytes,
+              memoryTotalBytes: gpu.memoryTotalBytes,
+              temperatureC: gpu.temperatureC,
+              updatedAt: receivedAt
+            }
+          })
+          .returning({ id: gpus.id });
+
+        const [observation] = await transaction
+          .insert(gpuObservations)
+          .values({
+            gpuId: storedGpu.id,
+            observedAt: report.observedAt,
+            utilizationPercent: gpu.utilizationPercent,
+            memoryUsedBytes: gpu.memoryUsedBytes,
+            memoryTotalBytes: gpu.memoryTotalBytes,
+            temperatureC: gpu.temperatureC
+          })
+          .onConflictDoNothing()
+          .returning({ id: gpuObservations.id });
+
+        if (observation) {
+          const processes = report.gpuProcesses
+            .filter((process) => process.gpuUuid === gpu.uuid)
+            .map((process) => ({
+              observationId: observation.id,
+              pid: process.pid,
+              uid: process.uid,
+              username: process.username,
+              command: process.command,
+              memoryUsedBytes: process.memoryUsedBytes,
+              processStartTicks: process.processStartTicks
+            }));
+          if (processes.length > 0)
+            await transaction.insert(gpuProcessObservations).values(processes);
+        }
+      }
+
+      const workstationGpus = await transaction
+        .select({ id: gpus.id })
+        .from(gpus)
+        .where(eq(gpus.workstationId, workstation.id));
+      if (workstationGpus.length > 0) {
+        await transaction.delete(gpuObservations).where(
+          and(
+            inArray(
+              gpuObservations.gpuId,
+              workstationGpus.map((gpu) => gpu.id)
+            ),
+            lt(gpuObservations.observedAt, new Date(receivedAt.getTime() - 24 * 60 * 60_000))
+          )
+        );
+      }
+    }
 
     return { inventoryAccepted };
   });
