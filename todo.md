@@ -45,31 +45,39 @@ small, reliable foundation without implementing product features prematurely.
 
 ### Build
 
-- [ ] Create the minimal monorepo layout:
-  - [ ] `platform/` SvelteKit TypeScript application
-  - [ ] `node/` Go module with a minimal executable
-  - [ ] root Compose files, `.env.example`, `Makefile`, and `README.md`
-- [ ] Configure strict TypeScript, formatting, linting, and unit-test commands.
-- [ ] Add PostgreSQL and Drizzle ORM to the platform.
-- [ ] Add the initial migration mechanism and a small platform metadata/health query.
-- [ ] Add `/health` readiness behavior that verifies database connectivity.
-- [ ] Add a minimal web page showing that Cluster Manager is running.
-- [ ] Add development and production-oriented platform Dockerfiles.
-- [ ] Create `docker-compose.dev.yml` for the platform and PostgreSQL.
-- [ ] Create the initial production `docker-compose.yml` for the platform and
+- [x] Create the minimal monorepo layout:
+  - [x] `platform/` SvelteKit TypeScript application
+  - [x] `node/` Go module with a minimal executable
+  - [x] root Compose files, `.env.example`, `Makefile`, and `README.md`
+- [x] Configure strict TypeScript, formatting, linting, and unit-test commands.
+- [x] Add PostgreSQL and Drizzle ORM to the platform.
+- [x] Add the initial migration mechanism and a small platform metadata/health query.
+- [x] Add `/health` readiness behavior that verifies database connectivity.
+- [x] Add a minimal web page showing that Cluster Manager is running.
+- [x] Add development and production-oriented platform Dockerfiles.
+- [x] Create `docker-compose.dev.yml` for the platform and PostgreSQL.
+- [x] Create the initial production `docker-compose.yml` for the platform and
       PostgreSQL without adding unnecessary services.
-- [ ] Add health checks and predictable startup ordering.
-- [ ] Document local commands for startup, migration, tests, logs, and shutdown.
+- [x] Add health checks and predictable startup ordering.
+- [x] Document local commands for startup, migration, tests, logs, and shutdown.
 
 ### Tests and acceptance
 
-- [ ] `docker compose -f docker-compose.dev.yml up --build` starts successfully from
+- [x] `docker compose -f docker-compose.dev.yml up --build` starts successfully from
       a clean checkout after copying `.env.example` to `.env`.
-- [ ] The browser page loads and identifies the application.
-- [ ] The health endpoint reports ready when PostgreSQL is reachable.
-- [ ] The health endpoint reports not ready when PostgreSQL is unavailable.
-- [ ] Migrations can be applied to an empty database and reapplied safely.
-- [ ] Platform lint, type-check, unit-test, and Go test commands pass.
+- [x] The browser page loads and identifies the application.
+- [x] The health endpoint reports ready when PostgreSQL is reachable.
+- [x] The health endpoint reports not ready when PostgreSQL is unavailable.
+- [x] Migrations can be applied to an empty database and reapplied safely.
+- [x] Platform lint, type-check, unit-test, and Go test commands pass.
+
+### Completion record
+
+Completed on 2026-09-16. Verified from a clean detached worktree with fresh Docker
+volumes. The development and production Compose targets both became healthy, the
+homepage loaded, migrations ran automatically, and database outage/recovery returned
+the expected 503/200 readiness responses. Platform checks, tests, production build,
+Go tests/vet/build, Compose validation, and both container-image builds passed.
 
 ### Explicitly not included yet
 
@@ -561,7 +569,7 @@ concrete while leaving room to make a deliberate choice before the feature is bu
 
 ## Progress
 
-- [ ] Milestone 0 complete
+- [x] Milestone 0 complete
 - [ ] Milestone 1 complete
 - [ ] Milestone 2 complete
 - [ ] Milestone 3 complete

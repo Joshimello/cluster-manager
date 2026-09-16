@@ -8,9 +8,10 @@ The project is being delivered in independently testable milestones. See
 [`specs.md`](specs.md) for the requirements and [`todo.md`](todo.md) for the
 implementation plan.
 
-## Current milestone
+## Current status
 
-Milestone 0 provides a bootable development and production-shaped foundation:
+Milestone 0 is complete and provides a bootable development and production-shaped
+foundation:
 
 - SvelteKit and TypeScript platform
 - PostgreSQL with Drizzle migrations
@@ -19,7 +20,7 @@ Milestone 0 provides a bootable development and production-shaped foundation:
 - Docker Compose development and production configurations
 
 User management, workstation connectivity, GPU monitoring, and reservations are not
-implemented yet.
+implemented yet. Milestone 1 will add secure login and user administration.
 
 ## Requirements
 
