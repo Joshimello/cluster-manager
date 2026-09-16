@@ -27,6 +27,7 @@
     "test:m3-smoke": "node scripts/m3-smoke.mjs",
     "test:m4-smoke": "node scripts/m4-smoke.mjs",
     "test:m5-smoke": "node scripts/m5-smoke.mjs",
+    "test:m6-smoke": "node scripts/m6-smoke.mjs",
     "test:watch": "vitest"
   },
   "devDependencies": {

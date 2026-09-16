@@ -32,7 +32,19 @@ export const load: PageServerLoad = async ({ locals }) => {
 
   return {
     user,
-    assignment: assignment ?? null,
+    assignment: assignment
+      ? {
+          ...assignment,
+          inventory: assignment.inventory
+            ? {
+                ...assignment.inventory,
+                sessions: assignment.inventory.sessions.filter(
+                  (session) => session.username === user.username
+                )
+              }
+            : null
+        }
+      : null,
     gpus: assignment ? await loadWorkstationGpus(assignment.workstationId, { viewer: user }) : []
   };
 };
