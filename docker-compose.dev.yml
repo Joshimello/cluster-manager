@@ -1,0 +1,49 @@
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-cluster_manager}
+      POSTGRES_USER: ${POSTGRES_USER:-cluster_manager}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cluster_manager_development_only}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-dev-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+    restart: unless-stopped
+
+  platform:
+    build:
+      context: ./platform
+      target: development
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-cluster_manager}:${POSTGRES_PASSWORD:-cluster_manager_development_only}@postgres:5432/${POSTGRES_DB:-cluster_manager}
+    ports:
+      - "${DEV_PLATFORM_PORT:-5173}:5173"
+    volumes:
+      - ./platform:/app
+      - platform-dev-dependencies:/app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:5173/health').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))"
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+    init: true
+
+volumes:
+  postgres-dev-data:
+  platform-dev-dependencies:
+
