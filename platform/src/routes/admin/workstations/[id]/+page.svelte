@@ -1,5 +1,15 @@
 <script lang="ts">
+  import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
+  import CpuIcon from '@lucide/svelte/icons/cpu';
+  import DatabaseIcon from '@lucide/svelte/icons/database';
+  import MemoryStickIcon from '@lucide/svelte/icons/memory-stick';
   import { resolve } from '$app/paths';
+  import PageHeader from '$lib/components/page-header.svelte';
+  import StatusBadge from '$lib/components/status-badge.svelte';
+  import { Button } from '$lib/components/ui/button/index.js';
+  import * as Card from '$lib/components/ui/card/index.js';
+  import * as Table from '$lib/components/ui/table/index.js';
+
   let { data } = $props();
   let ws = $derived(data.workstation);
   const dateTime = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'medium' });
@@ -12,108 +22,140 @@
 </script>
 
 <svelte:head><title>{ws.name} · Workstations · Cluster Manager</title></svelte:head>
-<main class="page-shell">
-  <a class="back" href={resolve('/admin/workstations')}>← All workstations</a>
-  <header class="page-heading">
-    <h1>{ws.displayName}</h1>
-    <p><code>{ws.name}</code> · {ws.connectionState} · {ws.status}</p>
-  </header>
-  <section class="panel facts">
-    <div>
-      <span>Last heartbeat</span><strong
-        >{ws.lastHeartbeatAt ? dateTime.format(ws.lastHeartbeatAt) : 'Never'}</strong
-      >
+
+<main class="mx-auto grid w-full max-w-7xl gap-6 px-4 py-8 sm:px-6 lg:px-8">
+  <Button variant="ghost" size="sm" href={resolve('/admin/workstations')} class="w-fit">
+    <ArrowLeftIcon aria-hidden="true" />
+    All workstations
+  </Button>
+
+  <div class="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+    <PageHeader title={ws.displayName} description={ws.name} />
+    <div class="flex flex-wrap gap-2">
+      <StatusBadge status={ws.connectionState} />
+      <StatusBadge status={ws.status} />
     </div>
-    <div><span>Node version</span><strong>{ws.nodeVersion ?? 'Unknown'}</strong></div>
-    <div><span>Hostname</span><strong>{ws.hostname ?? 'Unknown'}</strong></div>
-    <div>
-      <span>Uptime</span><strong
-        >{ws.uptimeSeconds === null
-          ? 'Unknown'
-          : `${ws.uptimeSeconds.toLocaleString()} seconds`}</strong
+  </div>
+
+  <Card.Root>
+    <Card.Header>
+      <Card.Title>Node facts</Card.Title>
+      <Card.Description>Identity and health information from the latest heartbeat.</Card.Description
       >
-    </div>
-  </section>
+    </Card.Header>
+    <Card.Content class="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+      <div class="grid gap-1">
+        <span class="text-muted-foreground text-sm">Last heartbeat</span>
+        <strong>{ws.lastHeartbeatAt ? dateTime.format(ws.lastHeartbeatAt) : 'Never'}</strong>
+      </div>
+      <div class="grid gap-1">
+        <span class="text-muted-foreground text-sm">Node version</span>
+        <strong>{ws.nodeVersion ?? 'Unknown'}</strong>
+      </div>
+      <div class="grid gap-1">
+        <span class="text-muted-foreground text-sm">Hostname</span>
+        <strong class="break-all">{ws.hostname ?? 'Unknown'}</strong>
+      </div>
+      <div class="grid gap-1">
+        <span class="text-muted-foreground text-sm">Uptime</span>
+        <strong
+          >{ws.uptimeSeconds === null
+            ? 'Unknown'
+            : `${ws.uptimeSeconds.toLocaleString()} seconds`}</strong
+        >
+      </div>
+    </Card.Content>
+  </Card.Root>
+
   {#if ws.inventory}
-    <section class="cards">
-      <article class="panel">
-        <h2>CPU</h2>
-        <strong>{ws.inventory.cpu.utilizationPercent.toFixed(1)}%</strong>
-        <p>{ws.inventory.cpu.model} · {ws.inventory.cpu.logicalCores} logical cores</p>
-      </article>
-      <article class="panel">
-        <h2>Memory</h2>
-        <strong>{ws.inventory.memory.utilizationPercent.toFixed(1)}%</strong>
-        <p>
-          {gigabytes(ws.inventory.memory.usedBytes)} of {gigabytes(ws.inventory.memory.totalBytes)}
-        </p>
-      </article>
-      <article class="panel">
-        <h2>Storage</h2>
-        <strong>{ws.inventory.storage.utilizationPercent.toFixed(1)}%</strong>
-        <p>
-          {gigabytes(ws.inventory.storage.usedBytes)} of {gigabytes(
-            ws.inventory.storage.totalBytes
-          )} at {ws.inventory.storage.path}
-        </p>
-      </article>
+    <section class="grid gap-4 md:grid-cols-3" aria-label="Resource utilization">
+      <Card.Root>
+        <Card.Header class="flex-row items-center justify-between gap-4">
+          <Card.Title>CPU</Card.Title>
+          <CpuIcon class="text-muted-foreground size-5" aria-hidden="true" />
+        </Card.Header>
+        <Card.Content class="grid gap-2">
+          <strong class="text-3xl tracking-tight"
+            >{ws.inventory.cpu.utilizationPercent.toFixed(1)}%</strong
+          >
+          <p class="text-muted-foreground text-sm">
+            {ws.inventory.cpu.model} · {ws.inventory.cpu.logicalCores} logical cores
+          </p>
+        </Card.Content>
+      </Card.Root>
+
+      <Card.Root>
+        <Card.Header class="flex-row items-center justify-between gap-4">
+          <Card.Title>Memory</Card.Title>
+          <MemoryStickIcon class="text-muted-foreground size-5" aria-hidden="true" />
+        </Card.Header>
+        <Card.Content class="grid gap-2">
+          <strong class="text-3xl tracking-tight"
+            >{ws.inventory.memory.utilizationPercent.toFixed(1)}%</strong
+          >
+          <p class="text-muted-foreground text-sm">
+            {gigabytes(ws.inventory.memory.usedBytes)} of {gigabytes(
+              ws.inventory.memory.totalBytes
+            )}
+          </p>
+        </Card.Content>
+      </Card.Root>
+
+      <Card.Root>
+        <Card.Header class="flex-row items-center justify-between gap-4">
+          <Card.Title>Storage</Card.Title>
+          <DatabaseIcon class="text-muted-foreground size-5" aria-hidden="true" />
+        </Card.Header>
+        <Card.Content class="grid gap-2">
+          <strong class="text-3xl tracking-tight"
+            >{ws.inventory.storage.utilizationPercent.toFixed(1)}%</strong
+          >
+          <p class="text-muted-foreground text-sm">
+            {gigabytes(ws.inventory.storage.usedBytes)} of {gigabytes(
+              ws.inventory.storage.totalBytes
+            )} at
+            <code class="break-all">{ws.inventory.storage.path}</code>
+          </p>
+        </Card.Content>
+      </Card.Root>
     </section>
-    <section class="panel sessions">
-      <h2>Logged-in sessions</h2>
-      {#if ws.inventory.sessions.length === 0}<p class="muted">No sessions reported.</p>{:else}<ul>
-          {#each ws.inventory.sessions as session (session.username + session.terminal)}<li>
-              <strong>{session.username}</strong> on {session.terminal}{session.remoteHost
-                ? ` from ${session.remoteHost}`
-                : ''}
-            </li>{/each}
-        </ul>{/if}
-    </section>
+
+    <Card.Root>
+      <Card.Header>
+        <Card.Title>Logged-in sessions</Card.Title>
+        <Card.Description>Interactive sessions reported by the node.</Card.Description>
+      </Card.Header>
+      <Card.Content class={ws.inventory.sessions.length > 0 ? 'px-0' : undefined}>
+        {#if ws.inventory.sessions.length === 0}
+          <p class="text-muted-foreground text-sm">No sessions reported.</p>
+        {:else}
+          <Table.Root>
+            <Table.Header>
+              <Table.Row>
+                <Table.Head class="pl-6">User</Table.Head>
+                <Table.Head>Terminal</Table.Head>
+                <Table.Head class="pr-6">Remote host</Table.Head>
+              </Table.Row>
+            </Table.Header>
+            <Table.Body>
+              {#each ws.inventory.sessions as session (session.username + session.terminal)}
+                <Table.Row>
+                  <Table.Cell class="pl-6 font-medium">{session.username}</Table.Cell>
+                  <Table.Cell><code>{session.terminal}</code></Table.Cell>
+                  <Table.Cell class="pr-6">{session.remoteHost ?? 'Local'}</Table.Cell>
+                </Table.Row>
+              {/each}
+            </Table.Body>
+          </Table.Root>
+        {/if}
+      </Card.Content>
+    </Card.Root>
   {:else}
-    <section class="panel">
-      <h2>Waiting for inventory</h2>
-      <p class="muted">Enroll and start this node to receive its first report.</p>
-    </section>
+    <Card.Root>
+      <Card.Header>
+        <Card.Title>Waiting for inventory</Card.Title>
+        <Card.Description>Enroll and start this node to receive its first report.</Card.Description>
+      </Card.Header>
+    </Card.Root>
   {/if}
 </main>
-
-<style>
-  .back {
-    display: inline-block;
-    margin-bottom: 1rem;
-    color: #324d7e;
-    text-decoration: none;
-  }
-  .facts,
-  .cards {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 1rem;
-    margin-bottom: 1rem;
-  }
-  .facts div {
-    display: grid;
-    gap: 0.25rem;
-  }
-  .facts span,
-  article p {
-    color: #687386;
-  }
-  .cards {
-    grid-template-columns: repeat(3, 1fr);
-  }
-  article strong {
-    font-size: 2rem;
-  }
-  article p {
-    margin: 0.5rem 0 0;
-  }
-  .sessions ul {
-    margin-bottom: 0;
-  }
-  @media (max-width: 800px) {
-    .facts,
-    .cards {
-      grid-template-columns: 1fr;
-    }
-  }
-</style>
