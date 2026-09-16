@@ -196,7 +196,7 @@ Stopping one makes it become stale/offline without affecting the rest of the sys
 
 ### Explicitly not included yet
 
-Linux user reconciliation, SSH keys, GPU telemetry, and reservations.
+Linux user and password reconciliation, GPU telemetry, and reservations.
 
 ---
 
@@ -295,51 +295,64 @@ reservations.
 
 ### Outcome
 
-An admin assigns a platform user to one workstation. The assigned user manages SSH
-keys in the platform, and a node reconciles the corresponding local Linux account and
-authorized keys. Revoking access disables login without deleting the user's data.
+An admin assigns a platform user to one workstation. The platform password is also the
+user's workstation SSH password, and a node reconciles the corresponding local Linux
+account and one-way Linux password hash. Revoking access disables login without
+deleting the user's data.
 
 ### Build
 
-- [ ] Add workstation assignment and SSH public-key tables and constraints.
+- [ ] Add workstation assignment, provisioning-state, and Linux password-hash fields
+      and constraints. Development data may be reset; no pre-M3 migration/backfill is
+      required.
 - [ ] Enforce that a user normally has at most one active workstation assignment.
 - [ ] Add admin assign, move, and revoke workflows.
 - [ ] Add the user's assigned-workstation view and SSH connection instructions.
-- [ ] Add self-service SSH public-key list, add, label, and remove workflows.
-- [ ] Parse and validate supported SSH public-key formats; reject private keys and
-      malformed or unreasonably large input.
-- [ ] Audit assignment, revocation, and SSH-key changes.
+- [ ] Derive both the existing platform-login verifier and a separately salted
+      Linux/PAM-compatible password hash whenever a password is created, changed, or
+      reset; store only the one-way hashes and update them atomically.
+- [ ] Make self-service platform password changes update the desired workstation
+      password hash for the user's assignment.
+- [ ] Make the existing admin password-reset flow reset the single shared platform/SSH
+      password and require normal first-login replacement.
+- [ ] Audit assignment, revocation, and synchronized password resets/changes without
+      recording password material or hashes.
 - [ ] Add a versioned, authenticated desired-state endpoint for each node containing
-      only that workstation's required users and SSH keys.
+      only that workstation's required users, account state, and Linux-compatible
+      password hashes.
+- [ ] Treat desired-state password hashes as sensitive verifiers: return them only to
+      the authenticated assigned node over production HTTPS and never log them.
 - [ ] Implement idempotent node reconciliation for:
   - [ ] safe Linux username/UID policy
   - [ ] local account creation
   - [ ] home directory creation and ownership
   - [ ] active/disabled login state
-  - [ ] managed `authorized_keys` content and permissions
+  - [ ] synchronized `/etc/shadow`-compatible password hash application without
+        passing plaintext through command arguments or logs
+  - [ ] SSH password authentication policy scoped to Cluster Manager-managed users
   - [ ] rootless Podman prerequisites that are safe to configure automatically
 - [ ] Ensure reconciliation never deletes a home directory or user data.
 - [ ] Ensure unavailable or invalid desired state causes no destructive changes.
 - [ ] Report reconciliation status/errors to the platform.
 - [ ] Show provisioning state and actionable errors to admins and the affected user.
-- [ ] Implement a narrowly scoped workstation credential reset only if password-based
-      SSH login is enabled by deployment policy.
 - [ ] Provide Ubuntu installation/configuration instructions for the node.
 - [ ] Provide an initial systemd unit and hardened service configuration.
 
 ### Tests and acceptance
 
-- [ ] In simulation mode, assignment and SSH-key changes produce the expected desired
-      state and reported reconciliation status.
+- [ ] In simulation mode, assignment and password changes produce the expected desired
+      state and reported reconciliation status without exposing plaintext credentials.
 - [ ] On a disposable Ubuntu machine/VM, assigning a user creates a usable account and
-      permits login with the configured SSH key.
-- [ ] Removing a key prevents use of that key after reconciliation.
+      permits SSH login with the same password used by the platform.
+- [ ] Changing or resetting the platform password rejects the old SSH password and
+      accepts the replacement after reconciliation.
+- [ ] SSH public-key authentication is unavailable to Cluster Manager-managed users.
 - [ ] Revoking access disables new login while preserving the account's home directory
       and files.
 - [ ] Reapplying unchanged desired state is harmless.
 - [ ] Platform or network outage leaves existing accounts and sessions usable.
-- [ ] Assignment authorization, key validation, desired-state, and node reconciliation
-      tests pass.
+- [ ] Assignment authorization, password synchronization, desired-state credential
+      isolation, and node reconciliation tests pass.
 
 ### Explicitly not included yet
 
@@ -604,8 +617,9 @@ developer knowledge.
 - [ ] A fresh supported Ubuntu workstation can install and run the node using the
       documented systemd workflow.
 - [ ] The complete user journey works: admin creates user, assigns workstation, user
-      adds SSH key, node provisions access, user reserves GPU, conflict is detected,
-      user requests a stop, and admin safely resolves it.
+      completes password setup, node provisions matching password access, user
+      reserves GPU, conflict is detected, user requests a stop, and admin safely
+      resolves it.
 - [ ] Existing SSH sessions and workloads continue during a control-plane outage.
 - [ ] A node outage marks telemetry stale without disrupting SSH or running work.
 - [ ] Database backup restoration produces a usable control plane.
@@ -648,9 +662,10 @@ concrete while leaving room to make a deliberate choice before the feature is bu
 - [ ] **Before Milestone 3 — Linux usernames:** confirm whether usernames are chosen by
       admins or derived from an institutional identifier. Provisional default: admin
       chooses an immutable POSIX-safe username when creating the user.
-- [ ] **Before Milestone 3 — SSH passwords:** confirm whether password-based SSH should
-      be supported at all. Provisional default: SSH keys only; platform password reset
-      remains separate from workstation access.
+- [x] **Before Milestone 3 — SSH passwords:** use password-only SSH authentication for
+      Cluster Manager-managed users. The workstation password must match the platform
+      password; derive and store separate one-way platform and Linux-compatible hashes
+      from the same input, and never store or send plaintext. SSH keys are out of scope.
 - [ ] **Before Milestone 4 — process privacy:** confirm how much command-line detail a
       normal user may see for another user's conflicting process. Provisional default:
       normal users see username, executable name, start time, and GPU memory; admins

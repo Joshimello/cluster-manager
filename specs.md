@@ -11,7 +11,7 @@ The centralized platform provides:
 - user and workstation management
 - workstation assignment
 - local Linux account provisioning
-- SSH key management
+- synchronized platform and workstation password management
 - workstation health monitoring
 - GPU monitoring
 - GPU reservations
@@ -250,7 +250,9 @@ Implement narrowly scoped operations.
 
 # 8. Authentication
 
-The web platform and workstation Linux accounts may use separate authentication mechanisms in v1.
+The web platform and each assigned workstation use the same user-entered password in
+v1. Cluster Manager must synchronize password changes to the assigned Linux account
+without storing or transmitting plaintext passwords.
 
 ### Platform
 
@@ -258,20 +260,36 @@ Users should authenticate to the SvelteKit application.
 
 Use secure password hashing and normal web sessions.
 
+Whenever a password is created, changed, or reset, derive both the platform's strong
+application-login verifier and a separately salted Linux/PAM-compatible password
+hash from the password while it is present in the request. Store only the one-way
+hashes. The platform and Linux hashes represent the same password but must use the
+format appropriate to each verifier.
+
 ### Workstations
 
-Users should be able to authenticate over SSH using:
+Cluster Manager-managed users authenticate over SSH with their synchronized platform
+password. SSH public-key access is not part of v1, and the platform must not provide
+SSH-key management.
 
-- SSH keys
-- optionally passwords where appropriate
+Changing a platform password or completing an admin-issued password reset must update
+the desired workstation password hash. The node applies only the Linux-compatible
+hash; it must never receive the plaintext password. The desired-state API must treat
+this hash as sensitive credential material and expose it only to the authenticated
+node for the user's assigned workstation.
 
-The platform should allow users to manage their SSH public keys.
-
-Admins should also be able to reset workstation credentials.
+Any SSH daemon policy installed by Cluster Manager should apply specifically to
+Cluster Manager-managed researcher accounts so it does not accidentally remove a
+separate administrator's recovery access.
 
 Never store plaintext passwords.
 
 Temporary/generated credentials should only be exposed where strictly necessary.
+
+This choice is being made during development before production deployment. No
+compatibility migration or backfill for pre-Milestone-3 development credentials is
+required; development data may be reset and accounts recreated when the schema
+changes.
 
 ---
 
@@ -284,6 +302,10 @@ Example:
 ```bash
 ssh alice@ws01
 ```
+
+They enter the same password used to log into the Cluster Manager platform. Password
+authentication is the only supported SSH method for Cluster Manager-managed users in
+v1.
 
 A user does not need a GPU reservation to SSH into their workstation.
 
@@ -535,7 +557,7 @@ It should handle approximately:
 7. GPU process discovery
 8. logged-in user/session information
 9. local Linux user reconciliation
-10. SSH key reconciliation
+10. synchronized Linux password reconciliation
 11. per-user disk usage where practical
 12. narrowly scoped process termination
 
@@ -562,7 +584,7 @@ Examples of desired state include:
 
 - users who should exist
 - whether a user is active
-- authorized SSH keys
+- the current Linux-compatible password hash for each assigned user
 
 The exact API and data model are implementation details.
 
@@ -664,7 +686,7 @@ At minimum audit:
 - user disable/enable
 - workstation assignment
 - workstation access revocation
-- SSH key changes
+- synchronized password changes and resets
 - admin credential resets
 - reservation creation/cancellation where useful
 - admin reservation overrides
@@ -695,7 +717,7 @@ Can:
 
 - log into platform
 - view assigned workstation
-- manage own SSH keys
+- change the password used by both the platform and assigned workstation
 - view own usage
 - see relevant GPU availability
 - create/cancel own GPU reservations
@@ -952,7 +974,7 @@ Implement:
 - workstation assignment
 - desired-state retrieval
 - local Linux account reconciliation
-- SSH key management
+- synchronized SSH password reconciliation
 
 Validate against an actual disposable Ubuntu machine/VM in addition to simulated mode.
 
@@ -1052,8 +1074,9 @@ The finished v1 should support these flows cleanly.
 Admin creates Alice
 → assigns Alice to WS01
 → WS01 node provisions Alice
-→ Alice adds SSH key
-→ Alice SSHs into WS01
+→ Alice completes the platform password setup
+→ WS01 applies the matching Linux password hash
+→ Alice SSHs into WS01 with the same password
 → Alice develops normally
 ```
 
