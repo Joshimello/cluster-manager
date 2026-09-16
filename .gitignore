@@ -12,9 +12,9 @@ platform/.vite/
 
 # Go
 node/bin/
+node/cluster-manager-node
 node/coverage.out
 
 # Local tooling
 .idea/
 .vscode/
-
