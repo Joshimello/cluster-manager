@@ -2,7 +2,7 @@
 
 Cluster Manager is an internal platform for managing a small research lab's shared
 Ubuntu GPU workstations. The central SvelteKit application is the source of truth,
-and a small Go node service will reconcile and report each workstation's state.
+and a small Go node service reconciles and reports each workstation's state.
 
 The project is being delivered in independently testable milestones. See
 [`specs.md`](specs.md) for the requirements and [`todo.md`](todo.md) for the
@@ -10,7 +10,7 @@ implementation plan.
 
 ## Current status
 
-Milestone 5 is complete. The repository currently provides:
+Milestone 8 is complete. The repository provides a deployable v1, including:
 
 - SvelteKit and TypeScript platform
 - PostgreSQL with Drizzle migrations
@@ -41,10 +41,16 @@ Milestone 5 is complete. The repository currently provides:
 - PostgreSQL exclusion constraints that prevent concurrent overlapping reservations
 - privacy-safe user schedules, owner cancellation, and retained booking history
 - explicit, reasoned, and audited administrator overrides and cancellations
+- reservation/process correlation, conflict status, and privacy-safe views
+- user stop requests and admin-controlled, identity-revalidated SIGTERM/SIGKILL handling
+- operational dashboards, filtered/paginated audit browsing, and version visibility
+- bounded session/telemetry cleanup and structured, rotated operational logs
+- production environment validation, HTTPS proxy guidance, backup/restore, and recovery tools
+- a versioned node build/install/upgrade workflow and an end-to-end production rehearsal
 
-Reservation/usage correlation and conflict workflows are not implemented yet. Real
-NVIDIA discovery is implemented, but its hardware smoke test remains conditional on
-access to an NVIDIA Ubuntu workstation.
+Real NVIDIA discovery is implemented; its hardware smoke test remains conditional on
+access to an NVIDIA Ubuntu workstation. Development simulation covers all v1 workflows
+without a GPU.
 
 ## Requirements
 
@@ -267,28 +273,30 @@ Always inspect generated SQL before committing it. Verify migration metadata wit
 
 ## Health behavior
 
-`GET /health` queries the migrated `platform_metadata` table:
+`GET /health` queries the migrated `platform_metadata` table and returns the deployed
+platform version:
 
-- HTTP 200 and `{"status":"ready"}` when PostgreSQL and the schema are available
-- HTTP 503 and `{"status":"not_ready"}` when they are unavailable
+- HTTP 200 and `{"status":"ready","version":"…"}` when PostgreSQL and the schema are available
+- HTTP 503 and `{"status":"not_ready","version":"…"}` when they are unavailable
 
 The web home page remains renderable when the database is down and reports the
 unavailable state.
 
 ## Production-shaped Compose
 
-`docker-compose.yml` builds a production SvelteKit image and runs PostgreSQL with a
-persistent volume. Before using it, replace the development password in `.env` and set
-`ORIGIN` to the externally reachable HTTPS origin.
+`docker-compose.yml` builds the hardened production SvelteKit image and runs PostgreSQL
+with a persistent volume. Follow the complete [production operations runbook](docs/operations.md)
+and [security review](docs/security-review.md). Start from the production environment template:
 
 ```bash
-docker compose up -d --build
-docker compose ps
+cp .env.production.example .env
+# replace every placeholder, then:
+docker compose up -d --build --wait
 ```
 
-The production Compose file is an initial foundation, not yet a complete deployment
-guide. HTTPS/reverse proxy configuration, backups, and operational hardening are part
-of the production-readiness milestone.
+Use `scripts/rehearse-production.sh` to exercise clean startup, migrations, health,
+bootstrap, backup, destructive data change, restoration, and restart in an isolated
+temporary Compose project.
 
 ## Go node skeleton
 

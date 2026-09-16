@@ -645,45 +645,66 @@ developer knowledge.
 
 ### Build
 
-- [ ] Review and polish the user and admin dashboards around real operational tasks.
-- [ ] Show per-user assignment, active state, disk usage, GPU processes, and current/
+- [x] Review and polish the user and admin dashboards around real operational tasks.
+- [x] Show per-user assignment, active state, disk usage, GPU processes, and current/
       upcoming reservations.
-- [ ] Complete audit browsing with useful filtering and retention guidance.
-- [ ] Add platform and node version visibility for troubleshooting.
-- [ ] Finalize production Compose configuration, persistent volumes, health checks,
+- [x] Complete audit browsing with useful filtering and retention guidance.
+- [x] Add platform and node version visibility for troubleshooting.
+- [x] Finalize production Compose configuration, persistent volumes, health checks,
       restart behavior, and environment validation.
-- [ ] Document HTTPS/reverse-proxy expectations for production.
-- [ ] Finalize node binary build, configuration file, credential provisioning,
+- [x] Document HTTPS/reverse-proxy expectations for production.
+- [x] Finalize node binary build, configuration file, credential provisioning,
       rotation/revocation, installation, upgrade, and systemd instructions.
-- [ ] Apply practical systemd hardening without blocking required host inspection and
+- [x] Apply practical systemd hardening without blocking required host inspection and
       account-management operations.
-- [ ] Document PostgreSQL backup and restore procedures and test a restore.
-- [ ] Document recovery for lost platform-admin credentials and lost node credentials.
-- [ ] Add bounded cleanup/retention for sessions and telemetry while preserving audit
+- [x] Document PostgreSQL backup and restore procedures and test a restore.
+- [x] Document recovery for lost platform-admin credentials and lost node credentials.
+- [x] Add bounded cleanup/retention for sessions and telemetry while preserving audit
       and reservation history as required.
-- [ ] Add basic structured logs and troubleshooting guidance without introducing a
+- [x] Add basic structured logs and troubleshooting guidance without introducing a
       separate observability stack.
-- [ ] Document expected behavior during platform, database, network, and node outages.
-- [ ] Perform a security review of authentication, authorization, credential exposure,
+- [x] Document expected behavior during platform, database, network, and node outages.
+- [x] Perform a security review of authentication, authorization, credential exposure,
       desired-state reconciliation, node APIs, and process termination.
-- [ ] Perform an end-to-end deployment rehearsal using the intended production-style
+- [x] Perform an end-to-end deployment rehearsal using the intended production-style
       topology.
 
 ### Tests and acceptance
 
-- [ ] A fresh management host can start the control plane with the documented
+- [x] A fresh management host can start the control plane with the documented
       `docker compose up -d` workflow.
-- [ ] A fresh supported Ubuntu workstation can install and run the node using the
+- [x] A fresh supported Ubuntu workstation can install and run the node using the
       documented systemd workflow.
-- [ ] The complete user journey works: admin creates user, assigns workstation, user
+- [x] The complete user journey works: admin creates user, assigns workstation, user
       completes password setup, node provisions matching password access, user
       reserves GPU, conflict is detected, user requests a stop, and admin safely
       resolves it.
-- [ ] Existing SSH sessions and workloads continue during a control-plane outage.
-- [ ] A node outage marks telemetry stale without disrupting SSH or running work.
-- [ ] Database backup restoration produces a usable control plane.
-- [ ] All automated test suites, migration checks, container health checks, and manual
+- [x] Existing SSH sessions and workloads continue during a control-plane outage.
+- [x] A node outage marks telemetry stale without disrupting SSH or running work.
+- [x] Database backup restoration produces a usable control plane.
+- [x] All automated test suites, migration checks, container health checks, and manual
       deployment checks pass.
+
+### Completion record
+
+Completed on 2026-09-16. User and administrator views now combine assignment,
+connectivity, storage, process, version, and current/upcoming reservation context. Audit
+history supports search, action/actor/date filters, pagination, and explicit retention
+guidance. Production Compose validates its HTTPS origin and version, keeps PostgreSQL
+on a persistent private volume, runs the app read-only without Linux capabilities, and
+rotates logs. Session and telemetry cleanup is bounded while audit and reservation
+history are retained.
+
+The operations runbook covers reverse proxy/TLS, deployment, upgrades, JSON logs,
+failure behavior, backups, tested restoration, and administrator/node credential
+recovery. The node has versioned Linux builds, installation/upgrade/rotation guidance,
+and practical systemd hardening whose required host-access exceptions are documented.
+The security review records controls and accepted v1 limitations. An isolated
+production rehearsal passed clean build/start, migration, health, bootstrap, backup,
+destructive data change, restore, and restart; a clean Ubuntu 24.04 image verified the
+binary, private config, and systemd unit. M3–M7 workflows and the real Ubuntu account,
+SSH, and signal tests pass. Physical NVIDIA validation remains the already documented
+hardware-dependent M4 follow-up and does not block GPU-free deployment validation.
 
 ---
 
@@ -733,7 +754,7 @@ concrete while leaving room to make a deliberate choice before the feature is bu
 - [x] **Before Milestone 5 — admin override:** an override may exceed duration/horizon
       rules but never overlap. Cancelling another booking is a separate explicit action
       requiring a reason and audit event before a replacement can be created.
-- [ ] **Before Milestone 7 — forced termination:** confirm whether `SIGKILL` escalation
+- [x] **Before Milestone 7 — forced termination:** confirm whether `SIGKILL` escalation
       is enabled by default or requires a second admin action. Provisional default:
       require an explicit second action after `SIGTERM` fails.
 
@@ -746,6 +767,6 @@ concrete while leaving room to make a deliberate choice before the feature is bu
 - [x] Milestone 3 complete
 - [x] Milestone 4 complete (real NVIDIA hardware smoke pending availability)
 - [x] Milestone 5 complete
-- [ ] Milestone 6 complete
-- [ ] Milestone 7 complete
-- [ ] Milestone 8 complete
+- [x] Milestone 6 complete
+- [x] Milestone 7 complete
+- [x] Milestone 8 complete

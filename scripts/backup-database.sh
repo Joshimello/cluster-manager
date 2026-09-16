@@ -12,8 +12,15 @@ case "$output" in
   *) output="$(pwd)/$output" ;;
 esac
 mkdir -p "$(dirname "$output")"
-docker compose exec -T postgres sh -c \
+compose() {
+  if [ -n "${COMPOSE_ENV_FILE:-}" ]; then
+    docker compose --env-file "$COMPOSE_ENV_FILE" "$@"
+  else
+    docker compose "$@"
+  fi
+}
+compose exec -T postgres sh -c \
   'pg_dump --username="$POSTGRES_USER" --dbname="$POSTGRES_DB" --format=custom --create --clean --if-exists' \
   > "$output"
-docker compose exec -T postgres pg_restore --list < "$output" >/dev/null
+compose exec -T postgres pg_restore --list < "$output" >/dev/null
 echo "Verified database backup: $output"

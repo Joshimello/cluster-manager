@@ -29,14 +29,18 @@ sudo apt install podman
 
 ## Install the binary and configuration
 
-Build the Linux node binary from a trusted checkout or CI artifact:
+Build a versioned Linux/amd64 node binary from a trusted checkout or use the matching
+release artifact. From the repository root:
 
 ```bash
-cd node
-CGO_ENABLED=0 go build -trimpath -o cluster-manager-node ./cmd/cluster-manager-node
-sudo install -o root -g root -m 0755 cluster-manager-node /usr/local/sbin/cluster-manager-node
-cd ..
+make VERSION=0.1.0 build-node-linux
+node/bin/cluster-manager-node-linux-amd64 --version # run this after copying to Linux
+sudo install -o root -g root -m 0755 \
+  node/bin/cluster-manager-node-linux-amd64 /usr/local/sbin/cluster-manager-node
 ```
+
+Use an immutable release version instead of `development`; the reported version appears
+in the workstation administration pages.
 
 Create its private state and configuration directories:
 
@@ -63,6 +67,36 @@ sudo journalctl -u cluster-manager-node -f
 After the first successful enrollment, remove `enrollmentToken` from
 `/etc/cluster-manager/node.json` and restart the service. The generated node credential
 in `/var/lib/cluster-manager/node-credential` is reused and must remain mode `0600`.
+
+The node runs as root because it must inspect host processes, manage accounts and SSH
+policy, and signal an exactly revalidated process. The unit blocks kernel, clock,
+hostname, namespace, realtime, SUID/SGID, and IPC changes. It intentionally does not
+hide `/proc`, devices, `/etc`, or home directories because those are required inputs or
+targets. No generic command execution endpoint exists.
+
+## Upgrade, rotate, or revoke
+
+Build/download the matching new release, verify `--version`, then replace atomically
+and restart:
+
+```bash
+sudo systemctl stop cluster-manager-node
+sudo install -o root -g root -m 0755 cluster-manager-node-linux-amd64 \
+  /usr/local/sbin/cluster-manager-node
+sudo systemctl start cluster-manager-node
+sudo systemctl status cluster-manager-node
+```
+
+The credential and configuration are preserved. Watch the platform for the new version
+and a fresh heartbeat before upgrading the next workstation.
+
+To rotate or recover a lost credential, issue a new enrollment token from the
+workstation administration page. On the node, stop the service, remove only
+`/var/lib/cluster-manager/node-credential`, add the new enrollment token to the root-only
+configuration, and start it again. Remove the token after enrollment. Issuing the token
+revokes the prior credential immediately. To revoke without replacement, use **Revoke**
+in the platform; the node will receive 401 responses and stop receiving desired state or
+termination instructions, while existing accounts, SSH sessions, and workloads remain.
 
 ## Account and SSH behavior
 
@@ -98,6 +132,10 @@ sudo sshd -T -C user=example,host=localhost,addr=127.0.0.1 | \
   grep -E 'passwordauthentication|pubkeyauthentication|authenticationmethods'
 ```
 
+Logs are one JSON object per line and never include password hashes, tokens, command
+arguments, or environment variables. A repeated 401 indicates a revoked/mismatched
+credential; connection failures indicate URL, DNS, TLS, proxy, or network trouble.
+
 The platform shows each assignment as pending, applied, or errored. Node errors are
 reported without password hashes. Correct the underlying Ubuntu configuration and let
 the next reconciliation retry; unchanged desired state is safe to reapply.
@@ -112,6 +150,13 @@ docker run --rm cluster-manager-ubuntu-reconcile-test
 
 It verifies account and home creation, idempotency, real sshd password login, password
 replacement, public-key rejection, revocation, and home-data preservation.
+
+Also validate the release binary, root-only configuration, and systemd unit on a clean
+Ubuntu 24.04 filesystem:
+
+```bash
+make test-ubuntu-deploy
+```
 
 ## GPU monitoring
 
