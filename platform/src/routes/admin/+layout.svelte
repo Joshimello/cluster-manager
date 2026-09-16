@@ -3,6 +3,7 @@
   import CalendarCogIcon from '@lucide/svelte/icons/calendar-cog';
   import MonitorCogIcon from '@lucide/svelte/icons/monitor-cog';
   import ScanSearchIcon from '@lucide/svelte/icons/scan-search';
+  import ShieldAlertIcon from '@lucide/svelte/icons/shield-alert';
   import UsersIcon from '@lucide/svelte/icons/users';
   import { resolve } from '$app/paths';
   import { Button } from '$lib/components/ui/button/index.js';
@@ -26,6 +27,9 @@
     >
     <Button href={resolve('/admin/monitoring')} variant="ghost" size="sm"
       ><ScanSearchIcon data-icon="inline-start" />GPU status</Button
+    >
+    <Button href={resolve('/admin/stop-requests')} variant="ghost" size="sm"
+      ><ShieldAlertIcon data-icon="inline-start" />Stop requests</Button
     >
     <Button href={resolve('/admin/reservations')} variant="ghost" size="sm"
       ><CalendarCogIcon data-icon="inline-start" />Reservations</Button
