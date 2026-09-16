@@ -313,6 +313,38 @@ try {
     body: JSON.stringify(report)
   });
   assert.equal(response.status, 409, 'a completed instruction must not be replayable');
+
+  const [expiredRequest] = await sql`
+    insert into stop_requests (
+      reservation_id, gpu_id, workstation_id, requester_user_id, status, target_pid,
+      target_uid, target_username, target_command, target_memory_used_bytes,
+      target_process_start_ticks
+    ) values (
+      ${fakeReservation.id}, ${fakeGpu.id}, ${fakeWorkstation.id}, ${alice.id},
+      'termination_requested', 4343, 1002, 'bob', 'python', 1, 54321
+    ) returning id
+  `;
+  const [expiredInstruction] = await sql`
+    insert into termination_instructions (
+      stop_request_id, workstation_id, requested_by_user_id, gpu_uuid, target_pid,
+      target_uid, target_process_start_ticks, expires_at
+    ) values (
+      ${expiredRequest.id}, ${fakeWorkstation.id},
+      (select id from users where username = ${adminUsername}), 'GPU-m7-api',
+      4343, 1002, 54321, now() - interval '1 second'
+    ) returning id
+  `;
+  response = await admin.request('/api/node/v1/termination/next', { headers });
+  assert.equal(response.status, 204, 'an expired instruction must not be dispatched');
+  const [expiredState] = await sql`
+    select ti.status as instruction_status, sr.status as request_status
+    from termination_instructions ti
+    join stop_requests sr on sr.id = ti.stop_request_id
+    where ti.id = ${expiredInstruction.id}
+  `;
+  assert.equal(expiredState.instruction_status, 'expired');
+  assert.equal(expiredState.request_status, 'failed');
+
   await sql`update workstations set status = 'disabled' where id = ${fakeWorkstation.id}`;
   response = await admin.request('/api/node/v1/termination/next', { headers });
   assert.equal(response.status, 401, 'revoked node credentials must be rejected');
