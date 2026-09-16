@@ -10,7 +10,7 @@ implementation plan.
 
 ## Current status
 
-Milestone 2 is complete. The repository currently provides:
+Milestone 2.1 is complete. The repository currently provides:
 
 - SvelteKit and TypeScript platform
 - PostgreSQL with Drizzle migrations
@@ -25,6 +25,8 @@ Milestone 2 is complete. The repository currently provides:
 - authenticated heartbeat and inventory ingestion with out-of-order protection
 - online, stale, and offline workstation presentation
 - two independently enrolled simulated workstations in the development stack
+- a responsive shadcn-svelte component foundation using Tailwind CSS v4
+- shared component treatments for forms, status, feedback, credentials, and tables
 
 GPU monitoring, access reconciliation, and reservations are not implemented yet.
 
@@ -116,6 +118,39 @@ make check
 make format
 make build
 ```
+
+## UI component workflow
+
+The platform uses repository-owned shadcn-svelte components under
+`platform/src/lib/components/ui`. Theme tokens live in `platform/src/app.css`, and
+`platform/components.json` records the Vega preset, neutral base color, Lucide icons,
+and project aliases.
+
+Add or update only the component needed for the current workflow from the platform
+directory:
+
+```bash
+cd platform
+npx shadcn-svelte@latest add dialog
+```
+
+The CLI writes source into this repository; it is not a runtime component service.
+Review the complete generated diff before committing, especially changes to existing
+UI components, `src/app.css`, `package.json`, and `package-lock.json`. Run formatting,
+type checks, linting, tests, and a production build after generation.
+
+When package dependencies change while the Compose development stack is already
+running, refresh its named dependency volume from the lockfile and restart the
+platform service:
+
+```bash
+docker compose -f docker-compose.dev.yml run --rm --no-deps platform npm ci
+docker compose -f docker-compose.dev.yml up -d platform
+```
+
+Future monitoring charts should start with the shadcn-svelte Chart integration and
+LayerChart, but their stability and current versions must be reviewed when historical
+telemetry is implemented. M2.1 intentionally contains no placeholder charts.
 
 The authentication smoke test is intended for a disposable, freshly bootstrapped
 installation because it changes the initial admin password and creates a test user:

@@ -212,7 +212,7 @@ shared theme tokens instead of recreating controls and page styling route by rou
 ### Library fit and decisions
 
 - Use the current shadcn-svelte CLI and its Svelte 5/Tailwind CSS v4 output.
-- Use the current default `new-york` style and default neutral color treatment. Do not
+- Use the current default `vega` preset and default neutral color treatment. Do not
   introduce a custom Cluster Manager visual theme during this pass.
 - Treat generated components as repository-owned source under
   `platform/src/lib/components/ui/`; shadcn-svelte is a scaffolding workflow, not a
@@ -228,59 +228,59 @@ shared theme tokens instead of recreating controls and page styling route by rou
 
 ### Build
 
-- [ ] Initialize shadcn-svelte in the existing SvelteKit project without overwriting
+- [x] Initialize shadcn-svelte in the existing SvelteKit project without overwriting
       application behavior or losing required global styles.
-- [ ] Add Tailwind CSS v4 through the Vite integration and check in
+- [x] Add Tailwind CSS v4 through the Vite integration and check in
       `components.json`, theme variables, the `cn` utility, and dependency changes.
-- [ ] Add the smallest useful component set for existing screens, expected to include:
-  - [ ] Button
-  - [ ] Card
-  - [ ] Input and Label
-  - [ ] Select
-  - [ ] Badge
-  - [ ] Alert
-  - [ ] Table
-  - [ ] Separator
-- [ ] Replace the root header and administration navigation with responsive,
+- [x] Add the smallest useful component set for existing screens, expected to include:
+  - [x] Button
+  - [x] Card
+  - [x] Input and Label
+  - [x] Select
+  - [x] Badge
+  - [x] Alert
+  - [x] Table
+  - [x] Separator
+- [x] Replace the root header and administration navigation with responsive,
       accessible composition using the shared primitives.
-- [ ] Restyle the home, login, password-change, and user dashboard pages using the
+- [x] Restyle the home, login, password-change, and user dashboard pages using the
       default component language.
-- [ ] Restyle user administration, audit history, workstation list, and workstation
+- [x] Restyle user administration, audit history, workstation list, and workstation
       detail pages without changing their forms, actions, or server data contracts.
-- [ ] Map online, stale, offline, active, disabled, and enrollment states to a
+- [x] Map online, stale, offline, active, disabled, and enrollment states to a
       consistent badge/status treatment that does not rely on color alone.
-- [ ] Replace one-off success, warning, error, and one-time credential panels with
+- [x] Replace one-off success, warning, error, and one-time credential panels with
       consistent alert/card patterns.
-- [ ] Remove superseded global and route-local CSS while retaining only layout rules
+- [x] Remove superseded global and route-local CSS while retaining only layout rules
       or utilities that the component primitives do not cover cleanly.
-- [ ] Keep loading, empty, overflow, long-token, and narrow-screen states usable.
-- [ ] Preserve semantic labels, keyboard navigation, visible focus states, contrast,
+- [x] Keep loading, empty, overflow, long-token, and narrow-screen states usable.
+- [x] Preserve semantic labels, keyboard navigation, visible focus states, contrast,
       and destructive-action distinction.
-- [ ] Document how to add or update a shadcn-svelte component and require reviewing
+- [x] Document how to add or update a shadcn-svelte component and require reviewing
       generated diffs before committing CLI overwrites.
-- [ ] Record shadcn-svelte Chart/LayerChart as the preferred starting point for future
+- [x] Record shadcn-svelte Chart/LayerChart as the preferred starting point for future
       CPU, RAM, disk, GPU, and utilization-history visualizations, subject to a fresh
       stability review when monitoring history is implemented.
 
 ### Tests and acceptance
 
-- [ ] A clean installation and production build succeed with the checked-in component
+- [x] A clean installation and production build succeed with the checked-in component
       source and pinned dependencies; no globally installed CLI is required at
       runtime.
-- [ ] Login, forced password change, logout, user administration, audit history,
+- [x] Login, forced password change, logout, user administration, audit history,
       workstation administration, credential display, and workstation detail
       workflows still pass their existing automated checks.
-- [ ] Every existing route renders without console errors or missing styles in the
+- [x] Every existing route renders without console errors or missing styles in the
       development stack.
-- [ ] Anonymous, normal-user, and administrator navigation remain role-appropriate
+- [x] Anonymous, normal-user, and administrator navigation remain role-appropriate
       and usable at desktop and mobile widths.
-- [ ] Forms have associated labels, validation feedback remains understandable, and
+- [x] Forms have associated labels, validation feedback remains understandable, and
       all interactive controls can be reached and operated by keyboard.
-- [ ] Long usernames, workstation names, enrollment tokens, and temporary credentials
+- [x] Long usernames, workstation names, enrollment tokens, and temporary credentials
       wrap or scroll without breaking their containers.
-- [ ] The two simulated workstations still appear online with readable inventory and
+- [x] The two simulated workstations still appear online with readable inventory and
       status presentation after the UI migration.
-- [ ] Platform tests, authentication and node smoke tests, type-checking, linting, and
+- [x] Platform tests, authentication and node smoke tests, type-checking, linting, and
       production build pass.
 
 ### Explicitly not included yet
@@ -671,7 +671,7 @@ concrete while leaving room to make a deliberate choice before the feature is bu
 - [x] Milestone 0 complete
 - [x] Milestone 1 complete
 - [x] Milestone 2 complete
-- [ ] Milestone 2.1 complete
+- [x] Milestone 2.1 complete
 - [ ] Milestone 3 complete
 - [ ] Milestone 4 complete
 - [ ] Milestone 5 complete
