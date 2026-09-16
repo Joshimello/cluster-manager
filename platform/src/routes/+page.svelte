@@ -1,5 +1,7 @@
 <script lang="ts">
   import { product } from '$lib/product';
+
+  let { data } = $props();
 </script>
 
 <svelte:head>
@@ -12,7 +14,12 @@
     <p class="eyebrow">Research infrastructure</p>
     <h1>{product.name}</h1>
     <p class="description">{product.description}</p>
-    <div class="status"><span aria-hidden="true"></span> Platform skeleton is running</div>
+    <div class:ready={data.database.status === 'ready'} class="status">
+      <span aria-hidden="true"></span>
+      {data.database.status === 'ready'
+        ? 'Platform and database are ready'
+        : 'Platform is running; database is unavailable'}
+    </div>
   </section>
 </main>
 
@@ -62,8 +69,8 @@
     align-items: center;
     gap: 0.65rem;
     padding: 0.7rem 0.95rem;
-    color: #24563b;
-    background: #ecf9f1;
+    color: #71480f;
+    background: #fff7e7;
     border-radius: 999px;
     font-size: 0.9rem;
     font-weight: 650;
@@ -72,8 +79,18 @@
   .status span {
     width: 0.55rem;
     height: 0.55rem;
-    background: #2a9d5b;
+    background: #c17b20;
     border-radius: 50%;
+    box-shadow: 0 0 0 0.25rem rgb(193 123 32 / 14%);
+  }
+
+  .status.ready span {
+    background: #2a9d5b;
     box-shadow: 0 0 0 0.25rem rgb(42 157 91 / 14%);
+  }
+
+  .status.ready {
+    color: #24563b;
+    background: #ecf9f1;
   }
 </style>
