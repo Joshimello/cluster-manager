@@ -10,17 +10,19 @@ implementation plan.
 
 ## Current status
 
-Milestone 0 is complete and provides a bootable development and production-shaped
-foundation:
+Milestone 1 is complete. The repository currently provides:
 
 - SvelteKit and TypeScript platform
 - PostgreSQL with Drizzle migrations
 - database-backed readiness endpoint
 - minimal Go node executable
 - Docker Compose development and production configurations
+- platform login with secure server-side sessions
+- administrator-managed users, roles, account status, and credential resets
+- forced replacement of generated temporary passwords
+- audit history for user and credential administration
 
-User management, workstation connectivity, GPU monitoring, and reservations are not
-implemented yet. Milestone 1 will add secure login and user administration.
+Workstation connectivity, GPU monitoring, and reservations are not implemented yet.
 
 ## Requirements
 
@@ -54,6 +56,24 @@ Then open <http://localhost:5173>. A healthy installation displays **Platform an
 database are ready**. The machine-readable readiness endpoint is available at
 <http://localhost:5173/health>.
 
+### Create the initial administrator
+
+After the stack is healthy, bootstrap the first administrator:
+
+```bash
+docker compose -f docker-compose.dev.yml exec platform \
+  npm run admin:bootstrap -- --username admin --display-name "Lab Administrator"
+```
+
+The command works only while the platform has no users. It prints a generated
+temporary password exactly once. Save it, log in at <http://localhost:5173/login>, and
+replace it when prompted. A second bootstrap attempt is refused.
+
+Administrators can then create users, change display names and roles, enable or
+disable accounts, reset credentials, and inspect audit history from the
+**Administration** area. Generated/reset credentials are displayed only in the action
+response and must be copied before leaving the page.
+
 Source changes under `platform/` are mounted into the development container and are
 picked up by Vite. PostgreSQL data and container-installed npm dependencies are kept
 in named Docker volumes.
@@ -86,6 +106,20 @@ make check
 make format
 make build
 ```
+
+The authentication smoke test is intended for a disposable, freshly bootstrapped
+installation because it changes the initial admin password and creates a test user:
+
+```bash
+BASE_URL=http://localhost:5173 \
+ADMIN_USERNAME=admin \
+ADMIN_TEMPORARY_PASSWORD='the-bootstrap-password' \
+ADMIN_NEW_PASSWORD='a-new-test-password-of-at-least-12-characters' \
+npm --prefix platform run test:auth-smoke
+```
+
+It verifies login, required password replacement, user creation, role enforcement,
+account disabling, session invalidation, credential reset, and audit visibility.
 
 Inspect the development stack:
 

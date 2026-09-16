@@ -87,6 +87,7 @@ export const actions: Actions = {
         action: 'create',
         success: true,
         message: `Created ${createdUser.username}.`,
+        createdUserId: createdUser.id,
         credentialUsername: createdUser.username,
         temporaryPassword
       };

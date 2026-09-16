@@ -95,40 +95,49 @@ to end.
 
 ### Build
 
-- [ ] Design the minimum user, credential/session, and audit-event tables.
-- [ ] Add a secure initial-admin bootstrap flow that does not embed credentials in
+- [x] Design the minimum user, credential/session, and audit-event tables.
+- [x] Add a secure initial-admin bootstrap flow that does not embed credentials in
       source code or images.
-- [ ] Implement password hashing with a current password-hashing algorithm and safe
+- [x] Implement password hashing with a current password-hashing algorithm and safe
       parameters.
-- [ ] Implement server-side sessions with secure cookie behavior, expiry, logout,
+- [x] Implement server-side sessions with secure cookie behavior, expiry, logout,
       and session invalidation.
-- [ ] Add CSRF protection or an equivalent same-origin strategy for mutations.
-- [ ] Add login, logout, and authenticated layouts.
-- [ ] Add two roles: `user` and `admin`.
-- [ ] Enforce roles in server-side handlers and actions.
-- [ ] Add admin workflows to:
-  - [ ] list and inspect users
-  - [ ] create a user
-  - [ ] edit basic user details
-  - [ ] enable or disable a user
-  - [ ] reset a platform password using a temporary/generated credential flow
-- [ ] Ensure disabled users cannot start new sessions and existing sessions are
+- [x] Add CSRF protection or an equivalent same-origin strategy for mutations.
+- [x] Add login, logout, and authenticated layouts.
+- [x] Add two roles: `user` and `admin`.
+- [x] Enforce roles in server-side handlers and actions.
+- [x] Add admin workflows to:
+  - [x] list and inspect users
+  - [x] create a user
+  - [x] edit basic user details
+  - [x] enable or disable a user
+  - [x] reset a platform password using a temporary/generated credential flow
+- [x] Ensure disabled users cannot start new sessions and existing sessions are
       invalidated.
-- [ ] Add a basic user home page showing identity, role, and account state.
-- [ ] Record audit events for user creation, editing, enable/disable, and credential
+- [x] Add a basic user home page showing identity, role, and account state.
+- [x] Record audit events for user creation, editing, enable/disable, and credential
       reset.
-- [ ] Add a basic admin audit-history page.
+- [x] Add a basic admin audit-history page.
 
 ### Tests and acceptance
 
-- [ ] A fresh installation can bootstrap exactly one initial admin safely.
-- [ ] An admin can log in, create a user, and give the temporary credential to that
+- [x] A fresh installation can bootstrap exactly one initial admin safely.
+- [x] An admin can log in, create a user, and give the temporary credential to that
       user without plaintext passwords being stored.
-- [ ] The new user can log in and cannot open or call admin functionality.
-- [ ] Disabling the user blocks subsequent authenticated access.
-- [ ] Each privileged user-management action is visible in audit history with actor,
+- [x] The new user can log in and cannot open or call admin functionality.
+- [x] Disabling the user blocks subsequent authenticated access.
+- [x] Each privileged user-management action is visible in audit history with actor,
       action, target, and time.
-- [ ] Authentication, session, role, and audit integration tests pass.
+- [x] Authentication, session, role, and audit integration tests pass.
+
+### Completion record
+
+Completed on 2026-09-16. Verified with unit/static tests and an automated HTTP smoke
+test against a fresh production Compose database. The test covered initial bootstrap,
+Argon2id password storage, forced password replacement, user creation, normal-user
+role denial, disable/session revocation, re-enable, credential reset, old-password
+rejection, and audit visibility. Production checks also verified same-origin CSRF
+rejection and `HttpOnly; Secure; SameSite=Lax` session cookies.
 
 ### Explicitly not included yet
 
@@ -540,9 +549,8 @@ Do not pull these into a milestone unless the requirements change:
 These do not block Milestone 0. The provisional defaults keep implementation planning
 concrete while leaving room to make a deliberate choice before the feature is built.
 
-- [ ] **Before Milestone 1 — account onboarding:** confirm whether an admin-issued
-      temporary password is acceptable. Provisional default: yes, force replacement
-      on first login.
+- [x] **Before Milestone 1 — account onboarding:** use an admin-issued generated
+      temporary password and force replacement on first login.
 - [ ] **Before Milestone 2 — node bootstrap:** confirm how operators prefer to create
       and deliver node credentials. Provisional default: an admin creates the
       workstation in the UI and copies a one-time enrollment token to the machine.
@@ -570,7 +578,7 @@ concrete while leaving room to make a deliberate choice before the feature is bu
 ## Progress
 
 - [x] Milestone 0 complete
-- [ ] Milestone 1 complete
+- [x] Milestone 1 complete
 - [ ] Milestone 2 complete
 - [ ] Milestone 3 complete
 - [ ] Milestone 4 complete
