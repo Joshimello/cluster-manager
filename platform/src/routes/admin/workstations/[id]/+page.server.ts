@@ -6,6 +6,7 @@ import { getDatabase } from '$lib/server/db';
 import { workstations } from '$lib/server/db/schema';
 import { isWorkstationId } from '$lib/server/nodes/credentials';
 import { deriveConnectionState } from '$lib/server/nodes/heartbeat';
+import { presentWorkstation } from '$lib/server/nodes/presentation';
 
 import type { PageServerLoad } from './$types';
 
@@ -20,7 +21,7 @@ export const load: PageServerLoad = async ({ locals, params }) => {
   if (!workstation) error(404, 'Workstation not found');
   return {
     workstation: {
-      ...workstation,
+      ...presentWorkstation(workstation),
       connectionState: deriveConnectionState(workstation.lastHeartbeatAt)
     }
   };

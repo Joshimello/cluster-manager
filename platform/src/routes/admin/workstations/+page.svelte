@@ -103,7 +103,7 @@
             <span class:bad={workstation.status === 'disabled'} class="badge"
               >{workstation.status}</span
             >
-            <span class="badge">{workstation.credentialHash ? 'enrolled' : 'not enrolled'}</span>
+            <span class="badge">{workstation.enrolled ? 'enrolled' : 'not enrolled'}</span>
           </div>
           <div class="actions">
             <form method="POST" action="?/issueEnrollment">
@@ -112,7 +112,7 @@
                 type="submit">Rotate / enroll</button
               >
             </form>
-            {#if workstation.credentialHash}<form method="POST" action="?/revoke">
+            {#if workstation.enrolled}<form method="POST" action="?/revoke">
                 <input type="hidden" name="workstationId" value={workstation.id} /><button
                   class="danger"
                   type="submit">Revoke</button

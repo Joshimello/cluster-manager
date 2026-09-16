@@ -8,7 +8,7 @@ RUN npm ci
 FROM dependencies AS development
 COPY . .
 EXPOSE 5173
-CMD ["sh", "-c", "npm run db:migrate:runtime && npm run dev -- --host 0.0.0.0"]
+CMD ["sh", "-c", "npm run db:migrate:runtime && if [ \"$NODE_DEV_SEED_WORKSTATIONS\" = \"true\" ]; then npm run dev:seed-workstations; fi && npm run dev -- --host 0.0.0.0"]
 
 FROM dependencies AS build
 COPY . .
@@ -27,4 +27,3 @@ COPY --from=build --chown=node:node /app/package.json ./package.json
 USER node
 EXPOSE 3000
 CMD ["sh", "-c", "npm run db:migrate:runtime && node build"]
-

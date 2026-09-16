@@ -8,7 +8,7 @@
     unit: 'gigabyte',
     maximumFractionDigits: 1
   });
-  const gigabytes = (value: number) => bytes.format(value / 1_000_000_000);
+  const gigabytes = (value = 0) => bytes.format(value / 1_000_000_000);
 </script>
 
 <svelte:head><title>{ws.name} · Workstations · Cluster Manager</title></svelte:head>
@@ -61,7 +61,7 @@
     <section class="panel sessions">
       <h2>Logged-in sessions</h2>
       {#if ws.inventory.sessions.length === 0}<p class="muted">No sessions reported.</p>{:else}<ul>
-          {#each ws.inventory.sessions as session}<li>
+          {#each ws.inventory.sessions as session (session.username + session.terminal)}<li>
               <strong>{session.username}</strong> on {session.terminal}{session.remoteHost
                 ? ` from ${session.remoteHost}`
                 : ''}

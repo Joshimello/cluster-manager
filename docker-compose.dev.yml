@@ -22,6 +22,9 @@ services:
       target: development
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-cluster_manager}:${POSTGRES_PASSWORD:-cluster_manager_development_only}@postgres:5432/${POSTGRES_DB:-cluster_manager}
+      NODE_DEV_SEED_WORKSTATIONS: "true"
+      NODE_WS01_ENROLLMENT_TOKEN: ${NODE_WS01_ENROLLMENT_TOKEN:-cmenroll_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA}
+      NODE_WS02_ENROLLMENT_TOKEN: ${NODE_WS02_ENROLLMENT_TOKEN:-cmenroll_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB}
     ports:
       - "${DEV_PLATFORM_PORT:-5173}:5173"
     volumes:
@@ -43,7 +46,48 @@ services:
       retries: 15
     init: true
 
+  node-ws01:
+    build:
+      context: ./node
+    environment:
+      NODE_PLATFORM_URL: http://platform:5173
+      NODE_ALLOW_INSECURE_HTTP: "true"
+      NODE_WORKSTATION_NAME: ws01
+      NODE_ENROLLMENT_TOKEN: ${NODE_WS01_ENROLLMENT_TOKEN:-cmenroll_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA}
+      NODE_CREDENTIAL_FILE: /var/lib/cluster-manager/node-credential
+      NODE_HEARTBEAT_INTERVAL: 5s
+      NODE_SIMULATE: "true"
+      NODE_SIMULATION_SCENARIO: normal
+    volumes:
+      - node-ws01-data:/var/lib/cluster-manager
+    depends_on:
+      platform:
+        condition: service_healthy
+    restart: unless-stopped
+    init: true
+
+  node-ws02:
+    build:
+      context: ./node
+    environment:
+      NODE_PLATFORM_URL: http://platform:5173
+      NODE_ALLOW_INSECURE_HTTP: "true"
+      NODE_WORKSTATION_NAME: ws02
+      NODE_ENROLLMENT_TOKEN: ${NODE_WS02_ENROLLMENT_TOKEN:-cmenroll_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB}
+      NODE_CREDENTIAL_FILE: /var/lib/cluster-manager/node-credential
+      NODE_HEARTBEAT_INTERVAL: 5s
+      NODE_SIMULATE: "true"
+      NODE_SIMULATION_SCENARIO: multi-user
+    volumes:
+      - node-ws02-data:/var/lib/cluster-manager
+    depends_on:
+      platform:
+        condition: service_healthy
+    restart: unless-stopped
+    init: true
+
 volumes:
   postgres-dev-data:
   platform-dev-dependencies:
-
+  node-ws01-data:
+  node-ws02-data:

@@ -14,6 +14,7 @@ import {
   validateWorkstationName
 } from '$lib/server/nodes/credentials';
 import { deriveConnectionState } from '$lib/server/nodes/heartbeat';
+import { presentWorkstation } from '$lib/server/nodes/presentation';
 
 import type { Actions, PageServerLoad } from './$types';
 
@@ -30,10 +31,12 @@ export const load: PageServerLoad = async ({ locals }) => {
   const rows = await getDatabase().select().from(workstations).orderBy(asc(workstations.name));
   const now = new Date();
   return {
-    workstations: rows.map((row) => ({
-      ...row,
-      connectionState: deriveConnectionState(row.lastHeartbeatAt, now)
-    }))
+    workstations: rows.map((row) => {
+      return {
+        ...presentWorkstation(row),
+        connectionState: deriveConnectionState(row.lastHeartbeatAt, now)
+      };
+    })
   };
 };
 

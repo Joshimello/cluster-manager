@@ -18,10 +18,12 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:migrate:runtime": "node scripts/migrate.mjs",
+    "dev:seed-workstations": "node scripts/seed-dev-workstations.mjs",
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
     "test": "vitest run",
     "test:auth-smoke": "node scripts/auth-smoke.mjs",
+    "test:node-smoke": "node scripts/node-smoke.mjs",
     "test:watch": "vitest"
   },
   "devDependencies": {
