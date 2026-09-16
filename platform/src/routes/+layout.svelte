@@ -69,3 +69,9 @@
 </header>
 
 {@render children()}
+
+<footer
+  class="text-muted-foreground mx-auto w-full max-w-7xl px-4 py-6 text-center text-xs sm:px-6 lg:px-8"
+>
+  Cluster Manager {data.platformVersion}
+</footer>

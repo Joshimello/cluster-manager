@@ -3,6 +3,7 @@
   import DatabaseIcon from '@lucide/svelte/icons/database';
   import MonitorIcon from '@lucide/svelte/icons/monitor';
   import TerminalIcon from '@lucide/svelte/icons/terminal';
+  import CalendarDaysIcon from '@lucide/svelte/icons/calendar-days';
   import UserRoundIcon from '@lucide/svelte/icons/user-round';
   import { resolve } from '$app/paths';
   import GpuMonitor from '$lib/components/gpu-monitor.svelte';
@@ -18,6 +19,12 @@
     maximumFractionDigits: 1
   });
   const gigabytes = (value: number) => bytes.format(value / 1_000_000_000);
+  const reservationTime = new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone: 'Asia/Kuala_Lumpur'
+  });
+  const now = new Date();
 </script>
 
 <svelte:head><title>Dashboard · Cluster Manager</title></svelte:head>
@@ -148,6 +155,39 @@
         allowStopRequests={true}
       />
     </section>
+
+    <Card.Root>
+      <Card.Header class="flex-row items-start justify-between gap-4">
+        <div class="space-y-1.5">
+          <Card.Title class="flex items-center gap-2"
+            ><CalendarDaysIcon class="size-5" />Current and upcoming reservations</Card.Title
+          >
+          <Card.Description>Times are shown in Asia/Kuala_Lumpur.</Card.Description>
+        </div>
+        <Button href={resolve('/reservations')} variant="outline">Manage reservations</Button>
+      </Card.Header>
+      <Card.Content>
+        {#if data.reservations.length === 0}
+          <p class="text-muted-foreground text-sm">You have no current or upcoming reservations.</p>
+        {:else}
+          <div class="grid gap-3">
+            {#each data.reservations as reservation (reservation.id)}
+              <div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
+                <div>
+                  <strong>GPU {reservation.gpuIndex} · {reservation.gpuModel}</strong>
+                  <p class="text-muted-foreground text-sm">
+                    {reservationTime.format(reservation.startAt)} – {reservationTime.format(
+                      reservation.endAt
+                    )}
+                  </p>
+                </div>
+                <StatusBadge status={reservation.startAt <= now ? 'current' : 'upcoming'} />
+              </div>
+            {/each}
+          </div>
+        {/if}
+      </Card.Content>
+    </Card.Root>
   {:else}
     <Card.Root class="border-dashed" size="sm">
       <Card.Header>

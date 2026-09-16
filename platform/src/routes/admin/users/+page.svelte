@@ -17,6 +17,12 @@
     dateStyle: 'medium',
     timeStyle: 'short'
   });
+  const bytes = new Intl.NumberFormat(undefined, {
+    style: 'unit',
+    unit: 'gigabyte',
+    maximumFractionDigits: 1
+  });
+  const gigabytes = (value: number) => bytes.format(value / 1_000_000_000);
 </script>
 
 <svelte:head><title>Users · Cluster Manager</title></svelte:head>
@@ -192,6 +198,7 @@
                   <div class="flex flex-wrap items-center gap-2">
                     <strong>{assignment.workstationName}</strong>
                     <StatusBadge status={assignment.provisioningStatus} />
+                    <StatusBadge status={assignment.connectionState} />
                   </div>
                   <small class="text-muted-foreground">
                     Desired generation {assignment.desiredGeneration}; applied {assignment.appliedGeneration}
@@ -205,6 +212,14 @@
                       {assignment.provisioningMessage}
                     </small>
                   {/if}
+                  <small class="text-muted-foreground">
+                    Node {assignment.nodeVersion ?? 'version unknown'}
+                    {#if assignment.inventory}
+                      · Disk {gigabytes(assignment.inventory.storage.usedBytes)} used of {gigabytes(
+                        assignment.inventory.storage.totalBytes
+                      )}
+                    {/if}
+                  </small>
                 {:else}
                   <span class="text-muted-foreground text-sm">Not assigned</span>
                 {/if}
@@ -258,6 +273,32 @@
                     <Button variant="destructive" type="submit">Revoke access</Button>
                   </form>
                 {/if}
+              </div>
+
+              <div class="grid gap-2 lg:col-span-3 sm:grid-cols-2">
+                <div class="rounded-md border bg-background p-3">
+                  <span class="text-muted-foreground text-xs font-medium uppercase"
+                    >Active GPU processes</span
+                  >
+                  <p class="mt-1 text-lg font-semibold">{user.gpuProcessCount}</p>
+                </div>
+                <div class="rounded-md border bg-background p-3">
+                  <span class="text-muted-foreground text-xs font-medium uppercase"
+                    >Current / upcoming reservations</span
+                  >
+                  {#if user.reservations.length === 0}
+                    <p class="text-muted-foreground mt-1 text-sm">None</p>
+                  {:else}
+                    <div class="mt-1 flex flex-wrap gap-2">
+                      {#each user.reservations as reservation (reservation.id)}
+                        <Badge variant="outline">
+                          {reservation.workstationName} GPU {reservation.gpuIndex} · {reservation.state}
+                          · {dateFormatter.format(reservation.startAt)}
+                        </Badge>
+                      {/each}
+                    </div>
+                  {/if}
+                </div>
               </div>
             </div>
           </article>

@@ -1,4 +1,4 @@
-import { and, asc, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, sql } from 'drizzle-orm';
 import { fail } from '@sveltejs/kit';
 
 import { recordAudit } from '$lib/server/audit';
@@ -7,12 +7,16 @@ import { generateTemporaryPassword, hashPasswordPair } from '$lib/server/auth/pa
 import { getDatabase } from '$lib/server/db';
 import {
   sessions,
+  gpus,
+  reservations,
   users,
   workstations,
   workstationAssignments,
   type UserStatus
 } from '$lib/server/db/schema';
 import { isWorkstationId } from '$lib/server/nodes/credentials';
+import { deriveConnectionState } from '$lib/server/nodes/heartbeat';
+import { loadWorkstationGpus } from '$lib/server/nodes/gpu-monitoring';
 import {
   isUserId,
   normalizeDisplayName,
@@ -70,17 +74,65 @@ export const load: PageServerLoad = async ({ locals }) => {
         appliedGeneration: workstationAssignments.appliedGeneration,
         provisioningStatus: workstationAssignments.provisioningStatus,
         provisioningMessage: workstationAssignments.provisioningMessage,
-        reconciledAt: workstationAssignments.reconciledAt
+        reconciledAt: workstationAssignments.reconciledAt,
+        inventory: workstations.inventory,
+        lastHeartbeatAt: workstations.lastHeartbeatAt,
+        nodeVersion: workstations.nodeVersion
       })
       .from(workstationAssignments)
       .innerJoin(workstations, eq(workstationAssignments.workstationId, workstations.id))
       .where(eq(workstationAssignments.status, 'active'))
   ]);
 
+  const now = new Date();
+  const [reservationRows, gpuViews] = await Promise.all([
+    database
+      .select({
+        id: reservations.id,
+        userId: reservations.userId,
+        workstationName: workstations.name,
+        gpuIndex: gpus.localIndex,
+        startAt: reservations.startAt,
+        endAt: reservations.endAt
+      })
+      .from(reservations)
+      .innerJoin(gpus, eq(reservations.gpuId, gpus.id))
+      .innerJoin(workstations, eq(gpus.workstationId, workstations.id))
+      .where(and(eq(reservations.status, 'active'), gt(reservations.endAt, now)))
+      .orderBy(asc(reservations.startAt)),
+    Promise.all(
+      activeAssignments.map(async (assignment) => ({
+        workstationId: assignment.workstationId,
+        gpus: await loadWorkstationGpus(assignment.workstationId)
+      }))
+    )
+  ]);
+
+  const processCounts = new Map<string, number>();
+  for (const view of gpuViews) {
+    for (const gpu of view.gpus) {
+      for (const process of gpu.processes) {
+        processCounts.set(process.username, (processCounts.get(process.username) ?? 0) + 1);
+      }
+    }
+  }
+
   return {
-    users: platformUsers,
+    users: platformUsers.map((user) => ({
+      ...user,
+      gpuProcessCount: processCounts.get(user.username) ?? 0,
+      reservations: reservationRows
+        .filter((reservation) => reservation.userId === user.id)
+        .map((reservation) => ({
+          ...reservation,
+          state: reservation.startAt <= now ? 'current' : 'upcoming'
+        }))
+    })),
     workstations: availableWorkstations,
-    assignments: activeAssignments
+    assignments: activeAssignments.map((assignment) => ({
+      ...assignment,
+      connectionState: deriveConnectionState(assignment.lastHeartbeatAt, now)
+    }))
   };
 };
 

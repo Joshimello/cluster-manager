@@ -45,7 +45,8 @@ export const load: PageServerLoad = async ({ locals }) => {
       return {
         ...presentWorkstation(row),
         connectionState: deriveConnectionState(row.lastHeartbeatAt, now),
-        gpuCount: gpuCounts.get(row.id) ?? 0
+        gpuCount: gpuCounts.get(row.id) ?? 0,
+        nodeVersion: row.nodeVersion
       };
     })
   };
