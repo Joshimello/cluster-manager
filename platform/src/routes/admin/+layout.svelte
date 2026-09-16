@@ -1,5 +1,6 @@
 <script lang="ts">
   import ClipboardListIcon from '@lucide/svelte/icons/clipboard-list';
+  import CalendarCogIcon from '@lucide/svelte/icons/calendar-cog';
   import MonitorCogIcon from '@lucide/svelte/icons/monitor-cog';
   import UsersIcon from '@lucide/svelte/icons/users';
   import { resolve } from '$app/paths';
@@ -21,6 +22,9 @@
     >
     <Button href={resolve('/admin/workstations')} variant="ghost" size="sm"
       ><MonitorCogIcon data-icon="inline-start" />Workstations</Button
+    >
+    <Button href={resolve('/admin/reservations')} variant="ghost" size="sm"
+      ><CalendarCogIcon data-icon="inline-start" />Reservations</Button
     >
     <Button href={resolve('/admin/audit')} variant="ghost" size="sm"
       ><ClipboardListIcon data-icon="inline-start" />Audit history</Button

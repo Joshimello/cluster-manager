@@ -1,5 +1,6 @@
 <script lang="ts">
   import BoxesIcon from '@lucide/svelte/icons/boxes';
+  import CalendarDaysIcon from '@lucide/svelte/icons/calendar-days';
   import LayoutDashboardIcon from '@lucide/svelte/icons/layout-dashboard';
   import LogOutIcon from '@lucide/svelte/icons/log-out';
   import SettingsIcon from '@lucide/svelte/icons/settings';
@@ -30,6 +31,11 @@
             <LayoutDashboardIcon data-icon="inline-start" />
             <span class="hidden sm:inline">Dashboard</span>
             <span class="sr-only sm:hidden">Dashboard</span>
+          </Button>
+          <Button href={resolve('/reservations')} variant="ghost" size="sm">
+            <CalendarDaysIcon data-icon="inline-start" />
+            <span class="hidden sm:inline">Reservations</span>
+            <span class="sr-only sm:hidden">Reservations</span>
           </Button>
           {#if data.user.role === 'admin'}
             <Button href={resolve('/admin/users')} variant="ghost" size="sm">

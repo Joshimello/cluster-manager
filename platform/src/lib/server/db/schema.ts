@@ -2,6 +2,7 @@ import { relations, sql } from 'drizzle-orm';
 import {
   boolean,
   bigint,
+  check,
   doublePrecision,
   index,
   integer,
@@ -20,6 +21,7 @@ export const userStatus = pgEnum('user_status', ['active', 'disabled']);
 export const workstationStatus = pgEnum('workstation_status', ['active', 'disabled']);
 export const assignmentStatus = pgEnum('assignment_status', ['active', 'revoked']);
 export const provisioningStatus = pgEnum('provisioning_status', ['pending', 'applied', 'error']);
+export const reservationStatus = pgEnum('reservation_status', ['active', 'cancelled']);
 
 export const platformMetadata = pgTable('platform_metadata', {
   key: text('key').primaryKey(),
@@ -217,6 +219,44 @@ export const gpuProcessObservations = pgTable(
   ]
 );
 
+export const reservations = pgTable(
+  'reservations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    gpuId: uuid('gpu_id')
+      .notNull()
+      .references(() => gpus.id, { onDelete: 'restrict' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    createdByUserId: uuid('created_by_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    status: reservationStatus('status').notNull().default('active'),
+    startAt: timestamp('start_at', { withTimezone: true }).notNull(),
+    endAt: timestamp('end_at', { withTimezone: true }).notNull(),
+    isAdminOverride: boolean('is_admin_override').notNull().default(false),
+    overrideReason: text('override_reason'),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    cancelledByUserId: uuid('cancelled_by_user_id').references(() => users.id, {
+      onDelete: 'restrict'
+    }),
+    cancellationReason: text('cancellation_reason'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => [
+    check('reservations_end_after_start', sql`${table.endAt} > ${table.startAt}`),
+    check(
+      'reservations_half_hour_boundaries',
+      sql`mod(extract(epoch from ${table.startAt})::bigint, 1800) = 0 and mod(extract(epoch from ${table.endAt})::bigint, 1800) = 0`
+    ),
+    index('reservations_gpu_start_index').on(table.gpuId, table.startAt),
+    index('reservations_user_start_index').on(table.userId, table.startAt),
+    index('reservations_status_end_index').on(table.status, table.endAt)
+  ]
+);
+
 export const auditEvents = pgTable(
   'audit_events',
   {
@@ -237,7 +277,10 @@ export const auditEvents = pgTable(
 export const usersRelations = relations(users, ({ many }) => ({
   sessions: many(sessions),
   auditEvents: many(auditEvents),
-  workstationAssignments: many(workstationAssignments)
+  workstationAssignments: many(workstationAssignments),
+  reservations: many(reservations, { relationName: 'reservationOwner' }),
+  createdReservations: many(reservations, { relationName: 'reservationCreator' }),
+  cancelledReservations: many(reservations, { relationName: 'reservationCanceller' })
 }));
 
 export const workstationsRelations = relations(workstations, ({ many }) => ({
@@ -247,7 +290,27 @@ export const workstationsRelations = relations(workstations, ({ many }) => ({
 
 export const gpusRelations = relations(gpus, ({ one, many }) => ({
   workstation: one(workstations, { fields: [gpus.workstationId], references: [workstations.id] }),
-  observations: many(gpuObservations)
+  observations: many(gpuObservations),
+  reservations: many(reservations)
+}));
+
+export const reservationsRelations = relations(reservations, ({ one }) => ({
+  gpu: one(gpus, { fields: [reservations.gpuId], references: [gpus.id] }),
+  user: one(users, {
+    relationName: 'reservationOwner',
+    fields: [reservations.userId],
+    references: [users.id]
+  }),
+  createdBy: one(users, {
+    relationName: 'reservationCreator',
+    fields: [reservations.createdByUserId],
+    references: [users.id]
+  }),
+  cancelledBy: one(users, {
+    relationName: 'reservationCanceller',
+    fields: [reservations.cancelledByUserId],
+    references: [users.id]
+  })
 }));
 
 export const gpuObservationsRelations = relations(gpuObservations, ({ one, many }) => ({
@@ -295,3 +358,5 @@ export type ProvisioningStatus = WorkstationAssignment['provisioningStatus'];
 export type Gpu = typeof gpus.$inferSelect;
 export type GpuObservation = typeof gpuObservations.$inferSelect;
 export type GpuProcessObservation = typeof gpuProcessObservations.$inferSelect;
+export type Reservation = typeof reservations.$inferSelect;
+export type ReservationStatus = Reservation['status'];
