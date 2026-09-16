@@ -1,8 +1,9 @@
-import { relations } from 'drizzle-orm';
+import { relations, sql } from 'drizzle-orm';
 import {
   boolean,
   bigint,
   index,
+  integer,
   jsonb,
   pgEnum,
   pgTable,
@@ -16,6 +17,8 @@ import {
 export const userRole = pgEnum('user_role', ['user', 'admin']);
 export const userStatus = pgEnum('user_status', ['active', 'disabled']);
 export const workstationStatus = pgEnum('workstation_status', ['active', 'disabled']);
+export const assignmentStatus = pgEnum('assignment_status', ['active', 'revoked']);
+export const provisioningStatus = pgEnum('provisioning_status', ['pending', 'applied', 'error']);
 
 export const platformMetadata = pgTable('platform_metadata', {
   key: text('key').primaryKey(),
@@ -32,6 +35,7 @@ export const users = pgTable(
     role: userRole('role').notNull().default('user'),
     status: userStatus('status').notNull().default('active'),
     passwordHash: text('password_hash').notNull(),
+    linuxPasswordHash: text('linux_password_hash'),
     mustChangePassword: boolean('must_change_password').notNull().default(true),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
@@ -115,6 +119,35 @@ export const workstations = pgTable(
   ]
 );
 
+export const workstationAssignments = pgTable(
+  'workstation_assignments',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    workstationId: uuid('workstation_id')
+      .notNull()
+      .references(() => workstations.id, { onDelete: 'restrict' }),
+    status: assignmentStatus('status').notNull().default('active'),
+    desiredGeneration: integer('desired_generation').notNull().default(1),
+    appliedGeneration: integer('applied_generation').notNull().default(0),
+    provisioningStatus: provisioningStatus('provisioning_status').notNull().default('pending'),
+    provisioningMessage: text('provisioning_message'),
+    assignedAt: timestamp('assigned_at', { withTimezone: true }).notNull().defaultNow(),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    reconciledAt: timestamp('reconciled_at', { withTimezone: true }),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => [
+    uniqueIndex('workstation_assignments_active_user_unique')
+      .on(table.userId)
+      .where(sql`${table.status} = 'active'`),
+    index('workstation_assignments_workstation_index').on(table.workstationId),
+    index('workstation_assignments_status_index').on(table.status)
+  ]
+);
+
 export const auditEvents = pgTable(
   'audit_events',
   {
@@ -134,7 +167,20 @@ export const auditEvents = pgTable(
 
 export const usersRelations = relations(users, ({ many }) => ({
   sessions: many(sessions),
-  auditEvents: many(auditEvents)
+  auditEvents: many(auditEvents),
+  workstationAssignments: many(workstationAssignments)
+}));
+
+export const workstationsRelations = relations(workstations, ({ many }) => ({
+  assignments: many(workstationAssignments)
+}));
+
+export const workstationAssignmentsRelations = relations(workstationAssignments, ({ one }) => ({
+  user: one(users, { fields: [workstationAssignments.userId], references: [users.id] }),
+  workstation: one(workstations, {
+    fields: [workstationAssignments.workstationId],
+    references: [workstations.id]
+  })
 }));
 
 export const sessionsRelations = relations(sessions, ({ one }) => ({
@@ -156,3 +202,6 @@ export type UserRole = User['role'];
 export type UserStatus = User['status'];
 export type Workstation = typeof workstations.$inferSelect;
 export type WorkstationStatus = Workstation['status'];
+export type WorkstationAssignment = typeof workstationAssignments.$inferSelect;
+export type AssignmentStatus = WorkstationAssignment['status'];
+export type ProvisioningStatus = WorkstationAssignment['provisioningStatus'];

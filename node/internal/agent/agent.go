@@ -15,14 +15,16 @@ import (
 	"github.com/Joshimello/cluster-manager/node/internal/config"
 	"github.com/Joshimello/cluster-manager/node/internal/controlplane"
 	"github.com/Joshimello/cluster-manager/node/internal/inventory"
+	"github.com/Joshimello/cluster-manager/node/internal/reconcile"
 )
 
 type Agent struct {
-	config    config.Config
-	version   string
-	logger    *log.Logger
-	client    *controlplane.Client
-	collector inventory.Collector
+	config     config.Config
+	version    string
+	logger     *log.Logger
+	client     *controlplane.Client
+	collector  inventory.Collector
+	reconciler reconcile.Reconciler
 }
 
 func New(cfg config.Config, version string, logger *log.Logger) (*Agent, error) {
@@ -30,10 +32,12 @@ func New(cfg config.Config, version string, logger *log.Logger) (*Agent, error) 
 		return nil, err
 	}
 	var collector inventory.Collector = inventory.NewSystem()
+	var reconciler reconcile.Reconciler = reconcile.NewLinux(cfg.WorkstationName)
 	if cfg.Simulate {
 		collector = inventory.NewSimulated(cfg.WorkstationName, cfg.SimulationScenario)
+		reconciler = reconcile.NewSimulated(cfg.WorkstationName)
 	}
-	return &Agent{config: cfg, version: version, logger: logger, client: controlplane.New(cfg.PlatformURL), collector: collector}, nil
+	return &Agent{config: cfg, version: version, logger: logger, client: controlplane.New(cfg.PlatformURL), collector: collector, reconciler: reconciler}, nil
 }
 
 func (a *Agent) Run(ctx context.Context) error {
@@ -78,6 +82,19 @@ func (a *Agent) Run(ctx context.Context) error {
 			}
 			backoff = min(backoff*2, 30*time.Second)
 			continue
+		}
+		state, desiredErr := a.client.DesiredState(ctx, credential)
+		if desiredErr != nil {
+			a.logger.Printf("desired state unavailable; leaving local accounts unchanged: %v", desiredErr)
+		} else {
+			results, reconcileErr := a.reconciler.Apply(ctx, state)
+			if reconcileErr != nil {
+				a.logger.Printf("desired state rejected; leaving local accounts unchanged: %v", reconcileErr)
+			} else if len(results) > 0 {
+				if err := a.client.ReportReconciliation(ctx, credential, results); err != nil {
+					a.logger.Printf("reconciliation status report failed: %v", err)
+				}
+			}
 		}
 		backoff = time.Second
 		if !wait(ctx, a.config.HeartbeatInterval) {

@@ -1,5 +1,7 @@
 <script lang="ts">
   import KeyRoundIcon from '@lucide/svelte/icons/key-round';
+  import MonitorIcon from '@lucide/svelte/icons/monitor';
+  import TerminalIcon from '@lucide/svelte/icons/terminal';
   import UserRoundIcon from '@lucide/svelte/icons/user-round';
   import { resolve } from '$app/paths';
   import PageHeader from '$lib/components/page-header.svelte';
@@ -38,7 +40,7 @@
       </div>
       <div class="grid gap-1">
         <span class="text-muted-foreground text-xs font-medium uppercase">Workstation</span><strong
-          >Not assigned yet</strong
+          >{data.assignment?.name ?? 'Not assigned yet'}</strong
         >
       </div>
       <Button href={resolve('/change-password')} variant="outline"
@@ -47,12 +49,62 @@
     </Card.Content>
   </Card.Root>
 
-  <Card.Root class="border-dashed" size="sm">
-    <Card.Header>
-      <Card.Title>Next milestone</Card.Title>
-      <Card.Description
-        >Workstation assignment and SSH access will appear here in Milestone 3.</Card.Description
-      >
-    </Card.Header>
-  </Card.Root>
+  {#if data.assignment}
+    <section class="grid gap-4 md:grid-cols-2">
+      <Card.Root>
+        <Card.Header>
+          <Card.Title class="flex items-center gap-2"
+            ><MonitorIcon class="size-5" />{data.assignment.displayName}</Card.Title
+          >
+          <Card.Description>Your assigned Linux workstation.</Card.Description>
+        </Card.Header>
+        <Card.Content class="grid gap-3">
+          <div class="flex flex-wrap items-center gap-2">
+            <StatusBadge status={data.assignment.provisioningStatus} />
+            <span class="text-muted-foreground text-sm">
+              Generation {data.assignment.appliedGeneration} of {data.assignment.desiredGeneration}
+            </span>
+          </div>
+          {#if data.assignment.provisioningMessage}
+            <p
+              class={data.assignment.provisioningStatus === 'error'
+                ? 'text-destructive text-sm'
+                : 'text-muted-foreground text-sm'}
+            >
+              {data.assignment.provisioningMessage}
+            </p>
+          {/if}
+        </Card.Content>
+      </Card.Root>
+
+      <Card.Root>
+        <Card.Header>
+          <Card.Title class="flex items-center gap-2"
+            ><TerminalIcon class="size-5" />SSH access</Card.Title
+          >
+          <Card.Description>Use the same password as this platform account.</Card.Description>
+        </Card.Header>
+        <Card.Content>
+          {#if data.assignment.provisioningStatus === 'applied'}
+            <code class="bg-muted block overflow-x-auto rounded-md border p-3 text-sm">
+              ssh {data.user.username}@{data.assignment.hostname ?? data.assignment.name}
+            </code>
+          {:else}
+            <p class="text-muted-foreground text-sm">
+              SSH access will be available after the node applies your account.
+            </p>
+          {/if}
+        </Card.Content>
+      </Card.Root>
+    </section>
+  {:else}
+    <Card.Root class="border-dashed" size="sm">
+      <Card.Header>
+        <Card.Title>No workstation assignment</Card.Title>
+        <Card.Description
+          >An administrator must assign your account before SSH access is provisioned.</Card.Description
+        >
+      </Card.Header>
+    </Card.Root>
+  {/if}
 </main>

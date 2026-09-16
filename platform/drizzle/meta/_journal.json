@@ -22,6 +22,13 @@
       "when": 1789535653713,
       "tag": "0002_pretty_storm",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1789539066000,
+      "tag": "0003_steep_ultron",
+      "breakpoints": true
     }
   ]
 }

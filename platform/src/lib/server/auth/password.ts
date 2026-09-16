@@ -1,6 +1,8 @@
 import { hash, verify } from '@node-rs/argon2';
 import { randomBytes } from 'node:crypto';
 
+import { hashLinuxPassword } from './linux-password';
+
 export const minimumPasswordLength = 12;
 export const maximumPasswordLength = 128;
 
@@ -32,6 +34,20 @@ export async function hashPassword(password: string): Promise<string> {
   }
 
   return hash(password, argon2Options);
+}
+
+export async function hashPasswordPair(password: string): Promise<{
+  passwordHash: string;
+  linuxPasswordHash: string;
+}> {
+  const validationError = validatePassword(password);
+  if (validationError) throw new Error(validationError);
+
+  const [passwordHash, linuxPasswordHash] = await Promise.all([
+    hash(password, argon2Options),
+    Promise.resolve(hashLinuxPassword(password))
+  ]);
+  return { passwordHash, linuxPasswordHash };
 }
 
 export async function verifyPassword(passwordHash: string, password: string): Promise<boolean> {

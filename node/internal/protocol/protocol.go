@@ -38,3 +38,32 @@ type Heartbeat struct {
 	UptimeSeconds uint64    `json:"uptimeSeconds"`
 	Inventory     Inventory `json:"inventory"`
 }
+
+type DesiredUser struct {
+	AssignmentID string `json:"assignmentId"`
+	Username     string `json:"username"`
+	Enabled      bool   `json:"enabled"`
+	PasswordHash string `json:"passwordHash,omitempty"`
+	Generation   int    `json:"generation"`
+}
+
+type DesiredState struct {
+	APIVersion  string    `json:"apiVersion"`
+	GeneratedAt time.Time `json:"generatedAt"`
+	Workstation struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	} `json:"workstation"`
+	Users []DesiredUser `json:"users"`
+}
+
+type ReconciliationResult struct {
+	AssignmentID string `json:"assignmentId"`
+	Generation   int    `json:"generation"`
+	Status       string `json:"status"`
+	Message      string `json:"message,omitempty"`
+}
+
+type ReconciliationReport struct {
+	Results []ReconciliationResult `json:"results"`
+}

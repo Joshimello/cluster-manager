@@ -110,6 +110,7 @@
         </div>
       {:else}
         {#each data.users as user, index (user.id)}
+          {@const assignment = data.assignments.find((candidate) => candidate.userId === user.id)}
           <article
             class="grid gap-5 py-6 first:pt-0 last:pb-0 lg:grid-cols-[minmax(12rem,0.8fr)_minmax(22rem,1.5fr)_auto] lg:items-end"
           >
@@ -180,6 +181,80 @@
                 <input type="hidden" name="userId" value={user.id} />
                 <Button variant="outline" type="submit">Reset password</Button>
               </form>
+            </div>
+
+            <div
+              class="bg-muted/40 grid gap-4 rounded-lg border p-4 lg:col-span-3 lg:grid-cols-[minmax(12rem,0.8fr)_minmax(22rem,1.5fr)_auto] lg:items-end"
+            >
+              <div class="grid gap-2">
+                <span class="text-sm font-medium">Workstation access</span>
+                {#if assignment}
+                  <div class="flex flex-wrap items-center gap-2">
+                    <strong>{assignment.workstationName}</strong>
+                    <StatusBadge status={assignment.provisioningStatus} />
+                  </div>
+                  <small class="text-muted-foreground">
+                    Desired generation {assignment.desiredGeneration}; applied {assignment.appliedGeneration}
+                  </small>
+                  {#if assignment.provisioningMessage}
+                    <small
+                      class={assignment.provisioningStatus === 'error'
+                        ? 'text-destructive'
+                        : 'text-muted-foreground'}
+                    >
+                      {assignment.provisioningMessage}
+                    </small>
+                  {/if}
+                {:else}
+                  <span class="text-muted-foreground text-sm">Not assigned</span>
+                {/if}
+              </div>
+
+              {#if data.workstations.length > 0}
+                <form
+                  class="grid items-end gap-3 sm:grid-cols-[1fr_auto]"
+                  method="POST"
+                  action="?/assignWorkstation"
+                >
+                  <input type="hidden" name="userId" value={user.id} />
+                  <div class="grid gap-2">
+                    <Label for={`workstation-${user.id}`}
+                      >{assignment ? 'Move to workstation' : 'Assign workstation'}</Label
+                    >
+                    <Select.Root
+                      type="single"
+                      name="workstationId"
+                      value={assignment?.workstationId ?? data.workstations[0].id}
+                    >
+                      <Select.Trigger id={`workstation-${user.id}`} class="w-full"
+                        ><Select.Value /></Select.Trigger
+                      >
+                      <Select.Content>
+                        {#each data.workstations as workstation (workstation.id)}
+                          <Select.Item value={workstation.id}
+                            >{workstation.name} — {workstation.displayName}</Select.Item
+                          >
+                        {/each}
+                      </Select.Content>
+                    </Select.Root>
+                  </div>
+                  <Button variant="secondary" type="submit">{assignment ? 'Move' : 'Assign'}</Button
+                  >
+                </form>
+              {:else}
+                <p class="text-muted-foreground text-sm">
+                  Create an active workstation before assigning users.
+                </p>
+              {/if}
+
+              <div class="flex lg:justify-end">
+                {#if assignment}
+                  <form method="POST" action="?/revokeWorkstation">
+                    <input type="hidden" name="userId" value={user.id} />
+                    <Button variant="destructive" type="submit">Revoke access</Button>
+                  </form>
+                {/if}
+              </div>
             </div>
           </article>
           {#if index < data.users.length - 1}<Separator />{/if}

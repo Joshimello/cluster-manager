@@ -1,12 +1,12 @@
 import { fail, redirect } from '@sveltejs/kit';
-import { eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 
 import { recordAudit } from '$lib/server/audit';
 import { requireUser } from '$lib/server/auth/guards';
-import { hashPassword, validatePassword, verifyPassword } from '$lib/server/auth/password';
+import { hashPasswordPair, validatePassword, verifyPassword } from '$lib/server/auth/password';
 import { createSession, setSessionCookie } from '$lib/server/auth/session';
 import { getDatabase } from '$lib/server/db';
-import { sessions, users } from '$lib/server/db/schema';
+import { sessions, users, workstationAssignments } from '$lib/server/db/schema';
 
 import type { Actions, PageServerLoad } from './$types';
 
@@ -52,17 +52,33 @@ export const actions: Actions = {
       return fail(400, { message: 'New password must be different from the current password.' });
     }
 
-    const newPasswordHash = await hashPassword(newPassword);
+    const { passwordHash: newPasswordHash, linuxPasswordHash } =
+      await hashPasswordPair(newPassword);
 
     await database.transaction(async (transaction) => {
       await transaction
         .update(users)
         .set({
           passwordHash: newPasswordHash,
+          linuxPasswordHash,
           mustChangePassword: false,
           updatedAt: new Date()
         })
         .where(eq(users.id, user.id));
+      await transaction
+        .update(workstationAssignments)
+        .set({
+          desiredGeneration: sql`${workstationAssignments.desiredGeneration} + 1`,
+          provisioningStatus: 'pending',
+          provisioningMessage: null,
+          updatedAt: new Date()
+        })
+        .where(
+          and(
+            eq(workstationAssignments.userId, user.id),
+            eq(workstationAssignments.status, 'active')
+          )
+        );
       await transaction.delete(sessions).where(eq(sessions.userId, user.id));
       await recordAudit((query) => transaction.execute(query), {
         actorUserId: user.id,
