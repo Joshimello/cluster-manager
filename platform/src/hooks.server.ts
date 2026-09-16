@@ -1,12 +1,17 @@
 import type { Handle } from '@sveltejs/kit';
+import { randomUUID } from 'node:crypto';
 
 import {
   deleteSessionCookie,
   sessionCookieName,
   validateSessionToken
 } from '$lib/server/auth/session';
+import { structuredLog } from '$lib/server/logging';
+import { runMaintenanceIfDue } from '$lib/server/maintenance';
 
 export const handle: Handle = async ({ event, resolve }) => {
+  const requestId = event.request.headers.get('x-request-id')?.slice(0, 128) || randomUUID();
+  const startedAt = performance.now();
   event.locals.session = null;
   event.locals.user = null;
 
@@ -28,5 +33,16 @@ export const handle: Handle = async ({ event, resolve }) => {
     }
   }
 
-  return resolve(event);
+  const response = await resolve(event);
+  response.headers.set('x-request-id', requestId);
+  structuredLog('info', 'http.request', {
+    requestId,
+    method: event.request.method,
+    path: event.url.pathname,
+    status: response.status,
+    durationMs: Math.round(performance.now() - startedAt),
+    actor: event.locals.user?.username ?? null
+  });
+  await runMaintenanceIfDue();
+  return response;
 };

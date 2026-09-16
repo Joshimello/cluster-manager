@@ -12,6 +12,7 @@ import (
 	"github.com/Joshimello/cluster-manager/node/internal/agent"
 	"github.com/Joshimello/cluster-manager/node/internal/buildinfo"
 	"github.com/Joshimello/cluster-manager/node/internal/config"
+	"github.com/Joshimello/cluster-manager/node/internal/structuredlog"
 )
 
 func main() {
@@ -23,11 +24,11 @@ func main() {
 		return
 	}
 
+	logger := log.New(structuredlog.Writer{Destination: os.Stdout, Component: "node"}, "", 0)
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatalf("configuration error: %v", err)
+		logger.Fatalf("configuration error: %v", err)
 	}
-	logger := log.New(os.Stdout, "cluster-manager-node: ", log.LstdFlags|log.LUTC)
 	runner, err := agent.New(cfg, buildinfo.Version, logger)
 	if err != nil {
 		logger.Fatalf("startup error: %v", err)
