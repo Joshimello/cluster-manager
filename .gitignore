@@ -1,0 +1,20 @@
+.DS_Store
+.env
+.env.*
+!.env.example
+
+# SvelteKit / Node.js
+platform/.svelte-kit/
+platform/build/
+platform/node_modules/
+platform/coverage/
+platform/.vite/
+
+# Go
+node/bin/
+node/coverage.out
+
+# Local tooling
+.idea/
+.vscode/
+
