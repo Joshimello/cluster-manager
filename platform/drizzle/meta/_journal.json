@@ -8,6 +8,13 @@
       "when": 1789526615972,
       "tag": "0000_omniscient_randall_flagg",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1789528288307,
+      "tag": "0001_parched_kang",
+      "breakpoints": true
     }
   ]
 }
