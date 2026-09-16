@@ -43,6 +43,13 @@
       "when": 1789562048413,
       "tag": "0005_productive_scourge",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1789565957575,
+      "tag": "0006_purple_bloodstorm",
+      "breakpoints": true
     }
   ]
 }

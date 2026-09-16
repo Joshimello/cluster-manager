@@ -22,6 +22,20 @@ export const workstationStatus = pgEnum('workstation_status', ['active', 'disabl
 export const assignmentStatus = pgEnum('assignment_status', ['active', 'revoked']);
 export const provisioningStatus = pgEnum('provisioning_status', ['pending', 'applied', 'error']);
 export const reservationStatus = pgEnum('reservation_status', ['active', 'cancelled']);
+export const stopRequestStatus = pgEnum('stop_request_status', [
+  'pending',
+  'termination_requested',
+  'resolved',
+  'dismissed',
+  'stale',
+  'failed'
+]);
+export const terminationInstructionStatus = pgEnum('termination_instruction_status', [
+  'pending',
+  'dispatched',
+  'completed',
+  'expired'
+]);
 
 export const platformMetadata = pgTable('platform_metadata', {
   key: text('key').primaryKey(),
@@ -257,6 +271,87 @@ export const reservations = pgTable(
   ]
 );
 
+export const stopRequests = pgTable(
+  'stop_requests',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    reservationId: uuid('reservation_id')
+      .notNull()
+      .references(() => reservations.id, { onDelete: 'restrict' }),
+    gpuId: uuid('gpu_id')
+      .notNull()
+      .references(() => gpus.id, { onDelete: 'restrict' }),
+    workstationId: uuid('workstation_id')
+      .notNull()
+      .references(() => workstations.id, { onDelete: 'restrict' }),
+    requesterUserId: uuid('requester_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    status: stopRequestStatus('status').notNull().default('pending'),
+    targetPid: integer('target_pid').notNull(),
+    targetUid: integer('target_uid').notNull(),
+    targetUsername: varchar('target_username', { length: 64 }).notNull(),
+    targetCommand: varchar('target_command', { length: 128 }).notNull(),
+    targetMemoryUsedBytes: bigint('target_memory_used_bytes', { mode: 'number' }).notNull(),
+    targetProcessStartTicks: bigint('target_process_start_ticks', { mode: 'number' }).notNull(),
+    requestedAt: timestamp('requested_at', { withTimezone: true }).notNull().defaultNow(),
+    decidedByUserId: uuid('decided_by_user_id').references(() => users.id, {
+      onDelete: 'set null'
+    }),
+    decidedAt: timestamp('decided_at', { withTimezone: true }),
+    decisionReason: text('decision_reason'),
+    resultMessage: text('result_message'),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => [
+    uniqueIndex('stop_requests_actionable_target_unique')
+      .on(table.reservationId, table.targetPid, table.targetUid, table.targetProcessStartTicks)
+      .where(sql`${table.status} in ('pending', 'termination_requested')`),
+    index('stop_requests_requester_status_index').on(table.requesterUserId, table.status),
+    index('stop_requests_workstation_status_index').on(table.workstationId, table.status),
+    index('stop_requests_requested_at_index').on(table.requestedAt)
+  ]
+);
+
+export const terminationInstructions = pgTable(
+  'termination_instructions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    stopRequestId: uuid('stop_request_id')
+      .notNull()
+      .references(() => stopRequests.id, { onDelete: 'restrict' }),
+    workstationId: uuid('workstation_id')
+      .notNull()
+      .references(() => workstations.id, { onDelete: 'restrict' }),
+    requestedByUserId: uuid('requested_by_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    status: terminationInstructionStatus('status').notNull().default('pending'),
+    gpuUuid: varchar('gpu_uuid', { length: 128 }).notNull(),
+    targetPid: integer('target_pid').notNull(),
+    targetUid: integer('target_uid').notNull(),
+    targetProcessStartTicks: bigint('target_process_start_ticks', { mode: 'number' }).notNull(),
+    allowSigkill: boolean('allow_sigkill').notNull().default(false),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    dispatchedAt: timestamp('dispatched_at', { withTimezone: true }),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    outcome: varchar('outcome', { length: 64 }),
+    detail: text('detail'),
+    termSent: boolean('term_sent').notNull().default(false),
+    killSent: boolean('kill_sent').notNull().default(false),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => [
+    uniqueIndex('termination_instructions_stop_request_unique').on(table.stopRequestId),
+    index('termination_instructions_workstation_status_index').on(
+      table.workstationId,
+      table.status
+    ),
+    index('termination_instructions_expires_at_index').on(table.expiresAt)
+  ]
+);
+
 export const auditEvents = pgTable(
   'audit_events',
   {
@@ -280,18 +375,24 @@ export const usersRelations = relations(users, ({ many }) => ({
   workstationAssignments: many(workstationAssignments),
   reservations: many(reservations, { relationName: 'reservationOwner' }),
   createdReservations: many(reservations, { relationName: 'reservationCreator' }),
-  cancelledReservations: many(reservations, { relationName: 'reservationCanceller' })
+  cancelledReservations: many(reservations, { relationName: 'reservationCanceller' }),
+  stopRequests: many(stopRequests, { relationName: 'stopRequester' }),
+  decidedStopRequests: many(stopRequests, { relationName: 'stopDecider' }),
+  requestedTerminations: many(terminationInstructions)
 }));
 
 export const workstationsRelations = relations(workstations, ({ many }) => ({
   assignments: many(workstationAssignments),
-  gpus: many(gpus)
+  gpus: many(gpus),
+  stopRequests: many(stopRequests),
+  terminationInstructions: many(terminationInstructions)
 }));
 
 export const gpusRelations = relations(gpus, ({ one, many }) => ({
   workstation: one(workstations, { fields: [gpus.workstationId], references: [workstations.id] }),
   observations: many(gpuObservations),
-  reservations: many(reservations)
+  reservations: many(reservations),
+  stopRequests: many(stopRequests)
 }));
 
 export const reservationsRelations = relations(reservations, ({ one }) => ({
@@ -309,6 +410,43 @@ export const reservationsRelations = relations(reservations, ({ one }) => ({
   cancelledBy: one(users, {
     relationName: 'reservationCanceller',
     fields: [reservations.cancelledByUserId],
+    references: [users.id]
+  })
+}));
+
+export const stopRequestsRelations = relations(stopRequests, ({ one }) => ({
+  reservation: one(reservations, {
+    fields: [stopRequests.reservationId],
+    references: [reservations.id]
+  }),
+  gpu: one(gpus, { fields: [stopRequests.gpuId], references: [gpus.id] }),
+  workstation: one(workstations, {
+    fields: [stopRequests.workstationId],
+    references: [workstations.id]
+  }),
+  requester: one(users, {
+    relationName: 'stopRequester',
+    fields: [stopRequests.requesterUserId],
+    references: [users.id]
+  }),
+  decidedBy: one(users, {
+    relationName: 'stopDecider',
+    fields: [stopRequests.decidedByUserId],
+    references: [users.id]
+  })
+}));
+
+export const terminationInstructionsRelations = relations(terminationInstructions, ({ one }) => ({
+  stopRequest: one(stopRequests, {
+    fields: [terminationInstructions.stopRequestId],
+    references: [stopRequests.id]
+  }),
+  workstation: one(workstations, {
+    fields: [terminationInstructions.workstationId],
+    references: [workstations.id]
+  }),
+  requestedBy: one(users, {
+    fields: [terminationInstructions.requestedByUserId],
     references: [users.id]
   })
 }));
@@ -360,3 +498,6 @@ export type GpuObservation = typeof gpuObservations.$inferSelect;
 export type GpuProcessObservation = typeof gpuProcessObservations.$inferSelect;
 export type Reservation = typeof reservations.$inferSelect;
 export type ReservationStatus = Reservation['status'];
+export type StopRequest = typeof stopRequests.$inferSelect;
+export type StopRequestStatus = StopRequest['status'];
+export type TerminationInstruction = typeof terminationInstructions.$inferSelect;
