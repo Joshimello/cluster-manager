@@ -178,6 +178,22 @@ docker compose -f docker-compose.dev.yml exec \
 The reservations migration installs PostgreSQL's `btree_gist` extension so the
 database can enforce non-overlapping active time ranges.
 
+Run the Milestone 7 stop-request workflow with `ws01` in the deterministic conflict
+scenario:
+
+```bash
+NODE_WS01_SIMULATION_SCENARIO=reservation-conflict \
+  docker compose -f docker-compose.dev.yml up -d --force-recreate node-ws01
+docker compose -f docker-compose.dev.yml exec \
+  -e ADMIN_USERNAME=admin -e ADMIN_PASSWORD='your-admin-password' \
+  platform npm run test:m7-smoke
+NODE_WS01_SIMULATION_SCENARIO=normal \
+  docker compose -f docker-compose.dev.yml up -d --force-recreate node-ws01
+```
+
+The disposable Ubuntu test also verifies real `SIGTERM`, authorized `SIGKILL`
+escalation, and refusal on a process-start identity mismatch.
+
 ## UI component workflow
 
 The platform uses repository-owned shadcn-svelte components under

@@ -548,6 +548,19 @@ Only authorized admins may perform termination.
 
 The system should handle the case where the target process exits before the admin responds.
 
+One user action creates one request per safely identifiable conflicting process. A
+request captures the reservation, workstation, GPU UUID, PID, UID, Linux username,
+executable, GPU-memory snapshot, and process start ticks. Duplicate pending or
+termination-requested entries for the same captured target are rejected. The lifecycle
+is deliberately small: pending, termination requested, resolved, dismissed, stale, or
+failed. Pending requests become stale when the reservation is no longer current,
+telemetry is no longer fresh, or the exact process is no longer observed.
+
+Users may see request status and privacy-safe reservation/GPU context, but not another
+user's captured process identity. Administrators may see the immutable capture beside
+the latest observation and can dismiss, resolve without termination, or explicitly
+request termination with a reason.
+
 ---
 
 # 15. Process Termination
@@ -591,6 +604,20 @@ SIGKILL if necessary
 ```
 
 All admin termination actions must be audit logged.
+
+Termination is delivered through an authenticated node polling endpoint, not an
+inbound shell or generic command channel. Each instruction is bound to one active
+workstation credential and one stop request, expires after 60 seconds, and can be
+claimed only once. Before signaling, the node repeats NVIDIA GPU membership discovery
+and `/proc` checks for PID, UID, and process start ticks. A mismatch, expired
+instruction, wrong workstation, or reused instruction is refused without signaling.
+
+The node sends `SIGTERM` first and waits for a bounded grace period. It may send
+`SIGKILL` only when the reviewing administrator explicitly authorized escalation and
+the identity still matches immediately before escalation. An already-exited target is
+a safe successful outcome. Creation, staleness, admin decisions, dispatch, signal
+outcome/escalation, expiry, and final result are audit events. There is no automatic
+termination at reservation expiry.
 
 ---
 

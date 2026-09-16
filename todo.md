@@ -572,54 +572,66 @@ terminate the exact conflicting process. Every step is auditable.
 
 ### Build
 
-- [ ] Add stop-request records and a small explicit status lifecycle.
-- [ ] Allow a reservation owner to create a request only for a current conflict
+- [x] Add stop-request records and a small explicit status lifecycle.
+- [x] Allow a reservation owner to create a request only for a current conflict
       affecting their reservation.
-- [ ] Capture immutable target identity sufficient to review and later revalidate the
+- [x] Capture immutable target identity sufficient to review and later revalidate the
       process, including GPU, PID, expected UID, and process start identity.
-- [ ] Prevent duplicate actionable requests for the same target/conflict.
-- [ ] Add the user's request-status view.
-- [ ] Add an admin queue and request-detail view with current and captured process
+- [x] Prevent duplicate actionable requests for the same target/conflict.
+- [x] Add the user's request-status view.
+- [x] Add an admin queue and request-detail view with current and captured process
       context.
-- [ ] Detect and mark requests stale when the reservation ends, the conflict clears,
+- [x] Detect and mark requests stale when the reservation ends, the conflict clears,
       or the target process exits/changes.
-- [ ] Add admin actions to dismiss, resolve without termination, or request
+- [x] Add admin actions to dismiss, resolve without termination, or request
       termination.
-- [ ] Add a narrowly scoped authenticated platform-to-node termination instruction;
+- [x] Add a narrowly scoped authenticated platform-to-node termination instruction;
       do not add a generic command endpoint.
-- [ ] Before signaling, make the node verify:
-  - [ ] target PID still exists
-  - [ ] UID still matches
-  - [ ] process start identity still matches
-  - [ ] the instruction belongs to this workstation
-  - [ ] the instruction is authorized, fresh, and cannot be replayed unsafely
-- [ ] Implement graceful `SIGTERM`, a short bounded wait, and optional `SIGKILL`
+- [x] Before signaling, make the node verify:
+  - [x] target PID still exists
+  - [x] UID still matches
+  - [x] process start identity still matches
+  - [x] the instruction belongs to this workstation
+  - [x] the instruction is authorized, fresh, and cannot be replayed unsafely
+- [x] Implement graceful `SIGTERM`, a short bounded wait, and optional `SIGKILL`
       escalation with reported results.
-- [ ] Handle the process exiting before or during the action as a safe outcome.
-- [ ] Restrict termination to admins at every layer.
-- [ ] Audit stop-request creation, decisions, termination attempts, escalation, and
+- [x] Handle the process exiting before or during the action as a safe outcome.
+- [x] Restrict termination to admins at every layer.
+- [x] Audit stop-request creation, decisions, termination attempts, escalation, and
       results.
-- [ ] Implement safe simulated termination behavior for full development testing.
+- [x] Implement safe simulated termination behavior for full development testing.
 
 ### Tests and acceptance
 
-- [ ] The reservation owner can open a stop request from a simulated conflict.
-- [ ] Unrelated users cannot create or act on that request.
-- [ ] An admin can review and terminate the simulated target, after which the conflict
+- [x] The reservation owner can open a stop request from a simulated conflict.
+- [x] Unrelated users cannot create or act on that request.
+- [x] An admin can review and terminate the simulated target, after which the conflict
       clears and the request resolves.
-- [ ] If the target exits first, the request becomes stale/resolved without signaling
+- [x] If the target exits first, the request becomes stale/resolved without signaling
       another process.
-- [ ] PID reuse or any UID/start-identity mismatch causes termination to be refused.
-- [ ] Revoked node credentials and replayed/expired instructions are rejected.
-- [ ] On a disposable Ubuntu machine/VM, `SIGTERM` and required `SIGKILL` escalation
+- [x] PID reuse or any UID/start-identity mismatch causes termination to be refused.
+- [x] Revoked node credentials and replayed/expired instructions are rejected.
+- [x] On a disposable Ubuntu machine/VM, `SIGTERM` and required `SIGKILL` escalation
       are verified against controlled test processes.
-- [ ] Stop-request lifecycle, authorization, identity verification, and audit tests
+- [x] Stop-request lifecycle, authorization, identity verification, and audit tests
       pass.
 
 ### Explicitly not included
 
 Users never terminate other users' processes directly. Workloads are not terminated
 automatically at reservation expiry.
+
+### Completion record
+
+Completed on 2026-09-16. Stop requests capture immutable GPU/PID/UID/start identity,
+deduplicate actionable targets, and automatically become stale when their reservation,
+telemetry, or process identity is no longer current. Users receive a privacy-safe
+status view; admins receive a queue, captured-versus-current review, and reasoned
+dismiss, resolve, or terminate actions. Nodes claim workstation-scoped 60-second
+instructions once, repeat NVIDIA and `/proc` identity checks, attempt SIGTERM, and use
+SIGKILL only after explicit authorization and a second identity check. Simulation,
+PostgreSQL-backed workflow tests, API replay/expiry/revocation tests, and disposable
+Ubuntu SIGTERM/SIGKILL tests all pass.
 
 ---
 
