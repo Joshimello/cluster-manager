@@ -10,7 +10,7 @@ implementation plan.
 
 ## Current status
 
-Milestone 3 is complete. The repository currently provides:
+Milestone 4 is complete. The repository currently provides:
 
 - SvelteKit and TypeScript platform
 - PostgreSQL with Drizzle migrations
@@ -32,8 +32,14 @@ Milestone 3 is complete. The repository currently provides:
 - authenticated per-node desired state and reconciliation status reporting
 - idempotent Ubuntu account, home, password-only SSH, and rootless Podman provisioning
 - a hardened systemd unit, Ubuntu installation guide, and disposable Ubuntu acceptance test
+- stable GPU inventory with current utilization, VRAM, and temperature telemetry
+- attributed GPU-process monitoring with a narrow executable-name privacy boundary
+- 24-hour bounded observation retention and explicit stale-telemetry presentation
+- auto-refreshing administrator and per-user GPU views with process visibility isolation
+- free, busy, and multi-process simulation scenarios for GPU-free development
 
-GPU monitoring and reservations are not implemented yet.
+GPU reservations are not implemented yet. Real NVIDIA discovery is implemented but its
+hardware smoke test remains conditional on access to an NVIDIA Ubuntu workstation.
 
 ## Requirements
 
@@ -148,6 +154,14 @@ Run real account and SSH reconciliation in a disposable Ubuntu 24.04 image:
 make test-ubuntu-reconcile
 ```
 
+Run the Milestone 4 monitoring workflow against both simulated nodes:
+
+```bash
+docker compose -f docker-compose.dev.yml exec \
+  -e ADMIN_USERNAME=admin -e ADMIN_PASSWORD='your-admin-password' \
+  platform npm run test:m4-smoke
+```
+
 ## UI component workflow
 
 The platform uses repository-owned shadcn-svelte components under
@@ -177,9 +191,9 @@ docker compose -f docker-compose.dev.yml run --rm --no-deps platform npm ci
 docker compose -f docker-compose.dev.yml up -d platform
 ```
 
-Future monitoring charts should start with the shadcn-svelte Chart integration and
-LayerChart, but their stability and current versions must be reviewed when historical
-telemetry is implemented. M2.1 intentionally contains no placeholder charts.
+The M4 views intentionally prioritize current status and use live cards and tables.
+Future historical charts should start with the shadcn-svelte Chart integration and
+LayerChart, with their versions reviewed when that visualization work is scheduled.
 
 The authentication smoke test is intended for a disposable, freshly bootstrapped
 installation because it changes the initial admin password and creates a test user:

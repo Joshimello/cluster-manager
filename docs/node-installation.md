@@ -12,6 +12,7 @@ The workstation needs:
 - OpenSSH server
 - HTTPS connectivity to the Cluster Manager platform
 - a workstation record and one-time enrollment token created by an administrator
+- for GPU monitoring, a supported NVIDIA driver with a working `nvidia-smi` command
 
 Install the operating-system prerequisites:
 
@@ -111,3 +112,22 @@ docker run --rm cluster-manager-ubuntu-reconcile-test
 
 It verifies account and home creation, idempotency, real sshd password login, password
 replacement, public-key rejection, revocation, and home-data preservation.
+
+## GPU monitoring
+
+The node queries NVIDIA UUIDs, model, utilization, VRAM, temperature, and active compute
+processes through `nvidia-smi`. It resolves each reported host PID through `/proc` to
+attribute it to a Linux UID and username. It also maps `/etc/subuid` ranges back to
+their owner for rootless Podman processes that run as a subordinate host UID. Processes
+that exit during a sample are ignored safely.
+
+Only executable names are collected; command arguments and environment variables are
+not sent to the platform. If the NVIDIA driver, `nvidia-smi`, or GPU hardware is absent,
+the node continues reporting its non-GPU inventory and marks NVIDIA telemetry as
+unavailable.
+
+Verify the driver before starting the node on a real workstation:
+
+```bash
+nvidia-smi --query-gpu=uuid,index,name --format=csv,noheader
+```

@@ -40,3 +40,16 @@ func TestNVIDIAUnavailableDoesNotFailCollection(t *testing.T) {
 		t.Fatalf("unexpected unavailable result: %q %#v %#v", status, gpus, processes)
 	}
 }
+
+func TestSubordinateIDOwner(t *testing.T) {
+	contents := []byte("researcher:100000:65536\nanalyst:165536:65536\ninvalid\n")
+	if owner := subordinateIDOwner(contents, 100042); owner != "researcher" {
+		t.Fatalf("expected researcher, got %q", owner)
+	}
+	if owner := subordinateIDOwner(contents, 165600); owner != "analyst" {
+		t.Fatalf("expected analyst, got %q", owner)
+	}
+	if owner := subordinateIDOwner(contents, 99999); owner != "" {
+		t.Fatalf("expected no owner, got %q", owner)
+	}
+}

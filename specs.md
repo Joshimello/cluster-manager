@@ -413,7 +413,19 @@ For GPU processes, report enough information to determine:
 
 Prefer stable NVIDIA/Linux APIs where practical rather than brittle parsing.
 
-Exact implementation is left to Codex.
+For v1, the node should use NVIDIA's supported `nvidia-smi` query interface for GPU and
+compute-process discovery, then resolve the host PID through `/proc` for UID, Linux
+username, executable name, and a process-start identity. A process that exits between
+the two samples should be skipped without failing the heartbeat.
+
+Only the executable name may be collected. Command arguments and environment variables
+must not be collected or exposed. Normal users may see only processes attributed to
+their own Linux username; administrators may see all attributed processes.
+
+Keep high-frequency GPU and process observations for a rolling 24 hours. Current GPU
+identity and telemetry may be stored separately so current-status queries do not need
+to scan observation history. Removing expired observations must also remove their
+associated process observations.
 
 ---
 

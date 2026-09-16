@@ -27,7 +27,10 @@ function report(observedAt, cpu) {
       cpu: { logicalCores: 8, model: 'Smoke CPU', utilizationPercent: cpu },
       memory: { totalBytes: 1000, usedBytes: 400, utilizationPercent: 40 },
       storage: { path: '/', totalBytes: 2000, usedBytes: 500, utilizationPercent: 25 },
-      sessions: [{ username: 'smoke', terminal: 'pts/0' }]
+      sessions: [{ username: 'smoke', terminal: 'pts/0' }],
+      gpuStatus: 'unavailable',
+      gpus: [],
+      gpuProcesses: []
     }
   };
 }

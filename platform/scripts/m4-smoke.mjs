@@ -142,6 +142,7 @@ try {
   assert.equal(dashboard.status, 200);
   const dashboardHTML = await dashboard.text();
   assert.match(dashboardHTML, /Your GPU processes/);
+  assert.match(dashboardHTML, /Storage availability/);
   assert.match(dashboardHTML, /5210/);
   assert.match(dashboardHTML, /5277/);
   assert.doesNotMatch(dashboardHTML, /4102/);

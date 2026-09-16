@@ -1,5 +1,6 @@
 <script lang="ts">
   import KeyRoundIcon from '@lucide/svelte/icons/key-round';
+  import DatabaseIcon from '@lucide/svelte/icons/database';
   import MonitorIcon from '@lucide/svelte/icons/monitor';
   import TerminalIcon from '@lucide/svelte/icons/terminal';
   import UserRoundIcon from '@lucide/svelte/icons/user-round';
@@ -11,6 +12,12 @@
   import * as Card from '$lib/components/ui/card/index.js';
 
   let { data } = $props();
+  const bytes = new Intl.NumberFormat(undefined, {
+    style: 'unit',
+    unit: 'gigabyte',
+    maximumFractionDigits: 1
+  });
+  const gigabytes = (value: number) => bytes.format(value / 1_000_000_000);
 </script>
 
 <svelte:head><title>Dashboard · Cluster Manager</title></svelte:head>
@@ -51,7 +58,7 @@
   </Card.Root>
 
   {#if data.assignment}
-    <section class="grid gap-4 md:grid-cols-2">
+    <section class="grid gap-4 md:grid-cols-3">
       <Card.Root>
         <Card.Header>
           <Card.Title class="flex items-center gap-2"
@@ -94,6 +101,31 @@
             <p class="text-muted-foreground text-sm">
               SSH access will be available after the node applies your account.
             </p>
+          {/if}
+        </Card.Content>
+      </Card.Root>
+
+      <Card.Root>
+        <Card.Header>
+          <Card.Title class="flex items-center gap-2"
+            ><DatabaseIcon class="size-5" />Storage availability</Card.Title
+          >
+          <Card.Description>Latest filesystem report from your workstation.</Card.Description>
+        </Card.Header>
+        <Card.Content>
+          {#if data.assignment.inventory}
+            <strong class="text-2xl tracking-tight">
+              {gigabytes(
+                data.assignment.inventory.storage.totalBytes -
+                  data.assignment.inventory.storage.usedBytes
+              )}
+            </strong>
+            <p class="text-muted-foreground text-sm">
+              available of {gigabytes(data.assignment.inventory.storage.totalBytes)} at
+              <code>{data.assignment.inventory.storage.path}</code>
+            </p>
+          {:else}
+            <p class="text-muted-foreground text-sm">Storage has not been reported yet.</p>
           {/if}
         </Card.Content>
       </Card.Root>

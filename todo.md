@@ -380,49 +380,61 @@ simulated nodes and real NVIDIA hardware.
 
 ### Build
 
-- [ ] Add GPU inventory, current telemetry, and GPU-process observation data models.
-- [ ] Choose bounded retention behavior for high-frequency observations so the
+- [x] Add GPU inventory, current telemetry, and GPU-process observation data models.
+- [x] Choose bounded retention behavior for high-frequency observations so the
       database does not grow indefinitely.
-- [ ] Implement real NVIDIA discovery using stable NVIDIA/Linux interfaces where
+- [x] Implement real NVIDIA discovery using stable NVIDIA/Linux interfaces where
       practical.
-- [ ] Report for each GPU:
-  - [ ] NVIDIA UUID and local index
-  - [ ] model
-  - [ ] utilization
-  - [ ] used and total VRAM
-  - [ ] temperature when available
-- [ ] Discover GPU-consuming processes and report:
-  - [ ] GPU UUID
-  - [ ] PID
-  - [ ] UID and resolved Linux username
-  - [ ] command/process information with an explicit privacy boundary
-  - [ ] GPU memory usage
-  - [ ] process start identity/time where practical
-- [ ] Attribute rootless Podman GPU processes to the host Linux user where possible.
-- [ ] Make process collection resilient to races where processes exit during sampling.
-- [ ] Extend simulation scenarios for free GPUs, busy GPUs, and multiple processes.
-- [ ] Add workstation and GPU status views.
-- [ ] Add per-user views for current GPU processes and available storage usage where
+- [x] Report for each GPU:
+  - [x] NVIDIA UUID and local index
+  - [x] model
+  - [x] utilization
+  - [x] used and total VRAM
+  - [x] temperature when available
+- [x] Discover GPU-consuming processes and report:
+  - [x] GPU UUID
+  - [x] PID
+  - [x] UID and resolved Linux username
+  - [x] command/process information with an explicit privacy boundary
+  - [x] GPU memory usage
+  - [x] process start identity/time where practical
+- [x] Attribute rootless Podman GPU processes to the host Linux user where possible.
+- [x] Make process collection resilient to races where processes exit during sampling.
+- [x] Extend simulation scenarios for free GPUs, busy GPUs, and multiple processes.
+- [x] Add workstation and GPU status views.
+- [x] Add per-user views for current GPU processes and available storage usage where
       reported.
-- [ ] Restrict normal users to relevant state for their assigned workstation and avoid
+- [x] Restrict normal users to relevant state for their assigned workstation and avoid
       exposing unnecessary process details.
 
 ### Tests and acceptance
 
-- [ ] Simulated `ws01` and `ws02` display their GPUs and changing telemetry.
-- [ ] Simulation can switch between free, busy, and multi-process states without
+- [x] Simulated `ws01` and `ws02` display their GPUs and changing telemetry.
+- [x] Simulation can switch between free, busy, and multi-process states without
       changing platform code or APIs.
-- [ ] Process observations are attributed to expected Linux users.
-- [ ] Stale node telemetry is clearly marked and is not presented as current.
-- [ ] The node handles systems with no NVIDIA driver or no GPU without crashing.
+- [x] Process observations are attributed to expected Linux users.
+- [x] Stale node telemetry is clearly marked and is not presented as current.
+- [x] The node handles systems with no NVIDIA driver or no GPU without crashing.
 - [ ] Real discovery is smoke-tested on an NVIDIA Ubuntu workstation when one is
       available.
-- [ ] Telemetry ingestion, attribution, visibility, staleness, and simulation tests
+- [x] Telemetry ingestion, attribution, visibility, staleness, and simulation tests
       pass.
 
 ### Explicitly not included yet
 
 Reservations, conflict decisions, stop requests, and termination.
+
+### Completion record
+
+Implementation completed on 2026-09-16. Both simulated workstations report two stable
+GPUs; scenarios cover free, changing busy, and multi-process states. The authenticated
+heartbeat validates and stores current GPU state plus 24 hours of observation history,
+with process rows deleted by cascade during retention cleanup. Admin views show all
+attributed executable names, while the user dashboard fetches only that user's process
+rows and also shows workstation storage availability. Unit tests cover NVIDIA CSV
+parsing, missing drivers, and process-exit races; the M4 smoke test covers ingestion,
+changing telemetry, attribution, visibility isolation, and retention. The real-hardware
+smoke remains intentionally pending until an NVIDIA Ubuntu workstation is available.
 
 ---
 
@@ -676,10 +688,9 @@ concrete while leaving room to make a deliberate choice before the feature is bu
       Cluster Manager-managed users. The workstation password must match the platform
       password; derive and store separate one-way platform and Linux-compatible hashes
       from the same input, and never store or send plaintext. SSH keys are out of scope.
-- [ ] **Before Milestone 4 — process privacy:** confirm how much command-line detail a
-      normal user may see for another user's conflicting process. Provisional default:
-      normal users see username, executable name, start time, and GPU memory; admins
-      may see the complete collected command line.
+- [x] **Before Milestone 4 — process privacy:** collect executable names only, never
+      command arguments or environment variables. Normal users see only processes
+      attributed to their own Linux username; admins see all attributed processes.
 - [ ] **Before Milestone 5 — timezone:** confirm the default display timezone.
       Provisional default: store UTC and display in `Asia/Kuala_Lumpur`, with the zone
       stated explicitly in reservation views.
@@ -698,7 +709,7 @@ concrete while leaving room to make a deliberate choice before the feature is bu
 - [x] Milestone 2 complete
 - [x] Milestone 2.1 complete
 - [x] Milestone 3 complete
-- [ ] Milestone 4 complete
+- [x] Milestone 4 complete (real NVIDIA hardware smoke pending availability)
 - [ ] Milestone 5 complete
 - [ ] Milestone 6 complete
 - [ ] Milestone 7 complete

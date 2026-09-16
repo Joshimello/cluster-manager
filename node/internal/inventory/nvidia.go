@@ -181,6 +181,10 @@ func readProcessIdentity(pid int) (processIdentity, error) {
 	username := uidValue
 	if lookupErr == nil && account.Username != "" {
 		username = account.Username
+	} else if subordinateIDs, readErr := os.ReadFile("/etc/subuid"); readErr == nil {
+		if owner := subordinateIDOwner(subordinateIDs, uid64); owner != "" {
+			username = owner
+		}
 	}
 	command, err := os.ReadFile(directory + "/comm")
 	if err != nil {
@@ -210,4 +214,19 @@ func readProcessIdentity(pid int) (processIdentity, error) {
 		return processIdentity{}, errors.New("process start identity is invalid")
 	}
 	return processIdentity{UID: uint32(uid64), Username: username, Command: commandName, StartTicks: startTicks}, nil
+}
+
+func subordinateIDOwner(contents []byte, id uint64) string {
+	for _, line := range strings.Split(string(contents), "\n") {
+		fields := strings.Split(strings.TrimSpace(line), ":")
+		if len(fields) != 3 || fields[0] == "" {
+			continue
+		}
+		start, startErr := strconv.ParseUint(fields[1], 10, 32)
+		count, countErr := strconv.ParseUint(fields[2], 10, 32)
+		if startErr == nil && countErr == nil && count > 0 && id >= start && id-start < count {
+			return fields[0]
+		}
+	}
+	return ""
 }
