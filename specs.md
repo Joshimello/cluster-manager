@@ -4,7 +4,11 @@ Build an internal lab infrastructure management platform called **`cluster-manag
 
 The system manages a small number of shared Ubuntu GPU workstations used by researchers and students over SSH.
 
-This is not intended to be an HPC scheduler or Kubernetes-style cluster. Each user is permanently assigned to one workstation, their home directory, source code, environments, and local working data remain on that workstation's local NVMe storage, and they SSH directly into that machine.
+This is not intended to be an HPC scheduler or Kubernetes-style cluster. A user may be
+independently assigned to several workstations. Their local home directory, source
+code, environments, and local working data remain separate on each workstation's
+NVMe storage, and they SSH directly into those machines. Consistent platform-assigned
+POSIX IDs allow optional shared NAS files to retain coherent ownership.
 
 The centralized platform provides:
 
@@ -174,14 +178,14 @@ A workstation contains:
 - rootless Podman
 - cluster-manager node service
 
-Users work directly on their assigned workstation through SSH.
+Users work directly on their assigned workstations through SSH.
 
 Example:
 
 ```text
 Alice
-  workstation: ws01
-  home: /home/alice on ws01
+  workstations: ws01, ws02
+  local homes: /home/alice on each workstation
 
 Bob
   workstation: ws01
@@ -194,9 +198,10 @@ Carol
 
 There is no shared home directory.
 
-A user should normally belong to exactly one workstation.
-
-Admins may change or revoke assignments.
+A user may have one independent active assignment per workstation. Adding a
+workstation must not move or revoke their other access. Admins revoke a specific
+assignment; assigning a previously revoked pair starts a new assignment period while
+retaining audit history.
 
 ---
 
@@ -218,6 +223,12 @@ Do not require researchers' development environments, package caches, container 
 
 Those should remain on local NVMe.
 
+Cluster Manager does not mount or configure NFS. Sites that expose shared project
+storage must reserve numeric UID/GID range `20000–59999` for Cluster Manager on the
+NAS and every client. Use `root_squash` and restrict exports to managed client
+networks. Equal numeric IDs make ordinary NFS `AUTH_SYS` ownership coherent, but do
+not defend against a privileged malicious client that can impersonate a UID.
+
 ---
 
 # 7. User Management
@@ -236,11 +247,18 @@ For v1, use **centrally managed local Linux accounts** rather than LDAP or FreeI
 
 The platform is the source of truth.
 
+Each platform user has an immutable numeric UID and same-valued private primary GID
+allocated from the never-reused PostgreSQL sequence range `20000–59999`. The database
+must enforce range, UID uniqueness, GID uniqueness, and `UID = GID`. Existing users
+are backfilled in stable creation order. Sequence exhaustion fails account creation
+with a clear administrator-visible error.
+
 The immutable platform username is also the user's Linux username. It must be 3–32
 characters, begin with a lowercase letter, and contain only lowercase letters,
 numbers, underscores, or hyphens. Admins choose this username when creating a user.
 
-The node service is responsible for reconciling the required local Linux users on each workstation.
+The node service is responsible for reconciling the required local Linux users and
+same-name private groups on each assigned workstation using the exact platform UID/GID.
 
 If Alice is assigned to `ws01`, the node on `ws01` should ensure her Linux account exists.
 
@@ -249,8 +267,17 @@ provenance ledger at `/var/lib/cluster-manager/managed-state.json`. If a desired
 username already exists but is not proven by that ledger to have been created for the
 same platform workstation identity, reconciliation reports `username_collision` and
 makes no ownership, password, group, home, SSH-policy, or subordinate-ID changes. A
-recorded account whose UID, GID, or home changes reports `managed_identity_mismatch`.
+recorded account whose UID, GID, private group, or home changes reports
+`managed_identity_mismatch`. A different existing account using the desired UID or an
+existing group using the desired name/GID reports `uid_collision` or `gid_collision`.
 Loss of the ledger fails safe; there is no account-adoption override.
+
+The node journals a pending provenance entry before creating a group or user, and can
+resume only when every partially created identity still exactly matches the record.
+The ledger stores the private-group name/GID, creation status, and creation phase in
+addition to user identity and subordinate ranges. Existing pre-M8.2 development
+accounts created with host-selected IDs are not migrated or renumbered; operators must
+purge/recreate those users and their provenance before validation.
 
 If her access is revoked, the node should disable access appropriately without deleting user data unless explicitly requested.
 
@@ -263,7 +290,7 @@ Implement narrowly scoped operations.
 # 8. Authentication
 
 The web platform and each assigned workstation use the same user-entered password in
-v1. Cluster Manager must synchronize password changes to the assigned Linux account
+v1. Cluster Manager must synchronize password changes to every assigned Linux account
 without storing or transmitting plaintext passwords.
 
 ### Platform
@@ -286,9 +313,10 @@ SSH-key management.
 
 Changing a platform password or completing an admin-issued password reset must update
 the desired workstation password hash. The node applies only the Linux-compatible
-hash; it must never receive the plaintext password. The desired-state API must treat
-this hash as sensitive credential material and expose it only to the authenticated
-node for the user's assigned workstation.
+hash; it must never receive the plaintext password. Every active assignment generation
+increments on password reset/change or user enable/disable. The desired-state API must
+treat this hash as sensitive credential material and expose it only to the authenticated
+node for its own workstation.
 
 Any SSH daemon policy installed by Cluster Manager should apply specifically to
 Cluster Manager-managed researcher accounts so it does not accidentally remove a
@@ -307,7 +335,7 @@ changes.
 
 # 9. SSH Access
 
-Users SSH directly into their assigned workstation.
+Users SSH directly into any actively assigned workstation.
 
 Example:
 
@@ -368,7 +396,11 @@ Normal reservations should have a maximum duration of approximately **6 hours**.
 
 The UI may suggest shorter defaults such as 2 hours.
 
-Users should only be able to reserve GPUs located on their assigned workstation.
+Users should only be able to reserve GPUs located on an actively assigned workstation.
+
+Revoking one workstation assignment cancels that user's future active reservations on
+that workstation with an audited reason. A reservation already in progress remains
+active for operational handoff, as do all reservations on other workstations.
 
 Two reservations for the same GPU must never overlap.
 
@@ -380,7 +412,7 @@ the guarantee.
 Admins may override normal booking rules where necessary.
 
 An admin override may exceed only the normal six-hour duration or seven-day horizon.
-It still requires an active user, that user's assigned workstation, an active physical
+It still requires an active user, one of that user's assigned workstations, an active physical
 GPU, 30-minute boundaries, a future start, and no overlap. The administrator must give
 a reason, and both the reason and action must be audited. Cancelling another user's
 reservation is a separate explicit admin action that also requires a reason; the admin
@@ -410,7 +442,7 @@ The system must not attempt to:
 - create GPU cgroups
 - automatically terminate workloads at reservation expiry
 
-Users remain technically capable of starting processes on any GPU on their assigned workstation.
+Users remain technically capable of starting processes on any GPU on their assigned workstations.
 
 Instead, v1 should rely on monitoring, conflict detection, stop requests, and administrator intervention.
 
@@ -672,6 +704,23 @@ Examples of desired state include:
 - users who should exist
 - whether a user is active
 - the current Linux-compatible password hash for each assigned user
+- the immutable platform UID and private primary GID
+
+Each v1 desired user contains mandatory `assignmentId`, `username`, `uid`, `gid`,
+`enabled`, `passwordHash`, and `generation` fields. UID/GID are sent for active and
+revoked assignments. A node rejects the entire desired state without modifying the
+host if either value is missing, outside `20000–59999`, unequal, or duplicated between
+desired users. M8.2 deliberately keeps API v1 and requires coordinated node/platform
+upgrades; incompatible payloads fail closed.
+
+Before any SSH-policy, password, group, home, or subordinate-range mutation, the node
+must preflight username, UID, same-name private-group name, and GID. It creates the
+private group with the exact GID and then the user with the exact UID, primary GID,
+local home, Bash shell, and `cluster-manager-users` supplementary group. It must never
+adopt or renumber an existing account or group. Collision reports explicitly state
+that no ownership, credentials, groups, or files were changed. The platform stores and
+shows the per-workstation error and audits only transitions into identity errors, not
+every retry.
 
 The exact API and data model are implementation details.
 
@@ -707,7 +756,7 @@ If the central platform goes down:
 
 - existing SSH sessions continue
 - Linux accounts remain usable
-- users retain access to their workstation
+- users retain access to their workstations
 - running workloads continue
 - Podman workloads continue
 - no destructive reconciliation occurs
@@ -751,7 +800,7 @@ The admin dashboard should expose at least:
 
 ### Per user
 
-- assigned workstation
+- assigned workstations and read-only platform UID/GID
 - active/inactive state
 - disk usage where available
 - current GPU processes
@@ -771,7 +820,7 @@ At minimum audit:
 
 - user creation
 - user disable/enable
-- workstation assignment
+  - workstation assignment and assignment-specific revocation
 - workstation access revocation
 - synchronized password changes and resets
 - admin credential resets
@@ -803,8 +852,8 @@ At minimum support two roles:
 Can:
 
 - log into platform
-- view assigned workstation
-- change the password used by both the platform and assigned workstation
+- view all assigned workstations and the platform UID/GID
+- change the password used by both the platform and every assigned workstation
 - view own usage
 - see relevant GPU availability
 - create/cancel own GPU reservations
@@ -815,8 +864,8 @@ Can:
 Can additionally:
 
 - manage users
-- assign users to workstations
-- revoke access
+- add users to workstations without moving existing assignments
+- revoke one workstation assignment
 - view all workstation state
 - view all reservations
 - override reservations
@@ -1132,8 +1181,9 @@ Do not implement unless necessary for the requirements above:
 
 - Slurm
 - Kubernetes
-- LDAP
-- FreeIPA
+- LDAP or FreeIPA directory identities
+- shared project-group and ACL management
+- Kerberos
 - shared home directories
 - job queues
 - batch scheduling
@@ -1143,7 +1193,7 @@ Do not implement unless necessary for the requirements above:
 - automatic GPU process termination on reservation expiry
 - GPU-hour accounting quotas
 - advanced fair-share scheduling
-- distributed storage
+- distributed storage or NFS mount/export management
 - automatic driver management
 - workstation reboot controls
 - arbitrary remote shell execution
@@ -1162,11 +1212,12 @@ The finished v1 should support these flows cleanly.
 
 ```text
 Admin creates Alice
-→ assigns Alice to WS01
-→ WS01 node provisions Alice
+→ platform allocates Alice's immutable UID/private GID
+→ assigns Alice independently to WS01 and WS02
+→ both nodes provision Alice with the same numeric identity
 → Alice completes the platform password setup
-→ WS01 applies the matching Linux password hash
-→ Alice SSHs into WS01 with the same password
+→ both nodes apply the matching Linux password hash
+→ Alice SSHs into either workstation with the same password
 → Alice develops normally
 ```
 
@@ -1215,8 +1266,8 @@ These flows should guide implementation decisions more strongly than theoretical
 
 The first release is successful when the lab can use Cluster Manager to:
 
-1. centrally create and assign researcher accounts,
-2. provision those accounts onto the appropriate Ubuntu workstation,
+1. centrally create researcher accounts with globally consistent POSIX identities,
+2. independently assign and provision those accounts onto multiple Ubuntu workstations,
 3. manage SSH access,
 4. see which workstations are online,
 5. inspect CPU, memory, disk, GPU, and user activity,
@@ -1228,6 +1279,7 @@ The first release is successful when the lab can use Cluster Manager to:
 11. audit privileged actions,
 12. run the control plane through a simple Docker Compose deployment,
 13. run each workstation node as a simple Go/systemd service,
-14. reproduce most of the system locally using simulated nodes and Docker Compose.
+14. reproduce most of the system locally using simulated nodes and Docker Compose,
+15. preserve coherent file ownership across managed clients of optional shared NFS storage.
 
 Prioritize getting these workflows correct, secure, and maintainable over building additional features.

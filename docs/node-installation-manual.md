@@ -13,6 +13,7 @@ The workstation needs:
 - HTTPS connectivity to the Cluster Manager platform
 - a workstation record and one-time enrollment token created by an administrator
 - for GPU monitoring, a supported NVIDIA driver with a working `nvidia-smi` command
+- UID/GID range `20000–59999` reserved exclusively for Cluster Manager
 
 Install the operating-system prerequisites:
 
@@ -151,7 +152,11 @@ with a letter.
 
 For an active assignment, the node:
 
-- creates the local account and home directory when absent;
+- validates the mandatory platform UID/GID before changing the host;
+- preflights username, UID, same-name private group, and GID for collisions;
+- journals pending provenance before OS mutation;
+- creates the private group with the exact platform GID and local account/home with
+  the exact platform UID when absent;
 - preserves existing home contents and changes ownership only on the home root;
 - adds the account to the `cluster-manager-users` group;
 - ensures subordinate UID/GID ranges for rootless Podman;
@@ -160,7 +165,13 @@ For an active assignment, the node:
 
 The platform password and SSH password are the same input, but plaintext is never
 stored or sent to the node. The platform keeps an Argon2id verifier for web login and a
-separately salted Linux-compatible verifier for the assigned node.
+separately salted Linux-compatible verifier for every assigned node.
+
+An existing unowned username, UID, group name, or GID is never adopted or renumbered.
+The node reports a collision before modifying ownership, credentials, groups, files,
+SSH policy, or subordinate ranges. A provenance-owned account whose UID/GID no longer
+matches reports `managed_identity_mismatch` and requires deliberate purge/recreation.
+Pre-M8.2 development accounts with host-assigned IDs are not migrated.
 
 Revocation locks the Linux password while preserving the account, home directory, and
 files. Existing processes and SSH sessions are not terminated. If desired state is
@@ -193,8 +204,9 @@ docker build -f node/integration/ubuntu.Dockerfile \
 docker run --rm cluster-manager-ubuntu-reconcile-test
 ```
 
-It verifies account and home creation, idempotency, real sshd password login, password
-replacement, public-key rejection, revocation, and home-data preservation.
+It verifies exact UID/GID/private-group and home creation, idempotency, collision
+safety, real sshd password login, password replacement, public-key rejection,
+revocation, and home-data preservation.
 
 Also validate the release binary, root-only configuration, and systemd unit on a clean
 Ubuntu 24.04 filesystem:

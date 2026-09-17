@@ -757,13 +757,71 @@ hardware-dependent acceptance check before introducing the first production node
 
 ---
 
+## Milestone 8.2 — Global POSIX identities and multi-workstation assignments
+
+### Outcome
+
+The platform owns a never-reused UID/private-GID pair for every user. A user may be
+assigned independently to several workstations, receives the same numeric identity
+and password on each, and can use ordinary shared NFS storage without ownership
+changing between managed clients.
+
+### Build
+
+- [x] Allocate immutable equal UID/GID values from PostgreSQL range `20000–59999`,
+      including stable migration backfill, uniqueness/range/equality constraints,
+      transactional creation, bootstrap allocation, and clear exhaustion handling.
+- [x] Replace the one-active-workstation rule with independent active
+      `(user, workstation)` assignments, assignment-ID revocation, retained history,
+      and password/status generation fan-out to every active assignment.
+- [x] Show read-only UID/GID and all assigned workstations in administrator and user
+      views, and deduplicate per-workstation telemetry loading.
+- [x] Allow reservations across every assigned workstation. Revocation cancels only
+      future bookings on that workstation, retains in-progress and unrelated-node
+      bookings, and records the cancellation reason in the audit trail.
+- [x] Require UID/GID in v1 desired state and reject the whole payload when values are
+      absent, unequal, outside the managed range, or duplicated.
+- [x] Preflight username, UID, private-group name, and GID; create exact numeric local
+      identities; never adopt or renumber; and report `username_collision`,
+      `uid_collision`, `gid_collision`, or `managed_identity_mismatch` without changing
+      ownership, credentials, groups, SSH policy, subordinate ranges, or files.
+- [x] Journal pending account creation in the root-only provenance ledger and retain
+      the private-group identity and creation phase for safe retry and uninstall.
+- [x] Preserve platform-assigned accounts/private groups on normal uninstall and
+      remove a provenance-confirmed private group only after its exact user is removed
+      during destructive uninstall.
+- [x] Document the reserved ID range, NFS `root_squash` and trusted-network guidance,
+      `AUTH_SYS` trust limits, local-home behavior, reset requirement for pre-M8.2
+      development accounts, and excluded directory/ACL services.
+
+### Tests and acceptance
+
+- [x] Unit and migration tests cover identity allocation, range/exhaustion validation,
+      desired-state validation, and ledger persistence.
+- [x] Platform smoke tests cover simultaneous assignments, duplicate-pair rejection,
+      password propagation, targeted revocation, multi-node reservations, and future-
+      only booking cancellation.
+- [x] Disposable Ubuntu reconciliation covers exact UID/GID/private-group creation,
+      idempotency, collision safety, identity mismatch, and destructive cleanup.
+- [x] A dual-container shared-volume test proves the same UID can read/write its files
+      from either managed client while a different managed UID is denied.
+- [ ] Validate the released `v0.2.0` node on two physical Ubuntu/NVIDIA clients and a
+      lab NFS export reserved for Cluster Manager IDs.
+
+### Completion record
+
+Implemented on 2026-09-17. Software and container acceptance are complete; the last
+item is explicitly hardware/NAS validation rather than an implementation dependency.
+
+---
+
 ## Deferred beyond v1
 
 Do not pull these into a milestone unless the requirements change:
 
 - [ ] Slurm, Kubernetes, job queues, or batch scheduling
 - [ ] LDAP or FreeIPA
-- [ ] Shared home directories or distributed storage
+- [ ] Shared home directories, NFS mount automation, or distributed storage management
 - [ ] GPU device permission enforcement, CUDA environment injection, cgroups, MIG, or
       partitioning
 - [ ] Automatic termination at reservation expiry

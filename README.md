@@ -10,7 +10,7 @@ implementation plan.
 
 ## Current status
 
-Milestone 8 is complete. The repository provides a deployable v1, including:
+Milestone 8.2 is complete in software. The repository provides a deployable v1, including:
 
 - SvelteKit and TypeScript platform
 - PostgreSQL with Drizzle migrations
@@ -27,7 +27,8 @@ Milestone 8 is complete. The repository provides a deployable v1, including:
 - two independently enrolled simulated workstations in the development stack
 - a responsive shadcn-svelte component foundation using Tailwind CSS v4
 - shared component treatments for forms, status, feedback, credentials, and tables
-- one-workstation user assignment with audited assign, move, and revoke workflows
+- independent multi-workstation assignments with targeted, audited revocation
+- immutable platform UID/private-GID allocation from reserved range `20000–59999`
 - synchronized platform and Linux password verifiers without plaintext storage
 - authenticated per-node desired state and reconciliation status reporting
 - idempotent Ubuntu account, home, password-only SSH, and rootless Podman provisioning
@@ -47,6 +48,8 @@ Milestone 8 is complete. The repository provides a deployable v1, including:
 - bounded session/telemetry cleanup and structured, rotated operational logs
 - production environment validation, HTTPS proxy guidance, backup/restore, and recovery tools
 - a versioned node build/install/upgrade workflow and an end-to-end production rehearsal
+- exact local UID/GID/private-group reconciliation with collision-safe fail-closed behavior
+- shared-volume numeric-ownership acceptance coverage for two managed clients
 
 Real NVIDIA discovery is implemented; its hardware smoke test remains conditional on
 access to an NVIDIA Ubuntu workstation. Development simulation covers all v1 workflows
@@ -108,10 +111,13 @@ Creating a workstation displays a one-time, 30-minute enrollment token. Deliver 
 token to the intended machine, then configure the node with the matching workstation
 name. Issuing a new enrollment token revokes the previous node credential.
 
-The **Users** administration page assigns, moves, or revokes each user's workstation.
+The **Users** administration page independently adds or revokes each user's workstation
+assignments and shows the user's immutable platform UID/GID. Adding a workstation never
+removes existing access. Revoking one assignment cancels only future reservations on
+that workstation; current and other-workstation reservations remain intact.
 The immutable platform username is also the Linux username. A user's platform password
-is their workstation SSH password; Cluster Manager derives separate one-way hashes for
-web login and Linux PAM and never stores or sends plaintext. Nodes report pending,
+is their SSH password on every assigned workstation; Cluster Manager derives separate
+one-way hashes for web login and Linux PAM and never stores or sends plaintext. Nodes report pending,
 applied, or errored provisioning state back to both the admin view and the user's
 dashboard.
 
@@ -170,6 +176,18 @@ Run real account and SSH reconciliation in a disposable Ubuntu 24.04 image:
 ```bash
 make test-ubuntu-reconcile
 ```
+
+Run the dual-client shared-storage ownership check:
+
+```bash
+make test-shared-posix
+```
+
+Production NAS and node administrators must reserve UID/GID range `20000–59999` for
+Cluster Manager. Cluster Manager keeps homes local and does not configure NFS. For a
+shared export, use `root_squash`, restrict clients to managed networks, and understand
+that NFS `AUTH_SYS` trusts numeric identities presented by clients; a privileged
+malicious client is outside this model. See the node installation and security guides.
 
 Run the Milestone 4 monitoring workflow against both simulated nodes:
 

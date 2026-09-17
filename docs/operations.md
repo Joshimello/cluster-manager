@@ -32,6 +32,25 @@ docker compose exec platform npm run admin:bootstrap -- \
 
 Copy the generated password immediately, sign in, and replace it when prompted.
 
+## POSIX identity and shared-storage planning
+
+Reserve UID/GID range `20000–59999` exclusively for Cluster Manager on the management
+database, every workstation, and any shared NAS. The platform allocates a never-reused
+equal UID/private-GID pair and nodes must create that exact identity. Monitor remaining
+sequence capacity as part of user onboarding; exhaustion rejects creation rather than
+reusing an identity.
+
+Deploy the platform and all nodes from the same M8.2-or-newer release window because
+the v1 desired-state shape now requires UID/GID. Incompatible payloads fail closed and
+leave accounts unchanged. Pre-M8.2 development accounts using host-selected IDs must
+be purged and recreated; there is intentionally no automatic renumbering.
+
+Cluster Manager does not configure NFS or shared homes. If the lab supplies a shared
+project export, use `root_squash`, permit only managed client networks, and document
+that NFS `AUTH_SYS` trusts client-provided numeric IDs. A root-compromised client can
+impersonate users despite consistent ownership; use stronger storage authentication if
+that threat is in scope.
+
 ## HTTPS reverse proxy
 
 The platform deliberately does not terminate TLS. Put Caddy, nginx, Traefik, or the
@@ -127,6 +146,10 @@ arguments, or process environments.
 - **Node outage:** after the freshness window, telemetry becomes stale/offline and GPU
   coordination becomes unknown. Reservations remain, while SSH and workloads already
   on that workstation are not changed by the platform.
+- **Identity collision:** username, UID, GID, private-group, or provenance mismatches
+  fail before account/SSH mutation and appear on that assignment. Resolve the unrelated
+  local identity or deliberately purge/recreate a provenance-owned development account;
+  never delete the ledger to bypass the check.
 - **Restart:** Compose restarts the app/database unless stopped by an operator; systemd
   restarts a failed node. Reconciliation is idempotent and does not delete homes.
 
