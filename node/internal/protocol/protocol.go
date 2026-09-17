@@ -63,6 +63,8 @@ type Heartbeat struct {
 type DesiredUser struct {
 	AssignmentID string `json:"assignmentId"`
 	Username     string `json:"username"`
+	UID          int    `json:"uid"`
+	GID          int    `json:"gid"`
 	Enabled      bool   `json:"enabled"`
 	PasswordHash string `json:"passwordHash,omitempty"`
 	Generation   int    `json:"generation"`

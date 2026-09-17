@@ -14,11 +14,19 @@ type ReconciliationResult = {
   generation: number;
   status: 'applied' | 'error';
   message: string;
-  errorCode: 'username_collision' | 'managed_identity_mismatch' | 'local_apply_failed' | null;
+  errorCode:
+    | 'username_collision'
+    | 'uid_collision'
+    | 'gid_collision'
+    | 'managed_identity_mismatch'
+    | 'local_apply_failed'
+    | null;
 };
 
 const errorCodes = new Set([
   'username_collision',
+  'uid_collision',
+  'gid_collision',
   'managed_identity_mismatch',
   'local_apply_failed'
 ]);
@@ -111,13 +119,17 @@ export const POST: RequestHandler = async ({ request }) => {
           )
         );
       accepted += 1;
-      if (result.errorCode === 'username_collision' && current.errorCode !== result.errorCode) {
+      if (
+        result.errorCode !== null &&
+        result.errorCode !== 'local_apply_failed' &&
+        current.errorCode !== result.errorCode
+      ) {
         await recordAudit((query) => transaction.execute(query), {
           actorUserId: null,
-          action: 'assignment.username_collision',
+          action: 'assignment.identity_error',
           targetType: 'workstation_assignment',
           targetId: current.id,
-          metadata: { workstationId: workstation.id }
+          metadata: { workstationId: workstation.id, errorCode: result.errorCode }
         });
       }
     }

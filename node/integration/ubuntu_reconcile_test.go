@@ -35,6 +35,8 @@ func TestUbuntuAccountPasswordAndRevocation(t *testing.T) {
 	desired.Users = []protocol.DesiredUser{{
 		AssignmentID: "22222222-2222-4222-8222-222222222222",
 		Username:     "cmtest",
+		UID:          20_000,
+		GID:          20_000,
 		Enabled:      true,
 		PasswordHash: initialHash,
 		Generation:   1,
@@ -50,6 +52,13 @@ func TestUbuntuAccountPasswordAndRevocation(t *testing.T) {
 	account, err := user.Lookup("cmtest")
 	if err != nil {
 		t.Fatal(err)
+	}
+	if account.Uid != "20000" || account.Gid != "20000" {
+		t.Fatalf("unexpected platform identity uid=%s gid=%s", account.Uid, account.Gid)
+	}
+	privateGroup, err := user.LookupGroup("cmtest")
+	if err != nil || privateGroup.Gid != "20000" {
+		t.Fatalf("unexpected private group: %#v, %v", privateGroup, err)
 	}
 	marker := filepath.Join(account.HomeDir, "preserve-me")
 	if err := os.WriteFile(marker, []byte("user data"), 0o600); err != nil {
@@ -78,6 +87,77 @@ func TestUbuntuAccountPasswordAndRevocation(t *testing.T) {
 	}
 }
 
+func TestUbuntuUIDCollisionChangesNothing(t *testing.T) {
+	if os.Getenv("CLUSTER_MANAGER_UBUNTU_INTEGRATION") != "1" {
+		t.Skip("set CLUSTER_MANAGER_UBUNTU_INTEGRATION=1 inside the disposable Ubuntu test image")
+	}
+	if output, err := exec.Command("useradd", "--uid", "21001", "--user-group", "uidholder").CombinedOutput(); err != nil {
+		t.Fatalf("create UID holder: %v: %s", err, output)
+	}
+	before := snapshotIdentityFiles(t, "uidholder", "uidcollision")
+	results, err := reconcile.NewLinux("ubuntu-smoke").Apply(context.Background(), desiredIdentity("uidcollision", 21001))
+	if err != nil || len(results) != 1 || results[0].ErrorCode != "uid_collision" {
+		t.Fatalf("expected UID collision: %#v, %v", results, err)
+	}
+	if after := snapshotIdentityFiles(t, "uidholder", "uidcollision"); after != before {
+		t.Fatalf("UID collision modified host state\nbefore: %s\nafter:  %s", before, after)
+	}
+}
+
+func TestUbuntuGIDCollisionChangesNothing(t *testing.T) {
+	if os.Getenv("CLUSTER_MANAGER_UBUNTU_INTEGRATION") != "1" {
+		t.Skip("set CLUSTER_MANAGER_UBUNTU_INTEGRATION=1 inside the disposable Ubuntu test image")
+	}
+	if output, err := exec.Command("groupadd", "--gid", "21002", "gidholder").CombinedOutput(); err != nil {
+		t.Fatalf("create GID holder: %v: %s", err, output)
+	}
+	before := snapshotIdentityFiles(t, "gidholder", "gidcollision")
+	results, err := reconcile.NewLinux("ubuntu-smoke").Apply(context.Background(), desiredIdentity("gidcollision", 21002))
+	if err != nil || len(results) != 1 || results[0].ErrorCode != "gid_collision" {
+		t.Fatalf("expected GID collision: %#v, %v", results, err)
+	}
+	if after := snapshotIdentityFiles(t, "gidholder", "gidcollision"); after != before {
+		t.Fatalf("GID collision modified host state\nbefore: %s\nafter:  %s", before, after)
+	}
+}
+
+func desiredIdentity(username string, id int) protocol.DesiredState {
+	desired := protocol.DesiredState{APIVersion: "v1"}
+	desired.Workstation.ID = "11111111-1111-4111-8111-111111111111"
+	desired.Workstation.Name = "ubuntu-smoke"
+	desired.Users = []protocol.DesiredUser{{
+		AssignmentID: "44444444-4444-4444-8444-444444444444",
+		Username:     username,
+		UID:          id,
+		GID:          id,
+		Enabled:      true,
+		PasswordHash: changedHash,
+		Generation:   1,
+	}}
+	return desired
+}
+
+func snapshotIdentityFiles(t *testing.T, names ...string) string {
+	t.Helper()
+	var snapshot strings.Builder
+	for _, path := range []string{"/etc/passwd", "/etc/shadow", "/etc/group", "/etc/subuid", "/etc/subgid", "/etc/ssh/sshd_config.d/60-cluster-manager.conf"} {
+		contents, err := os.ReadFile(path)
+		if err != nil && !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+		for _, line := range strings.Split(string(contents), "\n") {
+			matched := strings.Contains(path, "60-cluster-manager.conf")
+			for _, name := range names {
+				matched = matched || strings.HasPrefix(line, name+":")
+			}
+			if matched {
+				snapshot.WriteString(path + "=" + line + "\n")
+			}
+		}
+	}
+	return snapshot.String()
+}
+
 func TestUbuntuPreExistingUsernameCollisionChangesNothing(t *testing.T) {
 	if os.Getenv("CLUSTER_MANAGER_UBUNTU_INTEGRATION") != "1" {
 		t.Skip("set CLUSTER_MANAGER_UBUNTU_INTEGRATION=1 inside the disposable Ubuntu test image")
@@ -101,6 +181,8 @@ func TestUbuntuPreExistingUsernameCollisionChangesNothing(t *testing.T) {
 	desired.Users = []protocol.DesiredUser{{
 		AssignmentID: "33333333-3333-4333-8333-333333333333",
 		Username:     "collisiontest",
+		UID:          20_001,
+		GID:          20_001,
 		Enabled:      true,
 		PasswordHash: changedHash,
 		Generation:   1,

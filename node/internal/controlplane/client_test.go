@@ -20,7 +20,7 @@ func TestDesiredStateAndReconciliationUseScopedBearerAPI(t *testing.T) {
 		response.Header().Set("Content-Type", "application/json")
 		switch request.URL.Path {
 		case "/api/node/v1/desired-state":
-			_, _ = response.Write([]byte(`{"apiVersion":"v1","generatedAt":"2026-09-16T00:00:00Z","workstation":{"id":"11111111-1111-4111-8111-111111111111","name":"ws01"},"users":[{"assignmentId":"22222222-2222-4222-8222-222222222222","username":"alice","enabled":false,"generation":2}]}`))
+			_, _ = response.Write([]byte(`{"apiVersion":"v1","generatedAt":"2026-09-16T00:00:00Z","workstation":{"id":"11111111-1111-4111-8111-111111111111","name":"ws01"},"users":[{"assignmentId":"22222222-2222-4222-8222-222222222222","username":"alice","uid":20000,"gid":20000,"enabled":false,"generation":2}]}`))
 		case "/api/node/v1/reconciliation":
 			var report protocol.ReconciliationReport
 			if err := json.NewDecoder(request.Body).Decode(&report); err != nil {

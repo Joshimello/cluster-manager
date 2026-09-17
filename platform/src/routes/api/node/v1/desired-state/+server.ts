@@ -18,6 +18,8 @@ export const GET: RequestHandler = async ({ request }) => {
     .select({
       assignmentId: workstationAssignments.id,
       username: users.username,
+      uid: users.posixUid,
+      gid: users.posixGid,
       userStatus: users.status,
       assignmentStatus: workstationAssignments.status,
       passwordHash: users.linuxPasswordHash,
@@ -51,6 +53,8 @@ export const GET: RequestHandler = async ({ request }) => {
         return {
           assignmentId: assignment.assignmentId,
           username: assignment.username,
+          uid: assignment.uid,
+          gid: assignment.gid,
           enabled,
           generation: assignment.generation,
           ...(enabled ? { passwordHash: assignment.passwordHash } : {})

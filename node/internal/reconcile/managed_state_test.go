@@ -10,20 +10,25 @@ import (
 func TestManagedStateRoundTripIsRootOnlyAndAtomic(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "managed-state.json")
 	want := ManagedState{
-		SchemaVersion:   1,
+		SchemaVersion:   managedStateSchemaVersion,
 		WorkstationID:   "11111111-1111-4111-8111-111111111111",
 		WorkstationName: "ws01",
 		Users: map[string]ManagedUser{
 			"alice": {
-				Username:       "alice",
-				AssignmentID:   "22222222-2222-4222-8222-222222222222",
-				UID:            1001,
-				GID:            1001,
-				HomeDirectory:  "/home/alice",
-				GroupAdded:     true,
-				SubordinateUID: &IDRange{Start: 100000, Count: 65536},
-				SubordinateGID: &IDRange{Start: 100000, Count: 65536},
-				CreatedAt:      time.Date(2026, 9, 17, 0, 0, 0, 0, time.UTC),
+				Username:        "alice",
+				AssignmentID:    "22222222-2222-4222-8222-222222222222",
+				WorkstationID:   "11111111-1111-4111-8111-111111111111",
+				WorkstationName: "ws01",
+				UID:             1001,
+				GID:             1001,
+				HomeDirectory:   "/home/alice",
+				PrimaryGroup:    "alice",
+				GroupCreated:    true,
+				CreationPhase:   "active",
+				GroupAdded:      true,
+				SubordinateUID:  &IDRange{Start: 100000, Count: 65536},
+				SubordinateGID:  &IDRange{Start: 100000, Count: 65536},
+				CreatedAt:       time.Date(2026, 9, 17, 0, 0, 0, 0, time.UTC),
 			},
 		},
 	}
@@ -54,14 +59,14 @@ func TestMissingManagedStateStartsEmptyAndFailsSafe(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state.SchemaVersion != 1 || len(state.Users) != 0 {
+	if state.SchemaVersion != managedStateSchemaVersion || len(state.Users) != 0 {
 		t.Fatalf("unexpected empty state: %#v", state)
 	}
 }
 
 func TestManagedStateRejectsUnknownSchema(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "managed-state.json")
-	if err := os.WriteFile(path, []byte(`{"schemaVersion":2,"users":{}}`), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(`{"schemaVersion":1,"users":{}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := loadManagedState(path); err == nil {

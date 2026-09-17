@@ -11,6 +11,8 @@ import (
 
 const defaultManagedStatePath = "/var/lib/cluster-manager/managed-state.json"
 
+const managedStateSchemaVersion = 2
+
 type IDRange struct {
 	Start int `json:"start"`
 	Count int `json:"count"`
@@ -24,6 +26,9 @@ type ManagedUser struct {
 	UID             int       `json:"uid"`
 	GID             int       `json:"gid"`
 	HomeDirectory   string    `json:"homeDirectory"`
+	PrimaryGroup    string    `json:"primaryGroup"`
+	GroupCreated    bool      `json:"groupCreated"`
+	CreationPhase   string    `json:"creationPhase"`
 	GroupAdded      bool      `json:"groupAdded"`
 	SubordinateUID  *IDRange  `json:"subordinateUid,omitempty"`
 	SubordinateGID  *IDRange  `json:"subordinateGid,omitempty"`
@@ -40,7 +45,7 @@ type ManagedState struct {
 func loadManagedState(path string) (ManagedState, error) {
 	contents, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return ManagedState{SchemaVersion: 1, Users: map[string]ManagedUser{}}, nil
+		return ManagedState{SchemaVersion: managedStateSchemaVersion, Users: map[string]ManagedUser{}}, nil
 	}
 	if err != nil {
 		return ManagedState{}, fmt.Errorf("read managed account state: %w", err)
@@ -49,14 +54,12 @@ func loadManagedState(path string) (ManagedState, error) {
 	if err := json.Unmarshal(contents, &state); err != nil {
 		return ManagedState{}, fmt.Errorf("parse managed account state: %w", err)
 	}
-	if state.SchemaVersion != 1 || state.Users == nil {
+	if state.SchemaVersion != managedStateSchemaVersion || state.Users == nil {
 		return ManagedState{}, fmt.Errorf("unsupported managed account state schema %d", state.SchemaVersion)
 	}
 	for name, managed := range state.Users {
-		if managed.WorkstationID == "" {
-			managed.WorkstationID = state.WorkstationID
-			managed.WorkstationName = state.WorkstationName
-			state.Users[name] = managed
+		if managed.WorkstationID == "" || managed.PrimaryGroup == "" || (managed.CreationPhase != "pending" && managed.CreationPhase != "active") {
+			return ManagedState{}, fmt.Errorf("managed account state for %q is incomplete", name)
 		}
 	}
 	return state, nil

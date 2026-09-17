@@ -14,6 +14,11 @@ var (
 	uuidPattern     = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
 )
 
+const (
+	minimumManagedID = 20_000
+	maximumManagedID = 59_999
+)
+
 type Reconciler interface {
 	Apply(context.Context, protocol.DesiredState) ([]protocol.ReconciliationResult, error)
 }
@@ -32,6 +37,9 @@ func Validate(state protocol.DesiredState, workstationName string) error {
 		}
 		if !usernamePattern.MatchString(desired.Username) {
 			return fmt.Errorf("unsafe Linux username %q", desired.Username)
+		}
+		if desired.UID < minimumManagedID || desired.UID > maximumManagedID || desired.GID < minimumManagedID || desired.GID > maximumManagedID || desired.UID != desired.GID {
+			return fmt.Errorf("invalid platform UID/GID for user %q", desired.Username)
 		}
 		if _, exists := seen[desired.Username]; exists {
 			return fmt.Errorf("duplicate desired user %q", desired.Username)

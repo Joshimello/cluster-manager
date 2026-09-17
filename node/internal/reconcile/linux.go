@@ -64,8 +64,8 @@ func (l *Linux) Apply(ctx context.Context, state protocol.DesiredState) ([]proto
 }
 
 func (l *Linux) applyUser(ctx context.Context, state *ManagedState, desired protocol.DesiredUser) (string, string, error) {
-	account, err := user.Lookup(desired.Username)
-	if err != nil && !unknownUser(err) {
+	account, err := lookupUser(desired.Username)
+	if err != nil {
 		return "", "local_apply_failed", fmt.Errorf("look up Linux account: %w", err)
 	}
 	managed, recorded := state.Users[desired.Username]
@@ -76,18 +76,51 @@ func (l *Linux) applyUser(ctx context.Context, state *ManagedState, desired prot
 	if recorded && !owned && account == nil && desired.Enabled {
 		return "", "username_collision", fmt.Errorf("Linux username %q has retained provenance from another workstation identity; no local ownership or credential data was changed", desired.Username)
 	}
+	if !owned {
+		if collision, err := lookupUserID(desired.UID); err != nil {
+			return "", "local_apply_failed", fmt.Errorf("look up Linux UID: %w", err)
+		} else if collision != nil {
+			return "", "uid_collision", fmt.Errorf("Linux UID %d required by %q already belongs to %q; no local ownership, credential, group, or file data was changed", desired.UID, desired.Username, collision.Username)
+		}
+		if collision, err := lookupGroup(desired.Username); err != nil {
+			return "", "local_apply_failed", fmt.Errorf("look up private Linux group: %w", err)
+		} else if collision != nil {
+			return "", "gid_collision", fmt.Errorf("Linux group name %q already exists and is not owned by Cluster Manager; no local ownership, credential, group, or file data was changed", desired.Username)
+		}
+		if collision, err := lookupGroupID(desired.GID); err != nil {
+			return "", "local_apply_failed", fmt.Errorf("look up Linux GID: %w", err)
+		} else if collision != nil {
+			return "", "gid_collision", fmt.Errorf("Linux GID %d required by %q already belongs to group %q; no local ownership, credential, group, or file data was changed", desired.GID, desired.Username, collision.Name)
+		}
+	}
+	if owned && (managed.UID != desired.UID || managed.GID != desired.GID || managed.PrimaryGroup != desired.Username) {
+		return "", "managed_identity_mismatch", fmt.Errorf("managed Linux account %q does not match its platform-assigned UID/GID; purge and recreate it, and no changes were made", desired.Username)
+	}
 	if owned {
-		if account == nil {
+		if account == nil && managed.CreationPhase == "active" {
 			return "", "managed_identity_mismatch", fmt.Errorf("managed Linux account %q is missing; it was not recreated automatically", desired.Username)
 		}
-		uid, uidErr := strconv.Atoi(account.Uid)
-		gid, gidErr := strconv.Atoi(account.Gid)
-		if uidErr != nil || gidErr != nil || uid != managed.UID || gid != managed.GID || account.HomeDir != managed.HomeDirectory {
+		if account != nil && !accountMatches(account, managed) {
 			return "", "managed_identity_mismatch", fmt.Errorf("managed Linux account %q no longer matches its recorded UID, GID, or home; no changes were made", desired.Username)
+		}
+		group, groupErr := lookupGroup(managed.PrimaryGroup)
+		if groupErr != nil {
+			return "", "local_apply_failed", fmt.Errorf("look up managed private group: %w", groupErr)
+		}
+		if group != nil && !groupMatches(group, managed) {
+			return "", "managed_identity_mismatch", fmt.Errorf("managed private group %q no longer matches its recorded GID; no changes were made", managed.PrimaryGroup)
+		}
+		if group == nil && managed.CreationPhase == "active" {
+			return "", "managed_identity_mismatch", fmt.Errorf("managed private group %q is missing; it was not recreated automatically", managed.PrimaryGroup)
 		}
 	}
 	if !desired.Enabled {
 		if account == nil {
+			if owned && managed.CreationPhase == "pending" {
+				if err := l.removePendingIdentity(ctx, state, managed); err != nil {
+					return "", "local_apply_failed", err
+				}
+			}
 			return "Login disabled; no local account or data was removed.", "", nil
 		}
 		if err := run(ctx, "", "usermod", "--lock", desired.Username); err != nil {
@@ -96,29 +129,66 @@ func (l *Linux) applyUser(ctx context.Context, state *ManagedState, desired prot
 		return "Login disabled; home data preserved.", "", nil
 	}
 
-	if account == nil {
+	if !owned {
+		managed = ManagedUser{
+			Username:        desired.Username,
+			AssignmentID:    desired.AssignmentID,
+			WorkstationID:   state.WorkstationID,
+			WorkstationName: state.WorkstationName,
+			UID:             desired.UID,
+			GID:             desired.GID,
+			HomeDirectory:   filepath.Join("/home", desired.Username),
+			PrimaryGroup:    desired.Username,
+			GroupCreated:    true,
+			CreationPhase:   "pending",
+			CreatedAt:       time.Now().UTC(),
+		}
+		state.Users[desired.Username] = managed
+		if err := saveManagedState(l.managedStatePath, *state); err != nil {
+			return "", "local_apply_failed", err
+		}
+		owned = true
+	}
+
+	if managed.CreationPhase == "pending" {
+		privateGroup, groupErr := lookupGroup(managed.PrimaryGroup)
+		if groupErr != nil {
+			return "", "local_apply_failed", fmt.Errorf("look up pending private group: %w", groupErr)
+		}
+		if privateGroup == nil {
+			if err := run(ctx, "", "groupadd", "--gid", strconv.Itoa(managed.GID), managed.PrimaryGroup); err != nil {
+				return "", "gid_collision", fmt.Errorf("create private group %q with GID %d: %w; no account credentials or file ownership were changed", managed.PrimaryGroup, managed.GID, err)
+			}
+		} else if !groupMatches(privateGroup, managed) {
+			return "", "managed_identity_mismatch", fmt.Errorf("pending private group %q does not match its recorded GID; no changes were made", managed.PrimaryGroup)
+		}
 		if err := ensureGroup(ctx); err != nil {
 			return "", "local_apply_failed", err
 		}
 		if err := ensureSSHPolicy(ctx); err != nil {
 			return "", "local_apply_failed", err
 		}
-		if err := run(ctx, "", "useradd", "--create-home", "--shell", "/bin/bash", "--groups", managedGroup, desired.Username); err != nil {
-			if existing, lookupErr := user.Lookup(desired.Username); lookupErr == nil && existing != nil {
-				return "", "username_collision", fmt.Errorf("Linux username %q appeared while the account was being created and is not trusted; no local ownership or credential data was changed", desired.Username)
-			}
-			return "", "local_apply_failed", fmt.Errorf("create Linux account: %w", err)
+		account, err = lookupUser(desired.Username)
+		if err != nil {
+			return "", "local_apply_failed", fmt.Errorf("look up pending Linux account: %w", err)
 		}
-		account, err = user.Lookup(desired.Username)
+		if account == nil {
+			if err := run(ctx, "", "useradd", "--uid", strconv.Itoa(managed.UID), "--gid", managed.PrimaryGroup, "--home-dir", managed.HomeDirectory, "--create-home", "--shell", "/bin/bash", "--groups", managedGroup, desired.Username); err != nil {
+				if existing, lookupErr := lookupUser(desired.Username); lookupErr == nil && existing != nil {
+					return "", "username_collision", fmt.Errorf("Linux username %q appeared while the account was being created and is not trusted; no local ownership or credential data was changed", desired.Username)
+				}
+				return "", "local_apply_failed", fmt.Errorf("create Linux account: %w", err)
+			}
+		}
+		account, err = lookupUser(desired.Username)
 		if err != nil {
 			return "", "local_apply_failed", fmt.Errorf("look up created Linux account: %w", err)
 		}
-		uid, uidErr := strconv.Atoi(account.Uid)
-		gid, gidErr := strconv.Atoi(account.Gid)
-		if uidErr != nil || gidErr != nil {
-			return "", "local_apply_failed", fmt.Errorf("parse created account identity")
+		if account == nil || !accountMatches(account, managed) {
+			return "", "managed_identity_mismatch", fmt.Errorf("created Linux account %q does not match its journaled UID, GID, or home", desired.Username)
 		}
-		managed = ManagedUser{Username: desired.Username, AssignmentID: desired.AssignmentID, WorkstationID: state.WorkstationID, WorkstationName: state.WorkstationName, UID: uid, GID: gid, HomeDirectory: account.HomeDir, GroupAdded: true, CreatedAt: time.Now().UTC()}
+		managed.CreationPhase = "active"
+		managed.GroupAdded = true
 		state.Users[desired.Username] = managed
 		if err := saveManagedState(l.managedStatePath, *state); err != nil {
 			return "", "local_apply_failed", err
@@ -176,6 +246,75 @@ func (l *Linux) applyUser(ctx context.Context, state *ManagedState, desired prot
 		}
 	}
 	return "Linux account and synchronized SSH password applied.", "", nil
+}
+
+func lookupUser(username string) (*user.User, error) {
+	account, err := user.Lookup(username)
+	if err != nil && unknownUser(err) {
+		return nil, nil
+	}
+	return account, err
+}
+
+func lookupUserID(uid int) (*user.User, error) {
+	account, err := user.LookupId(strconv.Itoa(uid))
+	if err != nil {
+		var unknown user.UnknownUserIdError
+		if errors.As(err, &unknown) {
+			return nil, nil
+		}
+	}
+	return account, err
+}
+
+func lookupGroup(name string) (*user.Group, error) {
+	group, err := user.LookupGroup(name)
+	if err != nil {
+		var unknown user.UnknownGroupError
+		if errors.As(err, &unknown) {
+			return nil, nil
+		}
+	}
+	return group, err
+}
+
+func lookupGroupID(gid int) (*user.Group, error) {
+	group, err := user.LookupGroupId(strconv.Itoa(gid))
+	if err != nil {
+		var unknown user.UnknownGroupIdError
+		if errors.As(err, &unknown) {
+			return nil, nil
+		}
+	}
+	return group, err
+}
+
+func accountMatches(account *user.User, managed ManagedUser) bool {
+	uid, uidErr := strconv.Atoi(account.Uid)
+	gid, gidErr := strconv.Atoi(account.Gid)
+	return uidErr == nil && gidErr == nil && uid == managed.UID && gid == managed.GID && account.HomeDir == managed.HomeDirectory
+}
+
+func groupMatches(group *user.Group, managed ManagedUser) bool {
+	gid, err := strconv.Atoi(group.Gid)
+	return err == nil && group.Name == managed.PrimaryGroup && gid == managed.GID
+}
+
+func (l *Linux) removePendingIdentity(ctx context.Context, state *ManagedState, managed ManagedUser) error {
+	group, err := lookupGroup(managed.PrimaryGroup)
+	if err != nil {
+		return fmt.Errorf("look up pending private group: %w", err)
+	}
+	if group != nil {
+		if !groupMatches(group, managed) {
+			return fmt.Errorf("pending private group differs from provenance; refusing cleanup")
+		}
+		if err := run(ctx, "", "groupdel", managed.PrimaryGroup); err != nil {
+			return fmt.Errorf("remove pending private group: %w", err)
+		}
+	}
+	delete(state.Users, managed.Username)
+	return saveManagedState(l.managedStatePath, *state)
 }
 
 func unknownUser(err error) bool {

@@ -21,6 +21,8 @@ func TestValidateRejectsWholeUnsafeState(t *testing.T) {
 	valid := protocol.DesiredUser{
 		AssignmentID: "22222222-2222-4222-8222-222222222222",
 		Username:     "alice",
+		UID:          20_000,
+		GID:          20_000,
 		Enabled:      true,
 		PasswordHash: testHash,
 		Generation:   1,
@@ -34,9 +36,11 @@ func TestValidateRejectsWholeUnsafeState(t *testing.T) {
 			value.Workstation.Name = "ws02"
 			return value
 		}()},
-		{"unsafe username", desiredState(protocol.DesiredUser{AssignmentID: valid.AssignmentID, Username: "Alice;rm", Generation: 1})},
-		{"invalid hash", desiredState(protocol.DesiredUser{AssignmentID: valid.AssignmentID, Username: "alice", Enabled: true, PasswordHash: "$6$bad", Generation: 1})},
-		{"disabled hash", desiredState(protocol.DesiredUser{AssignmentID: valid.AssignmentID, Username: "alice", PasswordHash: testHash, Generation: 1})},
+		{"unsafe username", desiredState(protocol.DesiredUser{AssignmentID: valid.AssignmentID, Username: "Alice;rm", UID: 20_000, GID: 20_000, Generation: 1})},
+		{"missing identity", desiredState(protocol.DesiredUser{AssignmentID: valid.AssignmentID, Username: "alice", Generation: 1})},
+		{"mismatched identity", desiredState(protocol.DesiredUser{AssignmentID: valid.AssignmentID, Username: "alice", UID: 20_000, GID: 20_001, Generation: 1})},
+		{"invalid hash", desiredState(protocol.DesiredUser{AssignmentID: valid.AssignmentID, Username: "alice", UID: 20_000, GID: 20_000, Enabled: true, PasswordHash: "$6$bad", Generation: 1})},
+		{"disabled hash", desiredState(protocol.DesiredUser{AssignmentID: valid.AssignmentID, Username: "alice", UID: 20_000, GID: 20_000, PasswordHash: testHash, Generation: 1})},
 		{"duplicate username", desiredState(valid, valid)},
 	}
 	for _, test := range tests {
@@ -53,6 +57,8 @@ func TestSimulatedReconciliationIsIdempotent(t *testing.T) {
 	state := desiredState(protocol.DesiredUser{
 		AssignmentID: "22222222-2222-4222-8222-222222222222",
 		Username:     "alice",
+		UID:          20_000,
+		GID:          20_000,
 		Enabled:      true,
 		PasswordHash: testHash,
 		Generation:   3,
@@ -73,6 +79,8 @@ func TestSimulatedRevocationDisablesWithoutDeletingState(t *testing.T) {
 	enabled := protocol.DesiredUser{
 		AssignmentID: "22222222-2222-4222-8222-222222222222",
 		Username:     "alice",
+		UID:          20_000,
+		GID:          20_000,
 		Enabled:      true,
 		PasswordHash: testHash,
 		Generation:   1,

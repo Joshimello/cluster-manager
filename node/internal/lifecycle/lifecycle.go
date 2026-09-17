@@ -383,6 +383,24 @@ func (m *Manager) Uninstall(ctx context.Context, dryRun, purge bool) error {
 			if err := command(ctx, "userdel", "--remove", username); err != nil {
 				return fmt.Errorf("delete %s failed; stop and inspect the host before retrying: %w", username, err)
 			}
+			record := managed.Users[username]
+			if record.GroupCreated {
+				group, lookupErr := user.LookupGroup(record.PrimaryGroup)
+				if lookupErr == nil {
+					gid, gidErr := strconv.Atoi(group.Gid)
+					if gidErr != nil || gid != record.GID || group.Name != record.PrimaryGroup {
+						return fmt.Errorf("private group %s differs from provenance after deleting %s; preserve it and inspect manually", record.PrimaryGroup, username)
+					}
+					if err := command(ctx, "groupdel", record.PrimaryGroup); err != nil {
+						return fmt.Errorf("delete private group %s failed after deleting %s: %w", record.PrimaryGroup, username, err)
+					}
+				} else {
+					var unknown user.UnknownGroupError
+					if !errors.As(lookupErr, &unknown) {
+						return fmt.Errorf("inspect private group %s: %w", record.PrimaryGroup, lookupErr)
+					}
+				}
+			}
 		}
 		if err := m.removeUnusedPolicy(ctx); err != nil {
 			return err
@@ -418,6 +436,14 @@ func (m *Manager) printPurgeScan(ctx context.Context, state reconcile.ManagedSta
 		gid, _ := strconv.Atoi(account.Gid)
 		if uid != record.UID || gid != record.GID || account.HomeDir != record.HomeDirectory {
 			return fmt.Errorf("managed user %s identity differs from provenance; refusing purge", username)
+		}
+		group, groupErr := user.LookupGroup(record.PrimaryGroup)
+		if groupErr != nil {
+			return fmt.Errorf("managed private group %s is missing or unreadable", record.PrimaryGroup)
+		}
+		groupGID, groupGIDErr := strconv.Atoi(group.Gid)
+		if groupGIDErr != nil || groupGID != record.GID || group.Name != record.PrimaryGroup {
+			return fmt.Errorf("managed private group %s differs from provenance; refusing purge", record.PrimaryGroup)
 		}
 		if err := verifyRecordedRange("/etc/subuid", username, record.SubordinateUID); err != nil {
 			return err
