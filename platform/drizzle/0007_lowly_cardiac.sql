@@ -1,0 +1,1 @@
+ALTER TABLE "workstation_assignments" ADD COLUMN "provisioning_error_code" varchar(64);

@@ -71,6 +71,7 @@ export const actions: Actions = {
           desiredGeneration: sql`${workstationAssignments.desiredGeneration} + 1`,
           provisioningStatus: 'pending',
           provisioningMessage: null,
+          provisioningErrorCode: null,
           updatedAt: new Date()
         })
         .where(

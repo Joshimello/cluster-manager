@@ -50,6 +50,13 @@
       "when": 1789565957575,
       "tag": "0006_purple_bloodstorm",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1789612445009,
+      "tag": "0007_lowly_cardiac",
+      "breakpoints": true
     }
   ]
 }

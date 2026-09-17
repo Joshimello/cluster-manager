@@ -152,6 +152,7 @@ export const workstationAssignments = pgTable(
     appliedGeneration: integer('applied_generation').notNull().default(0),
     provisioningStatus: provisioningStatus('provisioning_status').notNull().default('pending'),
     provisioningMessage: text('provisioning_message'),
+    provisioningErrorCode: varchar('provisioning_error_code', { length: 64 }),
     assignedAt: timestamp('assigned_at', { withTimezone: true }).notNull().defaultNow(),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
     reconciledAt: timestamp('reconciled_at', { withTimezone: true }),

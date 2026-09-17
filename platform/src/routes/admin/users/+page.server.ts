@@ -74,6 +74,7 @@ export const load: PageServerLoad = async ({ locals }) => {
         appliedGeneration: workstationAssignments.appliedGeneration,
         provisioningStatus: workstationAssignments.provisioningStatus,
         provisioningMessage: workstationAssignments.provisioningMessage,
+        provisioningErrorCode: workstationAssignments.provisioningErrorCode,
         reconciledAt: workstationAssignments.reconciledAt,
         inventory: workstations.inventory,
         lastHeartbeatAt: workstations.lastHeartbeatAt,
@@ -307,6 +308,7 @@ export const actions: Actions = {
           desiredGeneration: sql`${workstationAssignments.desiredGeneration} + 1`,
           provisioningStatus: 'pending',
           provisioningMessage: null,
+          provisioningErrorCode: null,
           updatedAt: new Date()
         })
         .where(
@@ -377,6 +379,7 @@ export const actions: Actions = {
           desiredGeneration: sql`${workstationAssignments.desiredGeneration} + 1`,
           provisioningStatus: 'pending',
           provisioningMessage: null,
+          provisioningErrorCode: null,
           updatedAt: new Date()
         })
         .where(
@@ -465,6 +468,7 @@ export const actions: Actions = {
             desiredGeneration: sql`${workstationAssignments.desiredGeneration} + 1`,
             provisioningStatus: 'pending',
             provisioningMessage: null,
+            provisioningErrorCode: null,
             revokedAt: changedAt,
             updatedAt: changedAt
           })
@@ -543,6 +547,7 @@ export const actions: Actions = {
           desiredGeneration: sql`${workstationAssignments.desiredGeneration} + 1`,
           provisioningStatus: 'pending',
           provisioningMessage: null,
+          provisioningErrorCode: null,
           revokedAt,
           updatedAt: revokedAt
         })

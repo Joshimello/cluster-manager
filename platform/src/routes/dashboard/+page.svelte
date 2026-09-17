@@ -89,6 +89,12 @@
               {data.assignment.provisioningMessage}
             </p>
           {/if}
+          {#if data.assignment.provisioningErrorCode === 'username_collision'}
+            <p class="text-destructive text-sm font-medium">
+              Ask an administrator to choose another platform username, or have the workstation
+              operator deliberately rename or remove the colliding local account.
+            </p>
+          {/if}
         </Card.Content>
       </Card.Root>
 

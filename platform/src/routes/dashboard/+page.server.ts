@@ -19,6 +19,7 @@ export const load: PageServerLoad = async ({ locals }) => {
       inventory: workstations.inventory,
       provisioningStatus: workstationAssignments.provisioningStatus,
       provisioningMessage: workstationAssignments.provisioningMessage,
+      provisioningErrorCode: workstationAssignments.provisioningErrorCode,
       desiredGeneration: workstationAssignments.desiredGeneration,
       appliedGeneration: workstationAssignments.appliedGeneration,
       reconciledAt: workstationAssignments.reconciledAt

@@ -212,6 +212,12 @@
                       {assignment.provisioningMessage}
                     </small>
                   {/if}
+                  {#if assignment.provisioningErrorCode === 'username_collision'}
+                    <small class="text-destructive font-medium">
+                      Username collision: use another platform username or deliberately
+                      rename/remove the local account, then let reconciliation retry.
+                    </small>
+                  {/if}
                   <small class="text-muted-foreground">
                     Node {assignment.nodeVersion ?? 'version unknown'}
                     {#if assignment.inventory}

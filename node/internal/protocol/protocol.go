@@ -83,6 +83,7 @@ type ReconciliationResult struct {
 	Generation   int    `json:"generation"`
 	Status       string `json:"status"`
 	Message      string `json:"message,omitempty"`
+	ErrorCode    string `json:"errorCode,omitempty"`
 }
 
 type ReconciliationReport struct {

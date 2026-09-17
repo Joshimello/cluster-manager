@@ -50,11 +50,16 @@ func Validate(state protocol.DesiredState, workstationName string) error {
 	return nil
 }
 
-func result(user protocol.DesiredUser, status, message string) protocol.ReconciliationResult {
+func result(user protocol.DesiredUser, status, message string, errorCode ...string) protocol.ReconciliationResult {
+	code := ""
+	if len(errorCode) > 0 {
+		code = errorCode[0]
+	}
 	return protocol.ReconciliationResult{
 		AssignmentID: user.AssignmentID,
 		Generation:   user.Generation,
 		Status:       status,
 		Message:      message,
+		ErrorCode:    code,
 	}
 }

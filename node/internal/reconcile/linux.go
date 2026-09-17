@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Joshimello/cluster-manager/node/internal/protocol"
 )
@@ -22,11 +23,16 @@ const (
 )
 
 type Linux struct {
-	workstationName string
+	workstationName  string
+	managedStatePath string
 }
 
 func NewLinux(workstationName string) *Linux {
-	return &Linux{workstationName: workstationName}
+	return NewLinuxWithStatePath(workstationName, defaultManagedStatePath)
+}
+
+func NewLinuxWithStatePath(workstationName, managedStatePath string) *Linux {
+	return &Linux{workstationName: workstationName, managedStatePath: managedStatePath}
 }
 
 func (l *Linux) Apply(ctx context.Context, state protocol.DesiredState) ([]protocol.ReconciliationResult, error) {
@@ -36,18 +42,21 @@ func (l *Linux) Apply(ctx context.Context, state protocol.DesiredState) ([]proto
 	if os.Geteuid() != 0 {
 		return nil, errors.New("Linux reconciliation requires root")
 	}
-	if err := ensureGroup(ctx); err != nil {
+	managedState, err := loadManagedState(l.managedStatePath)
+	if err != nil {
 		return nil, err
 	}
-	if err := ensureSSHPolicy(ctx); err != nil {
-		return nil, err
+	if managedState.WorkstationID != "" && (managedState.WorkstationID != state.Workstation.ID || managedState.WorkstationName != state.Workstation.Name) {
+		return nil, fmt.Errorf("managed account state belongs to workstation %q (%s), not %q (%s)", managedState.WorkstationName, managedState.WorkstationID, state.Workstation.Name, state.Workstation.ID)
 	}
+	managedState.WorkstationID = state.Workstation.ID
+	managedState.WorkstationName = state.Workstation.Name
 
 	results := make([]protocol.ReconciliationResult, 0, len(state.Users))
 	for _, desired := range state.Users {
-		message, err := applyUser(ctx, desired)
+		message, errorCode, err := l.applyUser(ctx, &managedState, desired)
 		if err != nil {
-			results = append(results, result(desired, "error", err.Error()))
+			results = append(results, result(desired, "error", err.Error(), errorCode))
 			continue
 		}
 		results = append(results, result(desired, "applied", message))
@@ -55,61 +64,115 @@ func (l *Linux) Apply(ctx context.Context, state protocol.DesiredState) ([]proto
 	return results, nil
 }
 
-func applyUser(ctx context.Context, desired protocol.DesiredUser) (string, error) {
+func (l *Linux) applyUser(ctx context.Context, state *ManagedState, desired protocol.DesiredUser) (string, string, error) {
 	account, err := user.Lookup(desired.Username)
 	if err != nil && !unknownUser(err) {
-		return "", fmt.Errorf("look up Linux account: %w", err)
+		return "", "local_apply_failed", fmt.Errorf("look up Linux account: %w", err)
+	}
+	managed, owned := state.Users[desired.Username]
+	if !owned && account != nil {
+		return "", "username_collision", fmt.Errorf("Linux username %q already exists and is not owned by Cluster Manager; no account, password, group, home ownership, SSH policy, or subordinate-ID changes were made", desired.Username)
+	}
+	if owned {
+		if account == nil {
+			return "", "managed_identity_mismatch", fmt.Errorf("managed Linux account %q is missing; it was not recreated automatically", desired.Username)
+		}
+		uid, uidErr := strconv.Atoi(account.Uid)
+		gid, gidErr := strconv.Atoi(account.Gid)
+		if uidErr != nil || gidErr != nil || uid != managed.UID || gid != managed.GID || account.HomeDir != managed.HomeDirectory {
+			return "", "managed_identity_mismatch", fmt.Errorf("managed Linux account %q no longer matches its recorded UID, GID, or home; no changes were made", desired.Username)
+		}
 	}
 	if !desired.Enabled {
 		if account == nil {
-			return "Login disabled; no local account or data was removed.", nil
+			return "Login disabled; no local account or data was removed.", "", nil
 		}
 		if err := run(ctx, "", "usermod", "--lock", desired.Username); err != nil {
-			return "", fmt.Errorf("disable login: %w", err)
+			return "", "local_apply_failed", fmt.Errorf("disable login: %w", err)
 		}
-		return "Login disabled; home data preserved.", nil
+		return "Login disabled; home data preserved.", "", nil
 	}
 
 	if account == nil {
+		if err := ensureGroup(ctx); err != nil {
+			return "", "local_apply_failed", err
+		}
+		if err := ensureSSHPolicy(ctx); err != nil {
+			return "", "local_apply_failed", err
+		}
 		if err := run(ctx, "", "useradd", "--create-home", "--shell", "/bin/bash", "--groups", managedGroup, desired.Username); err != nil {
-			return "", fmt.Errorf("create Linux account: %w", err)
+			if existing, lookupErr := user.Lookup(desired.Username); lookupErr == nil && existing != nil {
+				return "", "username_collision", fmt.Errorf("Linux username %q appeared while the account was being created and is not trusted; no existing account data was modified", desired.Username)
+			}
+			return "", "local_apply_failed", fmt.Errorf("create Linux account: %w", err)
 		}
 		account, err = user.Lookup(desired.Username)
 		if err != nil {
-			return "", fmt.Errorf("look up created Linux account: %w", err)
+			return "", "local_apply_failed", fmt.Errorf("look up created Linux account: %w", err)
 		}
-	} else if err := run(ctx, "", "usermod", "--append", "--groups", managedGroup, desired.Username); err != nil {
-		return "", fmt.Errorf("add managed account group: %w", err)
+		uid, uidErr := strconv.Atoi(account.Uid)
+		gid, gidErr := strconv.Atoi(account.Gid)
+		if uidErr != nil || gidErr != nil {
+			return "", "local_apply_failed", fmt.Errorf("parse created account identity")
+		}
+		managed = ManagedUser{Username: desired.Username, AssignmentID: desired.AssignmentID, UID: uid, GID: gid, HomeDirectory: account.HomeDir, GroupAdded: true, CreatedAt: time.Now().UTC()}
+		state.Users[desired.Username] = managed
+		if err := saveManagedState(l.managedStatePath, *state); err != nil {
+			return "", "local_apply_failed", err
+		}
+	} else {
+		if err := ensureGroup(ctx); err != nil {
+			return "", "local_apply_failed", err
+		}
+		if err := ensureSSHPolicy(ctx); err != nil {
+			return "", "local_apply_failed", err
+		}
+		if err := run(ctx, "", "usermod", "--append", "--groups", managedGroup, desired.Username); err != nil {
+			return "", "local_apply_failed", fmt.Errorf("restore managed account group: %w", err)
+		}
 	}
 
 	uid, err := strconv.Atoi(account.Uid)
 	if err != nil {
-		return "", fmt.Errorf("parse account UID: %w", err)
+		return "", "local_apply_failed", fmt.Errorf("parse account UID: %w", err)
 	}
 	gid, err := strconv.Atoi(account.Gid)
 	if err != nil {
-		return "", fmt.Errorf("parse account GID: %w", err)
+		return "", "local_apply_failed", fmt.Errorf("parse account GID: %w", err)
 	}
 	if err := os.MkdirAll(account.HomeDir, 0o700); err != nil {
-		return "", fmt.Errorf("create home directory: %w", err)
+		return "", "local_apply_failed", fmt.Errorf("create home directory: %w", err)
 	}
 	if err := os.Chown(account.HomeDir, uid, gid); err != nil {
-		return "", fmt.Errorf("set home ownership: %w", err)
+		return "", "local_apply_failed", fmt.Errorf("set home ownership: %w", err)
 	}
-	if err := ensureSubordinateIDs(ctx, desired.Username); err != nil {
-		return "", err
+	uidRange, gidRange, err := ensureSubordinateIDs(ctx, desired.Username)
+	if err != nil {
+		return "", "local_apply_failed", err
+	}
+	managed = state.Users[desired.Username]
+	managed.AssignmentID = desired.AssignmentID
+	if managed.SubordinateUID == nil {
+		managed.SubordinateUID = uidRange
+	}
+	if managed.SubordinateGID == nil {
+		managed.SubordinateGID = gidRange
+	}
+	state.Users[desired.Username] = managed
+	if err := saveManagedState(l.managedStatePath, *state); err != nil {
+		return "", "local_apply_failed", err
 	}
 
 	currentHash, err := shadowHash(desired.Username)
 	if err != nil {
-		return "", err
+		return "", "local_apply_failed", err
 	}
 	if currentHash != desired.PasswordHash {
 		if err := run(ctx, desired.Username+":"+desired.PasswordHash+"\n", "chpasswd", "--encrypted"); err != nil {
-			return "", fmt.Errorf("apply synchronized password: %w", err)
+			return "", "local_apply_failed", fmt.Errorf("apply synchronized password: %w", err)
 		}
 	}
-	return "Linux account and synchronized SSH password applied.", nil
+	return "Linux account and synchronized SSH password applied.", "", nil
 }
 
 func unknownUser(err error) bool {
@@ -186,17 +249,19 @@ func shadowHash(username string) (string, error) {
 	return "", fmt.Errorf("shadow entry for %s was not found", username)
 }
 
-func ensureSubordinateIDs(ctx context.Context, username string) error {
+func ensureSubordinateIDs(ctx context.Context, username string) (*IDRange, *IDRange, error) {
 	hasUID, uidRanges, err := subordinateRanges("/etc/subuid", username)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 	hasGID, gidRanges, err := subordinateRanges("/etc/subgid", username)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 	if hasUID && hasGID {
-		return nil
+		uidRange, _ := userSubordinateRange("/etc/subuid", username)
+		gidRange, _ := userSubordinateRange("/etc/subgid", username)
+		return uidRange, gidRange, nil
 	}
 	args := []string{}
 	if !hasUID {
@@ -211,9 +276,34 @@ func ensureSubordinateIDs(ctx context.Context, username string) error {
 	}
 	args = append(args, username)
 	if err := run(ctx, "", "usermod", args...); err != nil {
-		return fmt.Errorf("configure rootless Podman ID ranges: %w", err)
+		return nil, nil, fmt.Errorf("configure rootless Podman ID ranges: %w", err)
 	}
-	return nil
+	uidRange, uidErr := userSubordinateRange("/etc/subuid", username)
+	gidRange, gidErr := userSubordinateRange("/etc/subgid", username)
+	if uidErr != nil || gidErr != nil {
+		return nil, nil, fmt.Errorf("read configured subordinate ID ranges")
+	}
+	return uidRange, gidRange, nil
+}
+
+func userSubordinateRange(path, username string) (*IDRange, error) {
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	scanner := bufio.NewScanner(bytes.NewReader(contents))
+	for scanner.Scan() {
+		fields := strings.Split(scanner.Text(), ":")
+		if len(fields) != 3 || fields[0] != username {
+			continue
+		}
+		start, startErr := strconv.Atoi(fields[1])
+		count, countErr := strconv.Atoi(fields[2])
+		if startErr == nil && countErr == nil {
+			return &IDRange{Start: start, Count: count}, nil
+		}
+	}
+	return nil, scanner.Err()
 }
 
 type subordinateRange struct {
