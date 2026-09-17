@@ -271,18 +271,100 @@ try {
   const [cancelledWinner] = await sql`select status from reservations where id = ${winner.id}`;
   assert.equal(cancelledWinner.status, 'cancelled');
 
+  result = await actionResult(
+    await admin.form('/admin/users?/assignWorkstation', {
+      userId: first.userId,
+      workstationId: ws02.id
+    })
+  );
+  assert.equal(result.success, true);
+  const [ws01Assignment] = await sql`
+    select id from workstation_assignments
+    where user_id = ${first.userId} and workstation_id = ${ws01.id} and status = 'active'
+  `;
+
+  const revocationFutureStart = new Date(start.getTime() + 4 * 60 * 60_000);
+  const revocationFutureEnd = new Date(revocationFutureStart.getTime() + 30 * 60_000);
+  result = await actionResult(
+    await first.user.form('/reservations?/create', {
+      gpuId: ws01Gpus[1].id,
+      startAt: localInput(revocationFutureStart),
+      endAt: localInput(revocationFutureEnd)
+    })
+  );
+  assert.equal(result.success, true);
+  result = await actionResult(
+    await first.user.form('/reservations?/create', {
+      gpuId: ws02Gpu.id,
+      startAt: localInput(revocationFutureStart),
+      endAt: localInput(revocationFutureEnd)
+    })
+  );
+  assert.equal(result.success, true);
+  const [ws01Future] = await sql`
+    select id from reservations
+    where user_id = ${first.userId} and gpu_id = ${ws01Gpus[1].id}
+      and start_at = ${revocationFutureStart}
+  `;
+  const [ws02Future] = await sql`
+    select id from reservations
+    where user_id = ${first.userId} and gpu_id = ${ws02Gpu.id}
+      and start_at = ${revocationFutureStart}
+  `;
+  reservationIds.push(ws01Future.id, ws02Future.id);
+
+  const currentStart = new Date(Math.floor(Date.now() / 1_800_000) * 1_800_000);
+  const currentEnd = new Date(currentStart.getTime() + 30 * 60_000);
+  const [currentReservation] = await sql`
+    insert into reservations (gpu_id, user_id, created_by_user_id, start_at, end_at)
+    values (${ws01Gpus[1].id}, ${first.userId}, ${first.userId}, ${currentStart}, ${currentEnd})
+    returning id
+  `;
+  reservationIds.push(currentReservation.id);
+
+  result = await actionResult(
+    await admin.form('/admin/users?/revokeWorkstation', {
+      assignmentId: ws01Assignment.id
+    })
+  );
+  assert.equal(result.success, true);
+  assert.match(result.message, /Cancelled 1 future reservation/);
+  const revocationReservations = await sql`
+    select id, status, cancellation_reason from reservations
+    where id in (${ws01Future.id}, ${ws02Future.id}, ${currentReservation.id})
+  `;
+  assert.deepEqual(
+    revocationReservations.find((reservation) => reservation.id === ws01Future.id),
+    {
+      id: ws01Future.id,
+      status: 'cancelled',
+      cancellation_reason: 'Workstation access revoked.'
+    }
+  );
+  assert.equal(
+    revocationReservations.find((reservation) => reservation.id === ws02Future.id)?.status,
+    'active'
+  );
+  assert.equal(
+    revocationReservations.find((reservation) => reservation.id === currentReservation.id)?.status,
+    'active'
+  );
+
   const [auditSummary] = await sql`
     select count(*) filter (where action = 'reservation.override_created')::int as overrides,
       count(*) filter (where action = 'reservation.admin_cancelled')::int as admin_cancellations,
-      count(*) filter (where action = 'reservation.cancelled')::int as owner_cancellations
+      count(*) filter (where action = 'reservation.cancelled')::int as owner_cancellations,
+      count(*) filter (where action = 'reservation.cancelled_for_assignment_revocation')::int
+        as assignment_cancellations
     from audit_events where target_id = any(${reservationIds})
   `;
   assert.equal(auditSummary.overrides, 1);
   assert.equal(auditSummary.admin_cancellations, 1);
   assert.equal(auditSummary.owner_cancellations, 1);
+  assert.equal(auditSummary.assignment_cancellations, 1);
 
   console.log(
-    'Milestone 5 rules, concurrent exclusion, adjacent bookings, privacy, overrides, audit, and cancellation passed.'
+    'Milestone 5 and M8.2 reservation eligibility, targeted revocation cancellation, audit, and current-session retention passed.'
   );
 } finally {
   if (reservationIds.length > 0) {

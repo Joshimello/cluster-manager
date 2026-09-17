@@ -90,10 +90,11 @@ try {
     })
   );
   assert.equal(result.success, true);
-  const [assignment] = await sql`
-    select id from workstation_assignments where user_id = ${userId} and status = 'active'
+  const [ws01Assignment] = await sql`
+    select id from workstation_assignments
+    where user_id = ${userId} and workstation_id = ${ws01.id} and status = 'active'
   `;
-  await waitForApplied(sql, assignment.id, 1);
+  await waitForApplied(sql, ws01Assignment.id, 1);
 
   result = await actionResult(
     await admin.form('/admin/users?/assignWorkstation', {
@@ -102,11 +103,23 @@ try {
     })
   );
   assert.equal(result.success, true);
-  await waitForApplied(sql, assignment.id, 2);
-  const [movedAssignment] = await sql`
-    select id from workstation_assignments where user_id = ${userId} and status = 'active'
+  const [ws02Assignment] = await sql`
+    select id from workstation_assignments
+    where user_id = ${userId} and workstation_id = ${ws02.id} and status = 'active'
   `;
-  await waitForApplied(sql, movedAssignment.id, 1);
+  await Promise.all([
+    waitForApplied(sql, ws01Assignment.id, 1),
+    waitForApplied(sql, ws02Assignment.id, 1)
+  ]);
+
+  result = await actionResult(
+    await admin.form('/admin/users?/assignWorkstation', {
+      userId,
+      workstationId: ws01.id
+    })
+  );
+  assert.equal(result.status, 400);
+  assert.match(result.message, /already assigned/i);
 
   const user = new BrowserSession();
   result = await actionResult(await user.form('/login', { username, password: temporaryPassword }));
@@ -119,21 +132,35 @@ try {
     })
   );
   assert.equal(result.redirect, '/dashboard');
-  await waitForApplied(sql, movedAssignment.id, 2);
+  await Promise.all([
+    waitForApplied(sql, ws01Assignment.id, 2),
+    waitForApplied(sql, ws02Assignment.id, 2)
+  ]);
 
   const dashboard = await user.request('/dashboard');
   assert.equal(dashboard.status, 200);
   const dashboardHTML = await dashboard.text();
+  assert.match(dashboardHTML, new RegExp(`ssh ${username}@ws01`));
   assert.match(dashboardHTML, new RegExp(`ssh ${username}@ws02`));
   assert.match(dashboardHTML, /same password as this platform account/i);
 
-  result = await actionResult(await admin.form('/admin/users?/revokeWorkstation', { userId }));
+  result = await actionResult(
+    await admin.form('/admin/users?/revokeWorkstation', { assignmentId: ws01Assignment.id })
+  );
   assert.equal(result.success, true);
-  const revoked = await waitForApplied(sql, movedAssignment.id, 3);
+  const revoked = await waitForApplied(sql, ws01Assignment.id, 3);
   assert.equal(revoked.status, 'revoked');
+  const [stillActive] = await sql`
+    select status, desired_generation, applied_generation, provisioning_status
+    from workstation_assignments where id = ${ws02Assignment.id}
+  `;
+  assert.equal(stillActive.status, 'active');
+  assert.equal(stillActive.desired_generation, 2);
+  assert.equal(stillActive.applied_generation, 2);
+  assert.equal(stillActive.provisioning_status, 'applied');
 
   console.log(
-    `Milestone 3 assignment, move, password synchronization, and revocation passed for ${username}.`
+    `M8.2 multi-assignment, password synchronization, duplicate rejection, and targeted revocation passed for ${username}.`
   );
 } finally {
   if (userId) {
