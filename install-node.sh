@@ -46,7 +46,7 @@ if [[ ! ${expected} =~ ^[0-9a-fA-F]{64}$ ]]; then
   exit 1
 fi
 actual="$(sha256sum "${temporary_directory}/${asset}" | awk '{print $1}')"
-if [[ ${actual,,} != ${expected,,} ]]; then
+if [[ ${actual,,} != "${expected,,}" ]]; then
   echo "SHA-256 verification failed for ${asset}." >&2
   exit 1
 fi
