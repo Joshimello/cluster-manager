@@ -8,6 +8,7 @@ import {
   integer,
   jsonb,
   pgEnum,
+  pgSequence,
   pgTable,
   text,
   timestamp,
@@ -37,6 +38,16 @@ export const terminationInstructionStatus = pgEnum('termination_instruction_stat
   'expired'
 ]);
 
+export const posixIdentityMinimum = 20_000;
+export const posixIdentityMaximum = 59_999;
+export const userPosixIdentitySequence = pgSequence('user_posix_identity_sequence', {
+  minValue: posixIdentityMinimum,
+  maxValue: posixIdentityMaximum,
+  startWith: posixIdentityMinimum,
+  increment: 1,
+  cycle: false
+});
+
 export const platformMetadata = pgTable('platform_metadata', {
   key: text('key').primaryKey(),
   value: text('value').notNull(),
@@ -51,13 +62,24 @@ export const users = pgTable(
     displayName: varchar('display_name', { length: 120 }).notNull(),
     role: userRole('role').notNull().default('user'),
     status: userStatus('status').notNull().default('active'),
+    posixUid: integer('posix_uid').notNull(),
+    posixGid: integer('posix_gid').notNull(),
     passwordHash: text('password_hash').notNull(),
     linuxPasswordHash: text('linux_password_hash'),
     mustChangePassword: boolean('must_change_password').notNull().default(true),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
   },
-  (table) => [uniqueIndex('users_username_unique').on(table.username)]
+  (table) => [
+    uniqueIndex('users_username_unique').on(table.username),
+    uniqueIndex('users_posix_uid_unique').on(table.posixUid),
+    uniqueIndex('users_posix_gid_unique').on(table.posixGid),
+    check(
+      'users_posix_identity_range',
+      sql`${table.posixUid} between 20000 and 59999 and ${table.posixGid} between 20000 and 59999`
+    ),
+    check('users_posix_uid_gid_match', sql`${table.posixUid} = ${table.posixGid}`)
+  ]
 );
 
 export const sessions = pgTable(
@@ -159,8 +181,8 @@ export const workstationAssignments = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
   },
   (table) => [
-    uniqueIndex('workstation_assignments_active_user_unique')
-      .on(table.userId)
+    uniqueIndex('workstation_assignments_active_user_workstation_unique')
+      .on(table.userId, table.workstationId)
       .where(sql`${table.status} = 'active'`),
     index('workstation_assignments_workstation_index').on(table.workstationId),
     index('workstation_assignments_status_index').on(table.status)

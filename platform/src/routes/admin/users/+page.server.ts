@@ -25,6 +25,10 @@ import {
   validateDisplayName,
   validateUsername
 } from '$lib/server/users/validation';
+import {
+  allocatePosixIdentity,
+  PosixIdentityPoolExhaustedError
+} from '$lib/server/users/posix-identity';
 
 import type { Actions, PageServerLoad } from './$types';
 
@@ -48,6 +52,8 @@ export const load: PageServerLoad = async ({ locals }) => {
         displayName: users.displayName,
         role: users.role,
         status: users.status,
+        posixUid: users.posixUid,
+        posixGid: users.posixGid,
         mustChangePassword: users.mustChangePassword,
         createdAt: users.createdAt,
         updatedAt: users.updatedAt
@@ -159,9 +165,18 @@ export const actions: Actions = {
 
     try {
       const [createdUser] = await getDatabase().transaction(async (transaction) => {
+        const posixIdentity = await allocatePosixIdentity((query) => transaction.execute(query));
         const created = await transaction
           .insert(users)
-          .values({ username, displayName, role, passwordHash, linuxPasswordHash })
+          .values({
+            username,
+            displayName,
+            role,
+            posixUid: posixIdentity.uid,
+            posixGid: posixIdentity.gid,
+            passwordHash,
+            linuxPasswordHash
+          })
           .returning({ id: users.id, username: users.username });
 
         await recordAudit((query) => transaction.execute(query), {
@@ -184,6 +199,13 @@ export const actions: Actions = {
         temporaryPassword
       };
     } catch (error) {
+      if (error instanceof PosixIdentityPoolExhaustedError) {
+        return fail(503, {
+          action: 'create',
+          message: error.message,
+          values: { username, displayName, role }
+        });
+      }
       if (isUniqueViolation(error)) {
         return fail(409, {
           action: 'create',

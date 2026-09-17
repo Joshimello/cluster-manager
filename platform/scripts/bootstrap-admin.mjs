@@ -49,10 +49,20 @@ try {
       throw new Error('Bootstrap refused: at least one platform user already exists');
     }
 
+    const [posixIdentity] = await transaction`
+      select nextval('user_posix_identity_sequence')::integer as id
+    `;
+
     const [createdUser] = await transaction`
-      insert into users (username, display_name, role, status, password_hash, must_change_password)
-      values (${username}, ${displayName}, 'admin', 'active', ${passwordHash}, true)
-      returning id, username
+      insert into users (
+        username, display_name, role, status, posix_uid, posix_gid,
+        password_hash, must_change_password
+      )
+      values (
+        ${username}, ${displayName}, 'admin', 'active', ${posixIdentity.id},
+        ${posixIdentity.id}, ${passwordHash}, true
+      )
+      returning id, username, posix_uid, posix_gid
     `;
 
     await transaction`
@@ -62,7 +72,7 @@ try {
         'user.bootstrap_admin_created',
         'user',
         ${createdUser.id},
-        ${JSON.stringify({ username })}::jsonb
+        ${JSON.stringify({ username, posixUid: posixIdentity.id, posixGid: posixIdentity.id })}::jsonb
       )
     `;
 
@@ -73,6 +83,7 @@ try {
     'Initial administrator created. Save this temporary credential now; it will not be shown again.'
   );
   console.log(`Username: ${user.username}`);
+  console.log(`POSIX UID/GID: ${user.posix_uid}`);
   console.log(`Temporary password: ${temporaryPassword}`);
   console.log('The administrator must change this password after first login.');
 } finally {
