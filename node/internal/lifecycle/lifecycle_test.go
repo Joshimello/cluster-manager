@@ -62,6 +62,40 @@ func TestLatestReleaseSelection(t *testing.T) {
 	}
 }
 
+func TestLatestReleaseRejectsPrerelease(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
+		_, _ = response.Write([]byte(`{"tag_name":"v2.0.0-rc1","prerelease":true}`))
+	}))
+	defer server.Close()
+	manager := New("old", strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
+	manager.ReleaseAPI = server.URL
+	if _, err := manager.latestVersion(context.Background()); err == nil {
+		t.Fatal("expected prerelease to be rejected")
+	}
+}
+
+func TestInteractiveTokenIsNotEchoed(t *testing.T) {
+	var output bytes.Buffer
+	manager := New("test", strings.NewReader("enroll_secret_value\n"), &output, &output)
+	token, err := manager.readToken("")
+	if err != nil || token != "enroll_secret_value" {
+		t.Fatalf("unexpected token read: %q, %v", token, err)
+	}
+	if strings.Contains(output.String(), token) {
+		t.Fatalf("secret was echoed: %q", output.String())
+	}
+}
+
+func TestServiceAndMigrationPathsUseNewNames(t *testing.T) {
+	paths := DefaultPaths()
+	if !strings.Contains(ServiceUnit, "ExecStart=/usr/local/sbin/cluster-node run") || strings.Contains(ServiceUnit, "ExecStart=/usr/local/sbin/cluster-manager-node") {
+		t.Fatalf("unexpected service unit: %s", ServiceUnit)
+	}
+	if paths.Binary == paths.OldBinary || paths.Unit == paths.OldUnit {
+		t.Fatalf("new and migration paths must remain distinct: %#v", paths)
+	}
+}
+
 func TestAtomicWriteLeavesNoTemporaryFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "bin", "cluster-node")
 	if err := atomicWrite(path, []byte("ok"), 0o755); err != nil {

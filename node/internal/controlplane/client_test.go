@@ -75,6 +75,22 @@ func TestNonSuccessIsAnError(t *testing.T) {
 	}
 }
 
+func TestEnrollmentReturnsWorkstationIdentity(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/api/node/v1/enroll" {
+			http.NotFound(response, request)
+			return
+		}
+		response.Header().Set("Content-Type", "application/json")
+		_, _ = response.Write([]byte(`{"workstationId":"11111111-1111-4111-8111-111111111111","name":"ws01","enrolled":true}`))
+	}))
+	defer server.Close()
+	enrollment, err := New(server.URL).Enroll(context.Background(), "ws01", "token", "credential")
+	if err != nil || enrollment.Name != "ws01" || enrollment.WorkstationID == "" {
+		t.Fatalf("unexpected enrollment: %#v, %v", enrollment, err)
+	}
+}
+
 func TestTerminationInstructionAndResultUseScopedBearerAPI(t *testing.T) {
 	credential := "cmnode_secret"
 	reported := false

@@ -90,6 +90,9 @@ func (m *Manager) Setup(ctx context.Context, options SetupOptions) error {
 	if err := m.ensurePackages(ctx); err != nil {
 		return err
 	}
+	if err := command(ctx, "sshd", "-t"); err != nil {
+		return fmt.Errorf("OpenSSH validation failed: %w", err)
+	}
 	if err := command(ctx, "nvidia-smi"); err != nil {
 		return fmt.Errorf("NVIDIA validation failed (drivers remain operator-managed): %w", err)
 	}
@@ -185,6 +188,7 @@ func (m *Manager) Doctor(ctx context.Context) error {
 			return err
 		}},
 		{"sshd configuration", func() error { return command(ctx, "sshd", "-t") }},
+		{"service state", func() error { return command(ctx, "systemctl", "is-active", "--quiet", "cluster-node.service") }},
 		{"systemd unit", func() error { return command(ctx, "systemd-analyze", "verify", m.Paths.Unit) }},
 		{"NVIDIA", func() error { return command(ctx, "nvidia-smi") }},
 	}
@@ -201,7 +205,11 @@ func (m *Manager) Doctor(ctx context.Context) error {
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("read managed SSH policy: %w", err)
 	}
-	for _, path := range []string{m.Paths.Config, cfg.CredentialFile} {
+	permissionPaths := []string{m.Paths.Config, cfg.CredentialFile}
+	if _, statErr := os.Stat(m.Paths.State); statErr == nil {
+		permissionPaths = append(permissionPaths, m.Paths.State)
+	}
+	for _, path := range permissionPaths {
 		info, err := os.Stat(path)
 		if err != nil || info.Mode().Perm() != 0o600 {
 			return fmt.Errorf("%s must exist with mode 0600", path)
@@ -485,7 +493,8 @@ func (m *Manager) installSelf() error {
 func (m *Manager) ensurePackages(ctx context.Context) error {
 	missing := []string{}
 	for _, name := range []string{"openssh-server", "uidmap"} {
-		if err := command(ctx, "dpkg-query", "-W", "-f=${Status}", name); err != nil {
+		output, err := exec.CommandContext(ctx, "dpkg-query", "-W", "-f=${Status}", name).CombinedOutput()
+		if err != nil || strings.TrimSpace(string(output)) != "install ok installed" {
 			missing = append(missing, name)
 		}
 	}
