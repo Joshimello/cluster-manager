@@ -98,6 +98,51 @@ revokes the prior credential immediately. To revoke without replacement, use **R
 in the platform; the node will receive 401 responses and stop receiving desired state or
 termination instructions, while existing accounts, SSH sessions, and workloads remain.
 
+## Retire a node while retaining its users
+
+Retiring a workstation means removing the Cluster Manager node service while leaving
+its Linux accounts, passwords, home directories, SSH access, and running workloads in
+place. Stop the node's authority before changing any user assignments.
+
+1. In **Administration → Workstations**, revoke the workstation credential and disable
+   the workstation. Revocation immediately prevents further desired-state or
+   termination instructions.
+2. On the workstation, stop and remove the service and binary:
+
+   ```bash
+   sudo systemctl disable --now cluster-manager-node
+   sudo rm /usr/local/sbin/cluster-manager-node
+   sudo rm /etc/systemd/system/cluster-manager-node.service
+   sudo systemctl daemon-reload
+   ```
+
+3. After confirming the node will not be re-enrolled, optionally remove only its
+   configuration and private credential state:
+
+   ```bash
+   sudo rm -r /etc/cluster-manager
+   sudo rm -r /var/lib/cluster-manager
+   ```
+
+Do not revoke or move the users' platform assignments before the node is stopped or
+its credential is revoked. A still-authorized node can receive the resulting disabled
+desired state and lock those Linux passwords.
+
+Leave the following host state intact so users retain their existing access:
+
+- Linux accounts, password hashes, and home directories;
+- the `cluster-manager-users` group and user memberships;
+- `/etc/subuid` and `/etc/subgid` allocations used by rootless Podman;
+- `/etc/ssh/sshd_config.d/60-cluster-manager.conf`, which keeps password-only SSH
+  policy for the managed group.
+
+After retirement, users keep the last password applied to this workstation, but later
+platform password changes will no longer synchronize there. The platform will show the
+node as stale/offline; GPU telemetry and stop-request execution also cease. The disabled
+workstation record, reservations, and audit history remain available for operations and
+historical review. Responsibility for future account and SSH administration on the
+retired host returns to the workstation operator.
+
 ## Account and SSH behavior
 
 The immutable platform username is also the Linux username. The platform validates a
