@@ -1,7 +1,6 @@
 {
   "platformUrl": "https://cluster-manager.example.internal",
   "workstationName": "ws01",
-  "enrollmentToken": "replace-with-the-one-time-token",
   "credentialFile": "/var/lib/cluster-manager/node-credential",
   "heartbeatInterval": "15s",
   "simulate": false,

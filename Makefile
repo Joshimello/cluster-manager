@@ -43,10 +43,10 @@ format:
 
 build:
 	cd platform && npm run build
-	cd node && go build -trimpath -ldflags="-s -w -X github.com/Joshimello/cluster-manager/node/internal/buildinfo.Version=$(VERSION)" -o bin/cluster-manager-node ./cmd/cluster-manager-node
+	cd node && go build -trimpath -ldflags="-s -w -X github.com/Joshimello/cluster-manager/node/internal/buildinfo.Version=$(VERSION)" -o bin/cluster-node ./cmd/cluster-node
 
 build-node-linux:
-	cd node && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w -X github.com/Joshimello/cluster-manager/node/internal/buildinfo.Version=$(VERSION)" -o bin/cluster-manager-node-linux-amd64 ./cmd/cluster-manager-node
+	cd node && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w -X github.com/Joshimello/cluster-manager/node/internal/buildinfo.Version=$(VERSION)" -o bin/cluster-node-linux-amd64 ./cmd/cluster-node
 
 db-migrate:
 	docker compose -f docker-compose.dev.yml exec platform npm run db:migrate:runtime

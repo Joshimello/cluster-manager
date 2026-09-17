@@ -17,15 +17,17 @@ type IDRange struct {
 }
 
 type ManagedUser struct {
-	Username       string    `json:"username"`
-	AssignmentID   string    `json:"assignmentId"`
-	UID            int       `json:"uid"`
-	GID            int       `json:"gid"`
-	HomeDirectory  string    `json:"homeDirectory"`
-	GroupAdded     bool      `json:"groupAdded"`
-	SubordinateUID *IDRange  `json:"subordinateUid,omitempty"`
-	SubordinateGID *IDRange  `json:"subordinateGid,omitempty"`
-	CreatedAt      time.Time `json:"createdAt"`
+	Username        string    `json:"username"`
+	AssignmentID    string    `json:"assignmentId"`
+	WorkstationID   string    `json:"workstationId"`
+	WorkstationName string    `json:"workstationName"`
+	UID             int       `json:"uid"`
+	GID             int       `json:"gid"`
+	HomeDirectory   string    `json:"homeDirectory"`
+	GroupAdded      bool      `json:"groupAdded"`
+	SubordinateUID  *IDRange  `json:"subordinateUid,omitempty"`
+	SubordinateGID  *IDRange  `json:"subordinateGid,omitempty"`
+	CreatedAt       time.Time `json:"createdAt"`
 }
 
 type ManagedState struct {
@@ -50,8 +52,18 @@ func loadManagedState(path string) (ManagedState, error) {
 	if state.SchemaVersion != 1 || state.Users == nil {
 		return ManagedState{}, fmt.Errorf("unsupported managed account state schema %d", state.SchemaVersion)
 	}
+	for name, managed := range state.Users {
+		if managed.WorkstationID == "" {
+			managed.WorkstationID = state.WorkstationID
+			managed.WorkstationName = state.WorkstationName
+			state.Users[name] = managed
+		}
+	}
 	return state, nil
 }
+
+// LoadManagedState reads the provenance ledger for lifecycle safety checks.
+func LoadManagedState(path string) (ManagedState, error) { return loadManagedState(path) }
 
 func saveManagedState(path string, state ManagedState) error {
 	contents, err := json.MarshalIndent(state, "", "  ")

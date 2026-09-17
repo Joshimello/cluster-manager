@@ -19,8 +19,10 @@ import (
 
 const (
 	managedGroup = "cluster-manager-users"
-	sshPolicy    = "# Managed by cluster-manager-node\nMatch Group " + managedGroup + "\n    PasswordAuthentication yes\n    PubkeyAuthentication no\n    AuthenticationMethods password\n"
+	sshPolicy    = "# Managed by cluster-node\nMatch Group " + managedGroup + "\n    PasswordAuthentication yes\n    PubkeyAuthentication no\n    AuthenticationMethods password\n"
 )
+
+func SSHPolicy() string { return sshPolicy }
 
 type Linux struct {
 	workstationName  string
@@ -46,9 +48,6 @@ func (l *Linux) Apply(ctx context.Context, state protocol.DesiredState) ([]proto
 	if err != nil {
 		return nil, err
 	}
-	if managedState.WorkstationID != "" && (managedState.WorkstationID != state.Workstation.ID || managedState.WorkstationName != state.Workstation.Name) {
-		return nil, fmt.Errorf("managed account state belongs to workstation %q (%s), not %q (%s)", managedState.WorkstationName, managedState.WorkstationID, state.Workstation.Name, state.Workstation.ID)
-	}
 	managedState.WorkstationID = state.Workstation.ID
 	managedState.WorkstationName = state.Workstation.Name
 
@@ -69,9 +68,13 @@ func (l *Linux) applyUser(ctx context.Context, state *ManagedState, desired prot
 	if err != nil && !unknownUser(err) {
 		return "", "local_apply_failed", fmt.Errorf("look up Linux account: %w", err)
 	}
-	managed, owned := state.Users[desired.Username]
+	managed, recorded := state.Users[desired.Username]
+	owned := recorded && managed.WorkstationID == state.WorkstationID && managed.WorkstationName == state.WorkstationName
 	if !owned && account != nil {
-		return "", "username_collision", fmt.Errorf("Linux username %q already exists and is not owned by Cluster Manager; no account, password, group, home ownership, SSH policy, or subordinate-ID changes were made", desired.Username)
+		return "", "username_collision", fmt.Errorf("Linux username %q already exists and is not owned by Cluster Manager; no local ownership or credential data was changed (including password, groups, home ownership, SSH policy, and subordinate IDs)", desired.Username)
+	}
+	if recorded && !owned && account == nil && desired.Enabled {
+		return "", "username_collision", fmt.Errorf("Linux username %q has retained provenance from another workstation identity; no local ownership or credential data was changed", desired.Username)
 	}
 	if owned {
 		if account == nil {
@@ -102,7 +105,7 @@ func (l *Linux) applyUser(ctx context.Context, state *ManagedState, desired prot
 		}
 		if err := run(ctx, "", "useradd", "--create-home", "--shell", "/bin/bash", "--groups", managedGroup, desired.Username); err != nil {
 			if existing, lookupErr := user.Lookup(desired.Username); lookupErr == nil && existing != nil {
-				return "", "username_collision", fmt.Errorf("Linux username %q appeared while the account was being created and is not trusted; no existing account data was modified", desired.Username)
+				return "", "username_collision", fmt.Errorf("Linux username %q appeared while the account was being created and is not trusted; no local ownership or credential data was changed", desired.Username)
 			}
 			return "", "local_apply_failed", fmt.Errorf("create Linux account: %w", err)
 		}
@@ -115,7 +118,7 @@ func (l *Linux) applyUser(ctx context.Context, state *ManagedState, desired prot
 		if uidErr != nil || gidErr != nil {
 			return "", "local_apply_failed", fmt.Errorf("parse created account identity")
 		}
-		managed = ManagedUser{Username: desired.Username, AssignmentID: desired.AssignmentID, UID: uid, GID: gid, HomeDirectory: account.HomeDir, GroupAdded: true, CreatedAt: time.Now().UTC()}
+		managed = ManagedUser{Username: desired.Username, AssignmentID: desired.AssignmentID, WorkstationID: state.WorkstationID, WorkstationName: state.WorkstationName, UID: uid, GID: gid, HomeDirectory: account.HomeDir, GroupAdded: true, CreatedAt: time.Now().UTC()}
 		state.Users[desired.Username] = managed
 		if err := saveManagedState(l.managedStatePath, *state); err != nil {
 			return "", "local_apply_failed", err

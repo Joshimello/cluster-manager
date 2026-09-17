@@ -18,12 +18,23 @@ type Client struct {
 	httpClient *http.Client
 }
 
+type Enrollment struct {
+	WorkstationID string `json:"workstationId"`
+	Name          string `json:"name"`
+	Enrolled      bool   `json:"enrolled"`
+}
+
 func New(baseURL string) *Client {
 	return &Client{baseURL: strings.TrimRight(baseURL, "/"), httpClient: &http.Client{Timeout: 10 * time.Second}}
 }
 
-func (c *Client) Enroll(ctx context.Context, name, token, credential string) error {
-	return c.post(ctx, "/api/node/v1/enroll", "", map[string]string{"name": name, "token": token, "credential": credential})
+func (c *Client) Enroll(ctx context.Context, name, token, credential string) (Enrollment, error) {
+	var enrollment Enrollment
+	err := c.postJSON(ctx, "/api/node/v1/enroll", "", map[string]string{"name": name, "token": token, "credential": credential}, &enrollment)
+	if err == nil && (!enrollment.Enrolled || enrollment.WorkstationID == "" || enrollment.Name != name) {
+		err = fmt.Errorf("invalid enrollment response")
+	}
+	return enrollment, err
 }
 
 func (c *Client) Heartbeat(ctx context.Context, credential string, report protocol.Heartbeat) error {
@@ -38,7 +49,7 @@ func (c *Client) DesiredState(ctx context.Context, credential string) (protocol.
 	}
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("Authorization", "Bearer "+credential)
-	request.Header.Set("User-Agent", "cluster-manager-node")
+	request.Header.Set("User-Agent", "cluster-node")
 	response, err := c.httpClient.Do(request)
 	if err != nil {
 		return state, fmt.Errorf("desired-state request: %w", err)
@@ -70,7 +81,7 @@ func (c *Client) NextTermination(ctx context.Context, credential string) (*proto
 	}
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("Authorization", "Bearer "+credential)
-	request.Header.Set("User-Agent", "cluster-manager-node")
+	request.Header.Set("User-Agent", "cluster-node")
 	response, err := c.httpClient.Do(request)
 	if err != nil {
 		return nil, fmt.Errorf("termination request: %w", err)
@@ -100,6 +111,10 @@ func (c *Client) ReportTermination(ctx context.Context, credential string, resul
 }
 
 func (c *Client) post(ctx context.Context, path, credential string, body any) error {
+	return c.postJSON(ctx, path, credential, body, nil)
+}
+
+func (c *Client) postJSON(ctx context.Context, path, credential string, body, output any) error {
 	payload, err := json.Marshal(body)
 	if err != nil {
 		return fmt.Errorf("encode request: %w", err)
@@ -109,7 +124,7 @@ func (c *Client) post(ctx context.Context, path, credential string, body any) er
 		return fmt.Errorf("create request: %w", err)
 	}
 	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("User-Agent", "cluster-manager-node")
+	request.Header.Set("User-Agent", "cluster-node")
 	if credential != "" {
 		request.Header.Set("Authorization", "Bearer "+credential)
 	}
@@ -122,6 +137,14 @@ func (c *Client) post(ctx context.Context, path, credential string, body any) er
 		message, _ := io.ReadAll(io.LimitReader(response.Body, 512))
 		return fmt.Errorf("request %s returned %s: %s", path, response.Status, strings.TrimSpace(string(message)))
 	}
-	_, _ = io.Copy(io.Discard, response.Body)
+	if output == nil {
+		_, _ = io.Copy(io.Discard, response.Body)
+		return nil
+	}
+	decoder := json.NewDecoder(io.LimitReader(response.Body, 1<<20))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(output); err != nil {
+		return fmt.Errorf("decode response from %s: %w", path, err)
+	}
 	return nil
 }

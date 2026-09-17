@@ -23,6 +23,8 @@ type fileConfig struct {
 	AllowInsecureHTTP  bool   `json:"allowInsecureHttp"`
 }
 
+const DefaultPath = "/etc/cluster-manager/node.json"
+
 type Config struct {
 	PlatformURL        string
 	WorkstationName    string
@@ -36,7 +38,13 @@ type Config struct {
 
 func Load() (Config, error) {
 	var raw fileConfig
-	if path := strings.TrimSpace(os.Getenv("NODE_CONFIG_FILE")); path != "" {
+	path := strings.TrimSpace(os.Getenv("NODE_CONFIG_FILE"))
+	if path == "" {
+		if _, err := os.Stat(DefaultPath); err == nil {
+			path = DefaultPath
+		}
+	}
+	if path != "" {
 		contents, err := os.ReadFile(path)
 		if err != nil {
 			return Config{}, fmt.Errorf("read NODE_CONFIG_FILE: %w", err)
@@ -90,6 +98,43 @@ func Load() (Config, error) {
 	}
 	cfg := Config{PlatformURL: strings.TrimRight(strings.TrimSpace(raw.PlatformURL), "/"), WorkstationName: strings.ToLower(strings.TrimSpace(raw.WorkstationName)), EnrollmentToken: strings.TrimSpace(raw.EnrollmentToken), CredentialFile: credentialFile, HeartbeatInterval: interval, Simulate: raw.Simulate, SimulationScenario: scenario, AllowInsecureHTTP: raw.AllowInsecureHTTP}
 	return cfg, cfg.Validate()
+}
+
+// Write stores the active node configuration without enrollment material.
+func Write(path string, cfg Config) error {
+	if err := cfg.Validate(); err != nil {
+		return err
+	}
+	raw := fileConfig{
+		PlatformURL:        cfg.PlatformURL,
+		WorkstationName:    cfg.WorkstationName,
+		CredentialFile:     cfg.CredentialFile,
+		HeartbeatInterval:  cfg.HeartbeatInterval.String(),
+		Simulate:           cfg.Simulate,
+		SimulationScenario: cfg.SimulationScenario,
+		AllowInsecureHTTP:  cfg.AllowInsecureHTTP,
+	}
+	contents, err := json.MarshalIndent(raw, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode node configuration: %w", err)
+	}
+	contents = append(contents, '\n')
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return fmt.Errorf("create configuration directory: %w", err)
+	}
+	temporary := path + ".new"
+	if err := os.WriteFile(temporary, contents, 0o600); err != nil {
+		return fmt.Errorf("write configuration: %w", err)
+	}
+	if err := os.Chmod(temporary, 0o600); err != nil {
+		_ = os.Remove(temporary)
+		return fmt.Errorf("secure configuration: %w", err)
+	}
+	if err := os.Rename(temporary, path); err != nil {
+		_ = os.Remove(temporary)
+		return fmt.Errorf("install configuration: %w", err)
+	}
+	return nil
 }
 
 func override(target *string, key string) {

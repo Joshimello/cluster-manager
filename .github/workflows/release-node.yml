@@ -1,0 +1,73 @@
+name: Release cluster-node
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: node/go.mod
+          cache-dependency-path: node/go.sum
+      - working-directory: node
+        run: go test ./...
+      - working-directory: node
+        run: go vet ./...
+      - run: |
+          bash -n install-node.sh
+          shellcheck install-node.sh
+      - run: make test-ubuntu-reconcile
+      - run: make test-ubuntu-deploy
+
+  build:
+    needs: test
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: node/go.mod
+          cache-dependency-path: node/go.sum
+      - name: Build ${{ matrix.arch }}
+        working-directory: node
+        env:
+          GOARCH: ${{ matrix.arch }}
+          VERSION: ${{ github.ref_name }}
+        run: |
+          CGO_ENABLED=0 GOOS=linux go build -trimpath \
+            -ldflags="-s -w -X github.com/Joshimello/cluster-manager/node/internal/buildinfo.Version=${VERSION}" \
+            -o "cluster-node-linux-${GOARCH}" ./cmd/cluster-node
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cluster-node-linux-${{ matrix.arch }}
+          path: node/cluster-node-linux-${{ matrix.arch }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: cluster-node-linux-*
+          merge-multiple: true
+          path: release
+      - name: Prepare verified release assets
+        run: |
+          cp install-node.sh release/install-node.sh
+          cd release
+          sha256sum cluster-node-linux-amd64 cluster-node-linux-arm64 install-node.sh > checksums.txt
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${GITHUB_REF_NAME}" release/* --verify-tag --generate-notes

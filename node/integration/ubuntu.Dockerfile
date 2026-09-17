@@ -2,7 +2,7 @@
 
 FROM golang:1.24-bookworm AS build
 WORKDIR /src
-COPY go.mod ./
+COPY go.mod go.sum ./
 COPY internal ./internal
 COPY integration ./integration
 RUN go test -c -o /out/ubuntu-reconcile.test ./integration

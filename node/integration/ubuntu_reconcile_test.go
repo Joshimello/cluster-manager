@@ -2,6 +2,7 @@ package integration
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"os/user"
@@ -75,6 +76,80 @@ func TestUbuntuAccountPasswordAndRevocation(t *testing.T) {
 	if contents, err := os.ReadFile(marker); err != nil || string(contents) != "user data" {
 		t.Fatalf("home data was not preserved: %q, %v", contents, err)
 	}
+}
+
+func TestUbuntuPreExistingUsernameCollisionChangesNothing(t *testing.T) {
+	if os.Getenv("CLUSTER_MANAGER_UBUNTU_INTEGRATION") != "1" {
+		t.Skip("set CLUSTER_MANAGER_UBUNTU_INTEGRATION=1 inside the disposable Ubuntu test image")
+	}
+	if output, err := exec.Command("useradd", "--create-home", "collisiontest").CombinedOutput(); err != nil {
+		t.Fatalf("create pre-existing account: %v: %s", err, output)
+	}
+	account, err := user.Lookup("collisiontest")
+	if err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(account.HomeDir, "ownership-marker")
+	if err := os.WriteFile(marker, []byte("must remain untouched"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	before := snapshotCollisionAccount(t, account, marker)
+
+	desired := protocol.DesiredState{APIVersion: "v1"}
+	desired.Workstation.ID = "11111111-1111-4111-8111-111111111111"
+	desired.Workstation.Name = "ubuntu-smoke"
+	desired.Users = []protocol.DesiredUser{{
+		AssignmentID: "33333333-3333-4333-8333-333333333333",
+		Username:     "collisiontest",
+		Enabled:      true,
+		PasswordHash: changedHash,
+		Generation:   1,
+	}}
+	results, err := reconcile.NewLinux("ubuntu-smoke").Apply(context.Background(), desired)
+	if err != nil || len(results) != 1 || results[0].Status != "error" || results[0].ErrorCode != "username_collision" {
+		t.Fatalf("expected collision result: %#v, %v", results, err)
+	}
+	if !strings.Contains(results[0].Message, "no local ownership or credential data was changed") {
+		t.Fatalf("unsafe remediation message: %q", results[0].Message)
+	}
+	if after := snapshotCollisionAccount(t, account, marker); after != before {
+		t.Fatalf("collision modified host state\nbefore: %s\nafter:  %s", before, after)
+	}
+
+	desired.Users[0].Enabled = false
+	desired.Users[0].PasswordHash = ""
+	desired.Users[0].Generation++
+	results, err = reconcile.NewLinux("ubuntu-smoke").Apply(context.Background(), desired)
+	if err != nil || results[0].ErrorCode != "username_collision" {
+		t.Fatalf("disabled collision must remain untouched: %#v, %v", results, err)
+	}
+	if after := snapshotCollisionAccount(t, account, marker); after != before {
+		t.Fatalf("disabled collision modified host state\nbefore: %s\nafter:  %s", before, after)
+	}
+}
+
+func snapshotCollisionAccount(t *testing.T, account *user.User, marker string) string {
+	t.Helper()
+	paths := []string{"/etc/passwd", "/etc/shadow", "/etc/group", "/etc/subuid", "/etc/subgid", "/etc/ssh/sshd_config.d/60-cluster-manager.conf", marker}
+	var snapshot strings.Builder
+	for _, path := range paths {
+		contents, err := os.ReadFile(path)
+		if err != nil && !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+		for _, line := range strings.Split(string(contents), "\n") {
+			if path == marker || strings.HasPrefix(line, account.Username+":") || strings.Contains(path, "60-cluster-manager.conf") {
+				snapshot.WriteString(path + "=" + line + "\n")
+			}
+		}
+	}
+	info, err := os.Stat(marker)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stat := info.Sys().(*syscall.Stat_t)
+	fmt.Fprintf(&snapshot, "marker-mode=%o uid=%d gid=%d", info.Mode().Perm(), stat.Uid, stat.Gid)
+	return snapshot.String()
 }
 
 func TestUbuntuSafeProcessTermination(t *testing.T) {

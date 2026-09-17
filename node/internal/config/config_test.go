@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -47,5 +48,23 @@ func TestAcceptsDocumentedSimulationScenarios(t *testing.T) {
 	base.SimulationScenario = "surprise"
 	if err := base.Validate(); err == nil {
 		t.Fatal("expected undocumented scenario to be rejected")
+	}
+}
+
+func TestWriteNeverPersistsEnrollmentToken(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "node.json")
+	cfg := Config{PlatformURL: "https://example.test", WorkstationName: "ws01", EnrollmentToken: "enroll_secret", CredentialFile: "/tmp/credential", HeartbeatInterval: 15 * time.Second, SimulationScenario: "normal"}
+	if err := Write(path, cfg); err != nil {
+		t.Fatal(err)
+	}
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(contents) == "" || strings.Contains(string(contents), cfg.EnrollmentToken) {
+		t.Fatalf("enrollment token leaked into configuration: %s", contents)
+	}
+	if info, _ := os.Stat(path); info.Mode().Perm() != 0o600 {
+		t.Fatalf("configuration mode is %o", info.Mode().Perm())
 	}
 }

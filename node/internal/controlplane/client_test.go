@@ -70,7 +70,7 @@ func TestNonSuccessIsAnError(t *testing.T) {
 		http.Error(response, "no", http.StatusUnauthorized)
 	}))
 	defer server.Close()
-	if err := New(server.URL).Enroll(context.Background(), "ws01", "bad", "bad"); err == nil {
+	if _, err := New(server.URL).Enroll(context.Background(), "ws01", "bad", "bad"); err == nil {
 		t.Fatal("expected an error")
 	}
 }
