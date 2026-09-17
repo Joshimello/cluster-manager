@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, lt, or } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, lt, or } from 'drizzle-orm';
 import { fail } from '@sveltejs/kit';
 
 import { requireReadyUser } from '$lib/server/auth/guards';
@@ -21,7 +21,7 @@ function formString(formData: FormData, name: string): string {
 export const load: PageServerLoad = async ({ locals }) => {
   const user = requireReadyUser(locals);
   const now = new Date();
-  const [assignment] = await getDatabase()
+  const assignments = await getDatabase()
     .select({
       workstationId: workstations.id,
       workstationName: workstations.name,
@@ -31,22 +31,29 @@ export const load: PageServerLoad = async ({ locals }) => {
     .innerJoin(workstations, eq(workstationAssignments.workstationId, workstations.id))
     .where(
       and(eq(workstationAssignments.userId, user.id), eq(workstationAssignments.status, 'active'))
-    )
-    .limit(1);
+    );
 
-  const availableGpus = assignment
+  const workstationIds = assignments.map((assignment) => assignment.workstationId);
+  const availableGpus = workstationIds.length
     ? await getDatabase()
-        .select({ id: gpus.id, index: gpus.localIndex, model: gpus.model })
+        .select({
+          id: gpus.id,
+          index: gpus.localIndex,
+          model: gpus.model,
+          workstationId: workstations.id,
+          workstationName: workstations.name,
+          workstationDisplayName: workstations.displayName
+        })
         .from(gpus)
         .innerJoin(workstations, eq(gpus.workstationId, workstations.id))
         .where(
           and(
-            eq(gpus.workstationId, assignment.workstationId),
+            inArray(gpus.workstationId, workstationIds),
             eq(gpus.active, true),
             eq(workstations.status, 'active')
           )
         )
-        .orderBy(asc(gpus.localIndex))
+        .orderBy(asc(workstations.name), asc(gpus.localIndex))
     : [];
 
   const schedule = await getDatabase()
@@ -66,8 +73,8 @@ export const load: PageServerLoad = async ({ locals }) => {
     .innerJoin(workstations, eq(gpus.workstationId, workstations.id))
     .where(
       and(
-        assignment
-          ? or(eq(gpus.workstationId, assignment.workstationId), eq(reservations.userId, user.id))
+        workstationIds.length
+          ? or(inArray(gpus.workstationId, workstationIds), eq(reservations.userId, user.id))
           : eq(reservations.userId, user.id),
         eq(reservations.status, 'active'),
         gt(reservations.endAt, now)
@@ -81,6 +88,7 @@ export const load: PageServerLoad = async ({ locals }) => {
       status: reservations.status,
       gpuIndex: gpus.localIndex,
       gpuModel: gpus.model,
+      workstationName: workstations.name,
       startAt: reservations.startAt,
       endAt: reservations.endAt,
       cancelledAt: reservations.cancelledAt,
@@ -89,6 +97,7 @@ export const load: PageServerLoad = async ({ locals }) => {
     })
     .from(reservations)
     .innerJoin(gpus, eq(reservations.gpuId, gpus.id))
+    .innerJoin(workstations, eq(gpus.workstationId, workstations.id))
     .where(
       and(
         eq(reservations.userId, user.id),
@@ -103,7 +112,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 
   const defaultStart = nextHalfHour(now);
   return {
-    assignment: assignment ?? null,
+    assignments,
     gpus: availableGpus,
     schedule: schedule.map((reservation) => ({
       ...reservation,

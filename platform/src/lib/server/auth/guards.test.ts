@@ -13,6 +13,8 @@ const normalUser: AuthUser = {
   username: 'alice',
   displayName: 'Alice',
   role: 'user',
+  posixUid: 20000,
+  posixGid: 20000,
   mustChangePassword: false
 };
 

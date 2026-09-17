@@ -116,7 +116,13 @@
         </div>
       {:else}
         {#each data.users as user, index (user.id)}
-          {@const assignment = data.assignments.find((candidate) => candidate.userId === user.id)}
+          {@const userAssignments = data.assignments.filter(
+            (candidate) => candidate.userId === user.id
+          )}
+          {@const assignableWorkstations = data.workstations.filter(
+            (workstation) =>
+              !userAssignments.some((assignment) => assignment.workstationId === workstation.id)
+          )}
           <article
             class="grid gap-5 py-6 first:pt-0 last:pb-0 lg:grid-cols-[minmax(12rem,0.8fr)_minmax(22rem,1.5fr)_auto] lg:items-end"
           >
@@ -134,6 +140,9 @@
               </div>
               <small class="text-muted-foreground"
                 >Created {dateFormatter.format(user.createdAt)}</small
+              >
+              <small class="text-muted-foreground font-mono"
+                >UID {user.posixUid} · GID {user.posixGid}</small
               >
             </div>
 
@@ -189,64 +198,91 @@
               </form>
             </div>
 
-            <div
-              class="bg-muted/40 grid gap-4 rounded-lg border p-4 lg:col-span-3 lg:grid-cols-[minmax(12rem,0.8fr)_minmax(22rem,1.5fr)_auto] lg:items-end"
-            >
-              <div class="grid gap-2">
+            <div class="bg-muted/40 grid gap-4 rounded-lg border p-4 lg:col-span-3">
+              <div class="flex flex-wrap items-center justify-between gap-2">
                 <span class="text-sm font-medium">Workstation access</span>
-                {#if assignment}
-                  <div class="flex flex-wrap items-center gap-2">
-                    <strong>{assignment.workstationName}</strong>
-                    <StatusBadge status={assignment.provisioningStatus} />
-                    <StatusBadge status={assignment.connectionState} />
-                  </div>
-                  <small class="text-muted-foreground">
-                    Desired generation {assignment.desiredGeneration}; applied {assignment.appliedGeneration}
-                  </small>
-                  {#if assignment.provisioningMessage}
-                    <small
-                      class={assignment.provisioningStatus === 'error'
-                        ? 'text-destructive'
-                        : 'text-muted-foreground'}
-                    >
-                      {assignment.provisioningMessage}
-                    </small>
-                  {/if}
-                  {#if assignment.provisioningErrorCode === 'username_collision'}
-                    <small class="text-destructive font-medium">
-                      Username collision: use another platform username or deliberately
-                      rename/remove the local account, then let reconciliation retry.
-                    </small>
-                  {/if}
-                  <small class="text-muted-foreground">
-                    Node {assignment.nodeVersion ?? 'version unknown'}
-                    {#if assignment.inventory}
-                      · Disk {gigabytes(assignment.inventory.storage.usedBytes)} used of {gigabytes(
-                        assignment.inventory.storage.totalBytes
-                      )}
-                    {/if}
-                  </small>
-                {:else}
-                  <span class="text-muted-foreground text-sm">Not assigned</span>
-                {/if}
+                <Badge variant="secondary">{userAssignments.length} assigned</Badge>
               </div>
 
-              {#if data.workstations.length > 0}
+              {#if userAssignments.length === 0}
+                <span class="text-muted-foreground text-sm">Not assigned</span>
+              {:else}
+                <div class="grid gap-3 xl:grid-cols-2">
+                  {#each userAssignments as assignment (assignment.id)}
+                    <div class="grid gap-2 rounded-md border bg-background p-3">
+                      <div class="flex flex-wrap items-center gap-2">
+                        <strong>{assignment.workstationName}</strong>
+                        <StatusBadge status={assignment.provisioningStatus} />
+                        <StatusBadge status={assignment.connectionState} />
+                      </div>
+                      <small class="text-muted-foreground">
+                        Desired generation {assignment.desiredGeneration}; applied {assignment.appliedGeneration}
+                      </small>
+                      {#if assignment.provisioningMessage}
+                        <small
+                          class={assignment.provisioningStatus === 'error'
+                            ? 'text-destructive'
+                            : 'text-muted-foreground'}
+                        >
+                          {assignment.provisioningMessage}
+                        </small>
+                      {/if}
+                      {#if assignment.provisioningErrorCode === 'username_collision'}
+                        <small class="text-destructive font-medium">
+                          Username collision: choose another platform username or deliberately
+                          rename/remove the local account. No local ownership or credential data was
+                          changed.
+                        </small>
+                      {:else if assignment.provisioningErrorCode === 'uid_collision'}
+                        <small class="text-destructive font-medium">
+                          UID collision: UID {user.posixUid} is already in use locally. Remove or renumber
+                          the unrelated local identity before retrying. No ownership, credentials, groups,
+                          or files were changed.
+                        </small>
+                      {:else if assignment.provisioningErrorCode === 'gid_collision'}
+                        <small class="text-destructive font-medium">
+                          GID collision: GID {user.posixGid} or the private group name is already in use.
+                          Resolve the unrelated local group before retrying. No ownership, credentials,
+                          groups, or files were changed.
+                        </small>
+                      {:else if assignment.provisioningErrorCode === 'managed_identity_mismatch'}
+                        <small class="text-destructive font-medium">
+                          Managed identity mismatch: purge and recreate this node-managed account so
+                          it can use platform UID/GID {user.posixUid}. The node will not renumber it
+                          in place.
+                        </small>
+                      {/if}
+                      <small class="text-muted-foreground">
+                        Node {assignment.nodeVersion ?? 'version unknown'}
+                        {#if assignment.inventory}
+                          · Disk {gigabytes(assignment.inventory.storage.usedBytes)} used of {gigabytes(
+                            assignment.inventory.storage.totalBytes
+                          )}
+                        {/if}
+                      </small>
+                      <form class="mt-1" method="POST" action="?/revokeWorkstation">
+                        <input type="hidden" name="assignmentId" value={assignment.id} />
+                        <Button variant="destructive" size="sm" type="submit">Revoke access</Button>
+                      </form>
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+
+              {#if assignableWorkstations.length > 0}
                 <form
-                  class="grid items-end gap-3 sm:grid-cols-[1fr_auto]"
+                  class="grid items-end gap-3 sm:max-w-2xl sm:grid-cols-[1fr_auto]"
                   method="POST"
                   action="?/assignWorkstation"
                 >
                   <input type="hidden" name="userId" value={user.id} />
                   <div class="grid gap-2">
-                    <Label for={`workstation-${user.id}`}
-                      >{assignment ? 'Move to workstation' : 'Assign workstation'}</Label
-                    >
+                    <Label for={`workstation-${user.id}`}>Add workstation</Label>
                     <Select.Root
                       type="single"
                       name="workstationId"
-                      value={assignment?.workstationId ?? data.workstations[0].id}
-                      items={data.workstations.map((workstation) => ({
+                      value={assignableWorkstations[0].id}
+                      items={assignableWorkstations.map((workstation) => ({
                         value: workstation.id,
                         label: `${workstation.name} — ${workstation.displayName}`
                       }))}
@@ -255,7 +291,7 @@
                         ><Select.Value /></Select.Trigger
                       >
                       <Select.Content>
-                        {#each data.workstations as workstation (workstation.id)}
+                        {#each assignableWorkstations as workstation (workstation.id)}
                           <Select.Item value={workstation.id}
                             >{workstation.name} — {workstation.displayName}</Select.Item
                           >
@@ -263,25 +299,17 @@
                       </Select.Content>
                     </Select.Root>
                   </div>
-                  <Button variant="secondary" type="submit">{assignment ? 'Move' : 'Assign'}</Button
-                  >
+                  <Button variant="secondary" type="submit">Add access</Button>
                 </form>
-              {:else}
+              {:else if data.workstations.length === 0}
                 <p class="text-muted-foreground text-sm">
                   Create an active workstation before assigning users.
                 </p>
+              {:else}
+                <p class="text-muted-foreground text-sm">Assigned to every active workstation.</p>
               {/if}
 
-              <div class="flex lg:justify-end">
-                {#if assignment}
-                  <form method="POST" action="?/revokeWorkstation">
-                    <input type="hidden" name="userId" value={user.id} />
-                    <Button variant="destructive" type="submit">Revoke access</Button>
-                  </form>
-                {/if}
-              </div>
-
-              <div class="grid gap-2 lg:col-span-3 sm:grid-cols-2">
+              <div class="grid gap-2 sm:grid-cols-2">
                 <div class="rounded-md border bg-background p-3">
                   <span class="text-muted-foreground text-xs font-medium uppercase"
                     >Active GPU processes</span

@@ -14,6 +14,8 @@ export type AuthUser = Readonly<{
   username: string;
   displayName: string;
   role: UserRole;
+  posixUid: number;
+  posixGid: number;
   mustChangePassword: boolean;
 }>;
 
@@ -64,6 +66,8 @@ export async function validateSessionToken(token: string): Promise<SessionValida
       username: users.username,
       displayName: users.displayName,
       role: users.role,
+      posixUid: users.posixUid,
+      posixGid: users.posixGid,
       status: users.status,
       mustChangePassword: users.mustChangePassword
     })
@@ -91,6 +95,8 @@ export async function validateSessionToken(token: string): Promise<SessionValida
       username: result.username,
       displayName: result.displayName,
       role: result.role,
+      posixUid: result.posixUid,
+      posixGid: result.posixGid,
       mustChangePassword: result.mustChangePassword
     }
   };

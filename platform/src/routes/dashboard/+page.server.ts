@@ -9,7 +9,7 @@ import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals }) => {
   const user = requireReadyUser(locals);
-  const [assignment] = await getDatabase()
+  const assignments = await getDatabase()
     .select({
       id: workstationAssignments.id,
       workstationId: workstations.id,
@@ -28,19 +28,20 @@ export const load: PageServerLoad = async ({ locals }) => {
     .innerJoin(workstations, eq(workstationAssignments.workstationId, workstations.id))
     .where(
       and(eq(workstationAssignments.userId, user.id), eq(workstationAssignments.status, 'active'))
-    )
-    .limit(1);
+    );
 
   const upcomingReservations = await getDatabase()
     .select({
       id: reservations.id,
       gpuIndex: gpus.localIndex,
       gpuModel: gpus.model,
+      workstationName: workstations.name,
       startAt: reservations.startAt,
       endAt: reservations.endAt
     })
     .from(reservations)
     .innerJoin(gpus, eq(reservations.gpuId, gpus.id))
+    .innerJoin(workstations, eq(gpus.workstationId, workstations.id))
     .where(
       and(
         eq(reservations.userId, user.id),
@@ -53,20 +54,20 @@ export const load: PageServerLoad = async ({ locals }) => {
 
   return {
     user,
-    assignment: assignment
-      ? {
-          ...assignment,
-          inventory: assignment.inventory
-            ? {
-                ...assignment.inventory,
-                sessions: assignment.inventory.sessions.filter(
-                  (session) => session.username === user.username
-                )
-              }
-            : null
-        }
-      : null,
-    gpus: assignment ? await loadWorkstationGpus(assignment.workstationId, { viewer: user }) : [],
+    assignments: await Promise.all(
+      assignments.map(async (assignment) => ({
+        ...assignment,
+        inventory: assignment.inventory
+          ? {
+              ...assignment.inventory,
+              sessions: assignment.inventory.sessions.filter(
+                (session) => session.username === user.username
+              )
+            }
+          : null,
+        gpus: await loadWorkstationGpus(assignment.workstationId, { viewer: user })
+      }))
+    ),
     reservations: upcomingReservations
   };
 };

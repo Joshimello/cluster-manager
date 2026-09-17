@@ -1,4 +1,4 @@
-import { and, asc, eq, gt, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, sql } from 'drizzle-orm';
 import { fail } from '@sveltejs/kit';
 
 import { recordAudit } from '$lib/server/audit';
@@ -108,10 +108,12 @@ export const load: PageServerLoad = async ({ locals }) => {
       .where(and(eq(reservations.status, 'active'), gt(reservations.endAt, now)))
       .orderBy(asc(reservations.startAt)),
     Promise.all(
-      activeAssignments.map(async (assignment) => ({
-        workstationId: assignment.workstationId,
-        gpus: await loadWorkstationGpus(assignment.workstationId)
-      }))
+      [...new Set(activeAssignments.map((assignment) => assignment.workstationId))].map(
+        async (workstationId) => ({
+          workstationId,
+          gpus: await loadWorkstationGpus(workstationId)
+        })
+      )
     )
   ]);
 
@@ -469,34 +471,20 @@ export const actions: Actions = {
         .where(
           and(
             eq(workstationAssignments.userId, userId),
+            eq(workstationAssignments.workstationId, workstationId),
             eq(workstationAssignments.status, 'active')
           )
         )
         .for('update')
         .limit(1);
 
-      if (current?.workstationId === workstationId) {
+      if (current) {
         return {
           error: `${targetUser.username} is already assigned to ${targetWorkstation.name}.`
         } as const;
       }
 
       const changedAt = new Date();
-      if (current) {
-        await transaction
-          .update(workstationAssignments)
-          .set({
-            status: 'revoked',
-            desiredGeneration: sql`${workstationAssignments.desiredGeneration} + 1`,
-            provisioningStatus: 'pending',
-            provisioningMessage: null,
-            provisioningErrorCode: null,
-            revokedAt: changedAt,
-            updatedAt: changedAt
-          })
-          .where(eq(workstationAssignments.id, current.id));
-      }
-
       const [created] = await transaction
         .insert(workstationAssignments)
         .values({ userId, workstationId, assignedAt: changedAt, updatedAt: changedAt })
@@ -504,13 +492,12 @@ export const actions: Actions = {
 
       await recordAudit((query) => transaction.execute(query), {
         actorUserId: actor.id,
-        action: current ? 'workstation.assignment_moved' : 'workstation.assignment_created',
+        action: 'workstation.assignment_created',
         targetType: 'user',
         targetId: targetUser.id,
         metadata: {
           username: targetUser.username,
           assignmentId: created.id,
-          previousWorkstationId: current?.workstationId ?? null,
           workstationId,
           workstationName: targetWorkstation.name
         }
@@ -533,9 +520,9 @@ export const actions: Actions = {
   revokeWorkstation: async ({ locals, request }) => {
     const actor = requireAdmin(locals);
     const formData = await request.formData();
-    const userId = formString(formData, 'userId');
-    if (!isUserId(userId)) {
-      return fail(400, { action: 'revokeWorkstation', message: 'Invalid user.' });
+    const assignmentId = formString(formData, 'assignmentId');
+    if (!isUserId(assignmentId)) {
+      return fail(400, { action: 'revokeWorkstation', message: 'Invalid workstation assignment.' });
     }
 
     const outcome = await getDatabase().transaction(async (transaction) => {
@@ -552,16 +539,30 @@ export const actions: Actions = {
         .innerJoin(workstations, eq(workstationAssignments.workstationId, workstations.id))
         .where(
           and(
-            eq(workstationAssignments.userId, userId),
+            eq(workstationAssignments.id, assignmentId),
             eq(workstationAssignments.status, 'active')
           )
         )
         .for('update')
         .limit(1);
 
-      if (!current) return { error: 'User has no active workstation assignment.' } as const;
+      if (!current) return { error: 'Active workstation assignment was not found.' } as const;
 
       const revokedAt = new Date();
+      const futureReservations = await transaction
+        .select({ id: reservations.id })
+        .from(reservations)
+        .innerJoin(gpus, eq(reservations.gpuId, gpus.id))
+        .where(
+          and(
+            eq(reservations.userId, current.userId),
+            eq(gpus.workstationId, current.workstationId),
+            eq(reservations.status, 'active'),
+            gt(reservations.startAt, revokedAt)
+          )
+        )
+        .for('update');
+
       await transaction
         .update(workstationAssignments)
         .set({
@@ -575,6 +576,34 @@ export const actions: Actions = {
         })
         .where(eq(workstationAssignments.id, current.id));
 
+      const futureReservationIds = futureReservations.map((reservation) => reservation.id);
+      if (futureReservationIds.length > 0) {
+        await transaction
+          .update(reservations)
+          .set({
+            status: 'cancelled',
+            cancelledAt: revokedAt,
+            cancelledByUserId: actor.id,
+            cancellationReason: 'Workstation access revoked.',
+            updatedAt: revokedAt
+          })
+          .where(inArray(reservations.id, futureReservationIds));
+
+        for (const reservationId of futureReservationIds) {
+          await recordAudit((query) => transaction.execute(query), {
+            actorUserId: actor.id,
+            action: 'reservation.cancelled_for_assignment_revocation',
+            targetType: 'reservation',
+            targetId: reservationId,
+            metadata: {
+              assignmentId: current.id,
+              workstationId: current.workstationId,
+              reason: 'Workstation access revoked.'
+            }
+          });
+        }
+      }
+
       await recordAudit((query) => transaction.execute(query), {
         actorUserId: actor.id,
         action: 'workstation.assignment_revoked',
@@ -584,11 +613,16 @@ export const actions: Actions = {
           username: current.username,
           assignmentId: current.id,
           workstationId: current.workstationId,
-          workstationName: current.workstationName
+          workstationName: current.workstationName,
+          cancelledFutureReservations: futureReservationIds.length
         }
       });
 
-      return { username: current.username, workstationName: current.workstationName } as const;
+      return {
+        username: current.username,
+        workstationName: current.workstationName,
+        cancelledFutureReservations: futureReservationIds.length
+      } as const;
     });
 
     if ('error' in outcome) {
@@ -598,7 +632,11 @@ export const actions: Actions = {
     return {
       action: 'revokeWorkstation',
       success: true,
-      message: `Revoked ${outcome.username}'s access to ${outcome.workstationName}.`
+      message: `Revoked ${outcome.username}'s access to ${outcome.workstationName}.${
+        outcome.cancelledFutureReservations > 0
+          ? ` Cancelled ${outcome.cancelledFutureReservations} future reservation${outcome.cancelledFutureReservations === 1 ? '' : 's'}.`
+          : ''
+      }`
     };
   }
 };

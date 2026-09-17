@@ -34,14 +34,16 @@
     <FeedbackAlert message={form.message} success={form.success} />
   {/if}
 
-  {#if data.assignment}
+  {#if data.assignments.length > 0}
     <Card.Root>
       <Card.Header>
         <Card.Title class="flex items-center gap-2"
           ><CalendarDaysIcon class="size-5" />Reserve a GPU</Card.Title
         >
         <Card.Description>
-          {data.assignment.workstationDisplayName} · maximum six hours · up to seven days ahead
+          Choose from {data.assignments.length} assigned workstation{data.assignments.length === 1
+            ? ''
+            : 's'} · maximum six hours · up to seven days ahead
         </Card.Description>
       </Card.Header>
       <Card.Content>
@@ -63,14 +65,16 @@
                   : data.gpus[0].id}
                 items={data.gpus.map((gpu) => ({
                   value: gpu.id,
-                  label: `GPU ${gpu.index} — ${gpu.model}`
+                  label: `${gpu.workstationName} · GPU ${gpu.index} — ${gpu.model}`
                 }))}
               >
                 <Select.Trigger id="reservation-gpu" class="w-full"><Select.Value /></Select.Trigger
                 >
                 <Select.Content>
                   {#each data.gpus as gpu (gpu.id)}
-                    <Select.Item value={gpu.id}>GPU {gpu.index} — {gpu.model}</Select.Item>
+                    <Select.Item value={gpu.id}
+                      >{gpu.workstationName} · GPU {gpu.index} — {gpu.model}</Select.Item
+                    >
                   {/each}
                 </Select.Content>
               </Select.Root>
@@ -122,7 +126,7 @@
       <div class="space-y-1.5">
         <Card.Title class="flex items-center gap-2"><ClockIcon class="size-5" />Schedule</Card.Title
         >
-        <Card.Description>Current and upcoming reservations on your workstation.</Card.Description>
+        <Card.Description>Current and upcoming reservations on your workstations.</Card.Description>
       </div>
       <Badge variant="secondary">{data.schedule.length} reservations</Badge>
     </Card.Header>
@@ -190,7 +194,9 @@
           <Table.Body>
             {#each data.history as reservation (reservation.id)}
               <Table.Row>
-                <Table.Cell class="pl-6 font-medium">GPU {reservation.gpuIndex}</Table.Cell>
+                <Table.Cell class="pl-6 font-medium"
+                  >{reservation.workstationName} · GPU {reservation.gpuIndex}</Table.Cell
+                >
                 <Table.Cell>{dateTime.format(reservation.startAt)}</Table.Cell>
                 <Table.Cell>{dateTime.format(reservation.endAt)}</Table.Cell>
                 <Table.Cell class="pr-6">
