@@ -154,7 +154,7 @@ func TestUbuntuInterruptedProvisioningResumesFromJournal(t *testing.T) {
 				GID:             test.id,
 				HomeDirectory:   filepath.Join("/home", test.username),
 				PrimaryGroup:    test.username,
-				GroupCreated:    true,
+				GroupCreated:    test.createGroup,
 				CreationPhase:   "pending",
 				CreatedAt:       time.Now().UTC(),
 			}

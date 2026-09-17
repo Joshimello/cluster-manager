@@ -31,6 +31,7 @@ func Validate(state protocol.DesiredState, workstationName string) error {
 		return fmt.Errorf("desired state is for workstation %q, not %q", state.Workstation.Name, workstationName)
 	}
 	seen := make(map[string]struct{}, len(state.Users))
+	seenIDs := make(map[int]string, len(state.Users))
 	for _, desired := range state.Users {
 		if !uuidPattern.MatchString(desired.AssignmentID) {
 			return fmt.Errorf("invalid assignment ID for user %q", desired.Username)
@@ -41,6 +42,10 @@ func Validate(state protocol.DesiredState, workstationName string) error {
 		if desired.UID < minimumManagedID || desired.UID > maximumManagedID || desired.GID < minimumManagedID || desired.GID > maximumManagedID || desired.UID != desired.GID {
 			return fmt.Errorf("invalid platform UID/GID for user %q", desired.Username)
 		}
+		if existing, exists := seenIDs[desired.UID]; exists {
+			return fmt.Errorf("platform UID/GID %d is duplicated by users %q and %q", desired.UID, existing, desired.Username)
+		}
+		seenIDs[desired.UID] = desired.Username
 		if _, exists := seen[desired.Username]; exists {
 			return fmt.Errorf("duplicate desired user %q", desired.Username)
 		}

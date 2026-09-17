@@ -42,6 +42,15 @@ func TestValidateRejectsWholeUnsafeState(t *testing.T) {
 		{"invalid hash", desiredState(protocol.DesiredUser{AssignmentID: valid.AssignmentID, Username: "alice", UID: 20_000, GID: 20_000, Enabled: true, PasswordHash: "$6$bad", Generation: 1})},
 		{"disabled hash", desiredState(protocol.DesiredUser{AssignmentID: valid.AssignmentID, Username: "alice", UID: 20_000, GID: 20_000, PasswordHash: testHash, Generation: 1})},
 		{"duplicate username", desiredState(valid, valid)},
+		{"duplicate identity", desiredState(valid, protocol.DesiredUser{
+			AssignmentID: "33333333-3333-4333-8333-333333333333",
+			Username:     "bob",
+			UID:          20_000,
+			GID:          20_000,
+			Enabled:      true,
+			PasswordHash: testHash,
+			Generation:   1,
+		})},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

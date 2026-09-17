@@ -64,6 +64,7 @@ func (l *Linux) Apply(ctx context.Context, state protocol.DesiredState) ([]proto
 }
 
 func (l *Linux) applyUser(ctx context.Context, state *ManagedState, desired protocol.DesiredUser) (string, string, error) {
+	newlyRecorded := false
 	account, err := lookupUser(desired.Username)
 	if err != nil {
 		return "", "local_apply_failed", fmt.Errorf("look up Linux account: %w", err)
@@ -139,7 +140,7 @@ func (l *Linux) applyUser(ctx context.Context, state *ManagedState, desired prot
 			GID:             desired.GID,
 			HomeDirectory:   filepath.Join("/home", desired.Username),
 			PrimaryGroup:    desired.Username,
-			GroupCreated:    true,
+			GroupCreated:    false,
 			CreationPhase:   "pending",
 			CreatedAt:       time.Now().UTC(),
 		}
@@ -148,9 +149,11 @@ func (l *Linux) applyUser(ctx context.Context, state *ManagedState, desired prot
 			return "", "local_apply_failed", err
 		}
 		owned = true
+		newlyRecorded = true
 	}
 
 	if managed.CreationPhase == "pending" {
+		createdPrivateGroup := false
 		privateGroup, groupErr := lookupGroup(managed.PrimaryGroup)
 		if groupErr != nil {
 			return "", "local_apply_failed", fmt.Errorf("look up pending private group: %w", groupErr)
@@ -159,15 +162,25 @@ func (l *Linux) applyUser(ctx context.Context, state *ManagedState, desired prot
 			if err := run(ctx, "", "groupadd", "--gid", strconv.Itoa(managed.GID), managed.PrimaryGroup); err != nil {
 				return "", "gid_collision", fmt.Errorf("create private group %q with GID %d: %w; no account credentials or file ownership were changed", managed.PrimaryGroup, managed.GID, err)
 			}
+			createdPrivateGroup = true
 		} else if !groupMatches(privateGroup, managed) {
 			return "", "managed_identity_mismatch", fmt.Errorf("pending private group %q does not match its recorded GID; no changes were made", managed.PrimaryGroup)
+		}
+		if !managed.GroupCreated {
+			managed.GroupCreated = true
+			state.Users[desired.Username] = managed
+			if err := saveManagedState(l.managedStatePath, *state); err != nil {
+				return "", "local_apply_failed", err
+			}
+		}
+		managedGroupBefore, err := lookupGroup(managedGroup)
+		if err != nil {
+			return "", "local_apply_failed", fmt.Errorf("look up managed group: %w", err)
 		}
 		if err := ensureGroup(ctx); err != nil {
 			return "", "local_apply_failed", err
 		}
-		if err := ensureSSHPolicy(ctx); err != nil {
-			return "", "local_apply_failed", err
-		}
+		createdManagedGroup := managedGroupBefore == nil
 		account, err = lookupUser(desired.Username)
 		if err != nil {
 			return "", "local_apply_failed", fmt.Errorf("look up pending Linux account: %w", err)
@@ -175,7 +188,10 @@ func (l *Linux) applyUser(ctx context.Context, state *ManagedState, desired prot
 		if account == nil {
 			if err := run(ctx, "", "useradd", "--uid", strconv.Itoa(managed.UID), "--gid", managed.PrimaryGroup, "--home-dir", managed.HomeDirectory, "--create-home", "--shell", "/bin/bash", "--groups", managedGroup, desired.Username); err != nil {
 				if existing, lookupErr := lookupUser(desired.Username); lookupErr == nil && existing != nil {
-					return "", "username_collision", fmt.Errorf("Linux username %q appeared while the account was being created and is not trusted; no local ownership or credential data was changed", desired.Username)
+					if rollbackErr := l.rollbackCreationRace(ctx, state, managed, newlyRecorded, createdPrivateGroup, createdManagedGroup); rollbackErr != nil {
+						return "", "local_apply_failed", fmt.Errorf("Linux username %q appeared during creation and staged state could not be fully rolled back: %w", desired.Username, rollbackErr)
+					}
+					return "", "username_collision", fmt.Errorf("Linux username %q appeared while the account was being created and is not trusted; staged state was rolled back and no local ownership, credentials, groups, SSH policy, subordinate ranges, or files were changed", desired.Username)
 				}
 				return "", "local_apply_failed", fmt.Errorf("create Linux account: %w", err)
 			}
@@ -191,6 +207,9 @@ func (l *Linux) applyUser(ctx context.Context, state *ManagedState, desired prot
 		managed.GroupAdded = true
 		state.Users[desired.Username] = managed
 		if err := saveManagedState(l.managedStatePath, *state); err != nil {
+			return "", "local_apply_failed", err
+		}
+		if err := ensureSSHPolicy(ctx); err != nil {
 			return "", "local_apply_failed", err
 		}
 	} else {
@@ -246,6 +265,26 @@ func (l *Linux) applyUser(ctx context.Context, state *ManagedState, desired prot
 		}
 	}
 	return "Linux account and synchronized SSH password applied.", "", nil
+}
+
+func (l *Linux) rollbackCreationRace(ctx context.Context, state *ManagedState, managed ManagedUser, newlyRecorded, createdPrivateGroup, createdManagedGroup bool) error {
+	if createdPrivateGroup {
+		if err := run(ctx, "", "groupdel", managed.PrimaryGroup); err != nil {
+			return fmt.Errorf("remove staged private group: %w", err)
+		}
+	}
+	if createdManagedGroup {
+		if err := run(ctx, "", "groupdel", managedGroup); err != nil {
+			return fmt.Errorf("remove staged managed group: %w", err)
+		}
+	}
+	if newlyRecorded {
+		delete(state.Users, managed.Username)
+		if err := saveManagedState(l.managedStatePath, *state); err != nil {
+			return fmt.Errorf("remove staged provenance: %w", err)
+		}
+	}
+	return nil
 }
 
 func lookupUser(username string) (*user.User, error) {
