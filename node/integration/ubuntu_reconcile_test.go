@@ -2,6 +2,7 @@ package integration
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -118,6 +119,88 @@ func TestUbuntuGIDCollisionChangesNothing(t *testing.T) {
 	}
 	if after := snapshotIdentityFiles(t, "gidholder", "gidcollision"); after != before {
 		t.Fatalf("GID collision modified host state\nbefore: %s\nafter:  %s", before, after)
+	}
+}
+
+func TestUbuntuInterruptedProvisioningResumesFromJournal(t *testing.T) {
+	if os.Getenv("CLUSTER_MANAGER_UBUNTU_INTEGRATION") != "1" {
+		t.Skip("set CLUSTER_MANAGER_UBUNTU_INTEGRATION=1 inside the disposable Ubuntu test image")
+	}
+	if output, err := exec.Command("groupadd", "--system", "cluster-manager-users").CombinedOutput(); err != nil && !strings.Contains(string(output), "already exists") {
+		t.Fatalf("create managed group: %v: %s", err, output)
+	}
+
+	tests := []struct {
+		name        string
+		username    string
+		id          int
+		createGroup bool
+		createUser  bool
+	}{
+		{name: "after ledger write", username: "resumeledger", id: 22_000},
+		{name: "after private group creation", username: "resumegroup", id: 22_001, createGroup: true},
+		{name: "after user creation", username: "resumeuser", id: 22_002, createGroup: true, createUser: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			statePath := filepath.Join(t.TempDir(), "managed-state.json")
+			managed := reconcile.ManagedUser{
+				Username:        test.username,
+				AssignmentID:    "55555555-5555-4555-8555-555555555555",
+				WorkstationID:   "11111111-1111-4111-8111-111111111111",
+				WorkstationName: "ubuntu-smoke",
+				UID:             test.id,
+				GID:             test.id,
+				HomeDirectory:   filepath.Join("/home", test.username),
+				PrimaryGroup:    test.username,
+				GroupCreated:    true,
+				CreationPhase:   "pending",
+				CreatedAt:       time.Now().UTC(),
+			}
+			state := reconcile.ManagedState{
+				SchemaVersion:   2,
+				WorkstationID:   managed.WorkstationID,
+				WorkstationName: managed.WorkstationName,
+				Users:           map[string]reconcile.ManagedUser{test.username: managed},
+			}
+			contents, err := json.Marshal(state)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(statePath, contents, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if test.createGroup {
+				if output, err := exec.Command("groupadd", "--gid", fmt.Sprint(test.id), test.username).CombinedOutput(); err != nil {
+					t.Fatalf("create interrupted private group: %v: %s", err, output)
+				}
+			}
+			if test.createUser {
+				if output, err := exec.Command(
+					"useradd", "--uid", fmt.Sprint(test.id), "--gid", test.username,
+					"--home-dir", managed.HomeDirectory, "--create-home", "--shell", "/bin/bash",
+					"--groups", "cluster-manager-users", test.username,
+				).CombinedOutput(); err != nil {
+					t.Fatalf("create interrupted user: %v: %s", err, output)
+				}
+			}
+
+			results, err := reconcile.NewLinuxWithStatePath("ubuntu-smoke", statePath).Apply(
+				context.Background(), desiredIdentity(test.username, test.id),
+			)
+			if err != nil || len(results) != 1 || results[0].Status != "applied" {
+				t.Fatalf("resume pending creation: %#v, %v", results, err)
+			}
+			account, err := user.Lookup(test.username)
+			if err != nil || account.Uid != fmt.Sprint(test.id) || account.Gid != fmt.Sprint(test.id) {
+				t.Fatalf("unexpected resumed account: %#v, %v", account, err)
+			}
+			loaded, err := reconcile.LoadManagedState(statePath)
+			if err != nil || loaded.Users[test.username].CreationPhase != "active" {
+				t.Fatalf("journal did not become active: %#v, %v", loaded, err)
+			}
+		})
 	}
 }
 

@@ -31,6 +31,7 @@
     "test:m5-smoke": "node scripts/m5-smoke.mjs",
     "test:m6-smoke": "node scripts/m6-smoke.mjs",
     "test:m7-smoke": "node scripts/m7-smoke.mjs",
+    "test:m8-2-db-smoke": "node scripts/m8-2-db-smoke.mjs",
     "test:watch": "vitest"
   },
   "devDependencies": {

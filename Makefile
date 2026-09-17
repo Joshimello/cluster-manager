@@ -1,4 +1,4 @@
-.PHONY: setup install up down logs ps test test-ubuntu-reconcile test-ubuntu-deploy check format build build-node-linux db-migrate
+.PHONY: setup install up down logs ps test test-ubuntu-reconcile test-ubuntu-deploy test-shared-posix check format build build-node-linux db-migrate
 
 VERSION ?= development
 
@@ -31,6 +31,9 @@ test-ubuntu-reconcile:
 test-ubuntu-deploy:
 	docker build -f node/integration/ubuntu-deploy.Dockerfile -t cluster-manager-ubuntu-deploy-test node
 	docker run --rm cluster-manager-ubuntu-deploy-test
+
+test-shared-posix:
+	bash node/integration/shared_posix_test.sh
 
 check:
 	cd platform && npm run check

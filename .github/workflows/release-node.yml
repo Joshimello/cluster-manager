@@ -10,21 +10,58 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: cluster_manager
+          POSTGRES_USER: cluster_manager
+          POSTGRES_PASSWORD: cluster_manager_ci
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U cluster_manager -d cluster_manager"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      DATABASE_URL: postgres://cluster_manager:cluster_manager_ci@localhost:5432/cluster_manager
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
           go-version-file: node/go.mod
           cache-dependency-path: node/go.sum
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: platform/package-lock.json
+      - working-directory: platform
+        run: npm ci
+      - working-directory: platform
+        run: npm run db:migrate:runtime
+      - working-directory: platform
+        run: npm run db:check
+      - working-directory: platform
+        run: npm test
+      - working-directory: platform
+        run: npm run check
+      - working-directory: platform
+        run: npm run lint
+      - working-directory: platform
+        run: npm run build
+      - working-directory: platform
+        run: npm run test:m8-2-db-smoke
       - working-directory: node
         run: go test ./...
       - working-directory: node
         run: go vet ./...
       - run: |
           bash -n install-node.sh
+          bash -n node/integration/shared_posix_test.sh
           shellcheck install-node.sh
+          shellcheck node/integration/shared_posix_test.sh
       - run: make test-ubuntu-reconcile
       - run: make test-ubuntu-deploy
+      - run: make test-shared-posix
 
   build:
     needs: test

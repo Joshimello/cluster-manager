@@ -10,6 +10,45 @@ permissions:
   contents: read
 
 jobs:
+  platform-test:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: cluster_manager
+          POSTGRES_USER: cluster_manager
+          POSTGRES_PASSWORD: cluster_manager_ci
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U cluster_manager -d cluster_manager"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      DATABASE_URL: postgres://cluster_manager:cluster_manager_ci@localhost:5432/cluster_manager
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: platform/package-lock.json
+      - working-directory: platform
+        run: npm ci
+      - working-directory: platform
+        run: npm run db:migrate:runtime
+      - working-directory: platform
+        run: npm run db:check
+      - working-directory: platform
+        run: npm test
+      - working-directory: platform
+        run: npm run check
+      - working-directory: platform
+        run: npm run lint
+      - working-directory: platform
+        run: npm run build
+      - working-directory: platform
+        run: npm run test:m8-2-db-smoke
+
   test:
     runs-on: ubuntu-24.04
     steps:
@@ -27,8 +66,12 @@ jobs:
       - name: Shell checks
         run: |
           bash -n install-node.sh
+          bash -n node/integration/shared_posix_test.sh
           shellcheck install-node.sh
+          shellcheck node/integration/shared_posix_test.sh
       - name: Ubuntu reconciliation test
         run: make test-ubuntu-reconcile
       - name: Ubuntu deployment rehearsal
         run: make test-ubuntu-deploy
+      - name: Dual-client shared POSIX identity test
+        run: make test-shared-posix
