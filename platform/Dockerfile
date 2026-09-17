@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-FROM node:24-alpine AS dependencies
+FROM --platform=$BUILDPLATFORM node:24-alpine AS dependencies
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
@@ -12,7 +12,12 @@ CMD ["sh", "-c", "npm run db:migrate:runtime && if [ \"$NODE_DEV_SEED_WORKSTATIO
 
 FROM dependencies AS build
 COPY . .
-RUN npm run build && npm prune --omit=dev
+RUN npm run build
+
+FROM node:24-alpine AS production-dependencies
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts
 
 FROM node:24-alpine AS production
 WORKDIR /app
@@ -21,7 +26,7 @@ ENV HOST=0.0.0.0
 ENV PORT=3000
 COPY --from=build --chown=node:node /app/build ./build
 COPY --from=build --chown=node:node /app/drizzle ./drizzle
-COPY --from=build --chown=node:node /app/node_modules ./node_modules
+COPY --from=production-dependencies --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/scripts ./scripts
 COPY --from=build --chown=node:node /app/package.json ./package.json
 USER node
