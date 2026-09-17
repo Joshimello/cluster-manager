@@ -22,9 +22,7 @@ services:
         max-file: "5"
 
   platform:
-    build:
-      context: ./platform
-      target: production
+    image: ghcr.io/joshimello/cluster-manager-platform:${PLATFORM_VERSION:-latest}
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-cluster_manager}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-cluster_manager}
       ORIGIN: ${ORIGIN:?set the public HTTPS ORIGIN in .env}

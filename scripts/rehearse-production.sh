@@ -25,7 +25,9 @@ PLATFORM_VERSION=rehearsal
 TELEMETRY_RETENTION_HOURS=24
 EOF
 
-docker compose --env-file "$environment" up -d --build --wait
+docker build --target production \
+  --tag ghcr.io/joshimello/cluster-manager-platform:rehearsal platform >/dev/null
+docker compose --env-file "$environment" up -d --wait
 curl --fail --silent "http://127.0.0.1:$port/health" >/dev/null
 docker compose --env-file "$environment" exec -T platform \
   npm run admin:bootstrap -- --username rehearsal-admin --display-name "Rehearsal Administrator" >/dev/null

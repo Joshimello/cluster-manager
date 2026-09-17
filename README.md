@@ -46,25 +46,30 @@ report observed state; they do not expose a generic remote-command interface.
 
 ## Quick start
 
-Requirements: Docker with Docker Compose.
+Requirements: Docker with Docker Compose and an HTTPS reverse proxy for production.
 
 ```bash
 git clone https://github.com/Joshimello/cluster-manager.git
 cd cluster-manager
-cp .env.example .env
-docker compose -f docker-compose.dev.yml up --build
+cp .env.production.example .env
+chmod 600 .env
+${EDITOR:-vi} .env
+docker compose pull
+docker compose up -d --wait
 ```
 
-Open <http://localhost:5173>, then create the initial administrator:
+The Compose file pulls the prebuilt multi-architecture platform image from GitHub
+Container Registry and starts it with PostgreSQL. After configuring the documented
+HTTPS reverse proxy, create the initial administrator:
 
 ```bash
-docker compose -f docker-compose.dev.yml exec platform \
+docker compose exec platform \
   npm run admin:bootstrap -- --username admin --display-name "Lab Administrator"
 ```
 
 The command prints a one-time temporary password. Sign in and replace it when
-prompted. The development stack includes simulated `ws01` and `ws02` nodes, so the
-main workflows can be explored without NVIDIA hardware.
+prompted. For source-mounted development with simulated workstations, use the
+[development guide](docs/development.md).
 
 To install a real Ubuntu node from the latest verified release:
 

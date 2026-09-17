@@ -5,20 +5,26 @@ This runbook covers the first single-management-host deployment. Keep the reposi
 
 ## Management host deployment
 
-Install Docker Engine with the Compose plugin, clone a tagged release, then configure it:
+Install Docker Engine with the Compose plugin, clone the repository, then configure
+the production environment:
 
 ```bash
 cp .env.production.example .env
 chmod 600 .env
 ${EDITOR:-vi} .env
 docker compose config --quiet
-docker compose up -d --build --wait
+docker compose pull
+docker compose up -d --wait
 docker compose ps
 curl --fail http://127.0.0.1:3000/health
 ```
 
-Every placeholder must be replaced. `ORIGIN` is the public HTTPS origin and
-`PLATFORM_VERSION` is the deployed release/tag. PostgreSQL is not published to the
+Every placeholder must be replaced. `ORIGIN` is the public HTTPS origin.
+`PLATFORM_VERSION` selects the image tag from
+`ghcr.io/joshimello/cluster-manager-platform`; use a release tag for reproducible
+deployments or `latest` for the newest stable release. The image supports Linux
+`amd64` and `arm64` and is built by GitHub Actions rather than on the management host.
+PostgreSQL is not published to the
 host. Its data lives in the `postgres-data` named volume. The app port binds to
 loopback by default; change `PLATFORM_BIND_ADDRESS` only when the reverse proxy runs on
 another trusted host or container network.
@@ -67,18 +73,22 @@ rehearsals. Nodes must use the public HTTPS URL and validate its certificate.
 
 ## Updates
 
-Back up first, check out the intended tag, set `PLATFORM_VERSION`, then run:
+Back up first, fetch the current Compose file, set `PLATFORM_VERSION` to the intended
+release tag, then pull and restart:
 
 ```bash
 scripts/backup-database.sh backups/pre-upgrade.dump
-docker compose build --pull
+git pull --ff-only
+docker compose pull
 docker compose up -d --wait
 docker compose ps
 ```
 
 The platform validates its environment and applies forward database migrations before
-serving. Read the release notes before rollback: an older app may not understand a
-newer schema. Prefer restoring the pre-upgrade backup with the matching release.
+serving. `docker compose pull` downloads the image before the running container is
+replaced. Read the release notes before rollback: an older app may not understand a
+newer schema. Prefer restoring the pre-upgrade backup with the matching release and
+set `PLATFORM_VERSION` back to that release tag.
 
 ## Backup and restore
 
