@@ -60,10 +60,11 @@ type Manager struct {
 	HTTPClient  *http.Client
 	ReleaseAPI  string
 	ReleaseBase string
+	input       *bufio.Reader
 }
 
 func New(version string, in io.Reader, out, errOut io.Writer) *Manager {
-	return &Manager{Paths: DefaultPaths(), Version: version, In: in, Out: out, Err: errOut, HTTPClient: &http.Client{Timeout: 30 * time.Second}, ReleaseAPI: defaultReleaseAPI, ReleaseBase: defaultReleaseBase}
+	return &Manager{Paths: DefaultPaths(), Version: version, In: in, Out: out, Err: errOut, HTTPClient: &http.Client{Timeout: 30 * time.Second}, ReleaseAPI: defaultReleaseAPI, ReleaseBase: defaultReleaseBase, input: bufio.NewReader(in)}
 }
 
 type SetupOptions struct{ PlatformURL, Name, EnrollmentTokenFile string }
@@ -75,15 +76,15 @@ func (m *Manager) Setup(ctx context.Context, options SetupOptions) error {
 	if err := validateHost(ctx); err != nil {
 		return err
 	}
-	platformURL, err := m.value(options.PlatformURL, "Platform URL")
+	platformURL, err := m.setupPlatformURL(ctx, options.PlatformURL)
 	if err != nil {
 		return err
 	}
-	name, err := m.value(options.Name, "Workstation name")
+	name, err := m.setupWorkstationName(ctx, options.Name)
 	if err != nil {
 		return err
 	}
-	cfg := config.Config{PlatformURL: strings.TrimRight(platformURL, "/"), WorkstationName: strings.ToLower(name), CredentialFile: m.Paths.Credential, HeartbeatInterval: 15 * time.Second, SimulationScenario: "normal"}
+	cfg := config.Config{PlatformURL: platformURL, WorkstationName: name, CredentialFile: m.Paths.Credential, HeartbeatInterval: 15 * time.Second, SimulationScenario: "normal"}
 	if err := cfg.Validate(); err != nil {
 		return err
 	}
@@ -96,7 +97,7 @@ func (m *Manager) Setup(ctx context.Context, options SetupOptions) error {
 	if err := command(ctx, "nvidia-smi"); err != nil {
 		return fmt.Errorf("NVIDIA validation failed (drivers remain operator-managed): %w", err)
 	}
-	token, err := m.readToken(options.EnrollmentTokenFile)
+	token, err := m.readToken(ctx, options.EnrollmentTokenFile)
 	if err != nil {
 		return err
 	}
@@ -232,7 +233,7 @@ func (m *Manager) ReEnroll(ctx context.Context, tokenFile string) error {
 	if err != nil {
 		return err
 	}
-	token, err := m.readToken(tokenFile)
+	token, err := m.readToken(ctx, tokenFile)
 	if err != nil {
 		return err
 	}
@@ -371,7 +372,7 @@ func (m *Manager) Uninstall(ctx context.Context, dryRun, purge bool) error {
 		if !terminal || !term.IsTerminal(int(input.Fd())) {
 			return errors.New("destructive uninstall confirmation requires an interactive terminal")
 		}
-		answer, err := m.value("", "Type DELETE "+hostname+" to delete the listed users")
+		answer, err := m.value(ctx, "", "Type DELETE "+hostname+" to delete the listed users")
 		if err != nil || answer != "DELETE "+hostname {
 			return errors.New("destructive uninstall cancelled")
 		}
@@ -502,7 +503,7 @@ func (m *Manager) ensurePackages(ctx context.Context) error {
 		return nil
 	}
 	fmt.Fprintf(m.Out, "Missing required packages: %s\n", strings.Join(missing, ", "))
-	answer, err := m.value("", "Install them with apt? [y/N]")
+	answer, err := m.value(ctx, "", "Install them with apt? [y/N]")
 	if err != nil || !strings.EqualFold(answer, "y") {
 		return errors.New("required package installation declined")
 	}
@@ -512,19 +513,78 @@ func (m *Manager) ensurePackages(ctx context.Context) error {
 	return command(ctx, "apt-get", append([]string{"install", "-y"}, missing...)...)
 }
 
-func (m *Manager) value(existing, prompt string) (string, error) {
+type inputResult struct {
+	value string
+	err   error
+}
+
+func (m *Manager) setupPlatformURL(ctx context.Context, existing string) (string, error) {
+	interactive := strings.TrimSpace(existing) == ""
+	for {
+		value, err := m.value(ctx, existing, "Platform URL")
+		if err != nil {
+			return "", err
+		}
+		value = strings.TrimRight(strings.TrimSpace(value), "/")
+		if err := config.ValidatePlatformURL(value, false); err == nil {
+			return value, nil
+		} else if !interactive {
+			return "", fmt.Errorf("platform URL %w", err)
+		} else {
+			fmt.Fprintf(m.Out, "Invalid platform URL: %v. Please try again.\n", err)
+			existing = ""
+		}
+	}
+}
+
+func (m *Manager) setupWorkstationName(ctx context.Context, existing string) (string, error) {
+	interactive := strings.TrimSpace(existing) == ""
+	for {
+		value, err := m.value(ctx, existing, "Workstation name")
+		if err != nil {
+			return "", err
+		}
+		value = strings.ToLower(strings.TrimSpace(value))
+		if err := config.ValidateWorkstationName(value); err == nil {
+			return value, nil
+		} else if !interactive {
+			return "", fmt.Errorf("workstation name %w", err)
+		} else {
+			fmt.Fprintf(m.Out, "Invalid workstation name: %v. Please try again.\n", err)
+			existing = ""
+		}
+	}
+}
+
+func (m *Manager) value(ctx context.Context, existing, prompt string) (string, error) {
 	if value := strings.TrimSpace(existing); value != "" {
 		return value, nil
 	}
 	fmt.Fprintf(m.Out, "%s: ", prompt)
-	scanner := bufio.NewScanner(m.In)
-	if !scanner.Scan() {
-		return "", errors.New("input ended")
-	}
-	return strings.TrimSpace(scanner.Text()), scanner.Err()
+	return m.readLine(ctx)
 }
 
-func (m *Manager) readToken(path string) (string, error) {
+func (m *Manager) readLine(ctx context.Context) (string, error) {
+	result := make(chan inputResult, 1)
+	go func() {
+		line, err := m.input.ReadString('\n')
+		if errors.Is(err, io.EOF) && line != "" {
+			err = nil
+		}
+		result <- inputResult{value: strings.TrimSpace(line), err: err}
+	}()
+	select {
+	case <-ctx.Done():
+		return "", ctx.Err()
+	case result := <-result:
+		if errors.Is(result.err, io.EOF) {
+			return "", errors.New("input ended")
+		}
+		return result.value, result.err
+	}
+}
+
+func (m *Manager) readToken(ctx context.Context, path string) (string, error) {
 	if path != "" {
 		info, err := os.Lstat(path)
 		if err != nil {
@@ -539,15 +599,26 @@ func (m *Manager) readToken(path string) (string, error) {
 	}
 	fmt.Fprint(m.Out, "Enrollment token: ")
 	if file, ok := m.In.(*os.File); ok && term.IsTerminal(int(file.Fd())) {
-		contents, err := term.ReadPassword(int(file.Fd()))
-		fmt.Fprintln(m.Out)
-		return strings.TrimSpace(string(contents)), err
+		fd := int(file.Fd())
+		state, _ := term.GetState(fd)
+		result := make(chan inputResult, 1)
+		go func() {
+			contents, err := term.ReadPassword(fd)
+			result <- inputResult{value: strings.TrimSpace(string(contents)), err: err}
+		}()
+		select {
+		case <-ctx.Done():
+			if state != nil {
+				_ = term.Restore(fd, state)
+			}
+			fmt.Fprintln(m.Out)
+			return "", ctx.Err()
+		case result := <-result:
+			fmt.Fprintln(m.Out)
+			return result.value, result.err
+		}
 	}
-	scanner := bufio.NewScanner(m.In)
-	if !scanner.Scan() {
-		return "", errors.New("input ended")
-	}
-	return strings.TrimSpace(scanner.Text()), scanner.Err()
+	return m.readLine(ctx)
 }
 
 func (m *Manager) download(ctx context.Context, url string, limit int64) ([]byte, error) {

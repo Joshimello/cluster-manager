@@ -144,18 +144,11 @@ func override(target *string, key string) {
 }
 
 func (c Config) Validate() error {
-	if c.PlatformURL == "" {
-		return errors.New("NODE_PLATFORM_URL is required")
+	if err := ValidatePlatformURL(c.PlatformURL, c.AllowInsecureHTTP); err != nil {
+		return fmt.Errorf("NODE_PLATFORM_URL %w", err)
 	}
-	parsed, err := url.Parse(c.PlatformURL)
-	if err != nil || parsed.Host == "" {
-		return errors.New("NODE_PLATFORM_URL must be an absolute URL")
-	}
-	if parsed.Scheme != "https" && !(parsed.Scheme == "http" && c.AllowInsecureHTTP) {
-		return errors.New("NODE_PLATFORM_URL must use HTTPS (set NODE_ALLOW_INSECURE_HTTP=true only for development)")
-	}
-	if !validName(c.WorkstationName) {
-		return errors.New("NODE_WORKSTATION_NAME must be 2-32 lowercase letters, numbers, or hyphens and start with a letter")
+	if err := ValidateWorkstationName(c.WorkstationName); err != nil {
+		return fmt.Errorf("NODE_WORKSTATION_NAME %w", err)
 	}
 	if c.HeartbeatInterval < time.Second || c.HeartbeatInterval > 10*time.Minute {
 		return errors.New("heartbeat interval must be between 1s and 10m")
@@ -172,6 +165,33 @@ func (c Config) Validate() error {
 	validScenario := validScenarios[c.SimulationScenario]
 	if c.Simulate && !validScenario {
 		return fmt.Errorf("unknown simulation scenario %q", c.SimulationScenario)
+	}
+	return nil
+}
+
+// ValidatePlatformURL validates a platform base URL without requiring a full
+// node configuration. Interactive setup uses this before moving to its next
+// prompt.
+func ValidatePlatformURL(value string, allowInsecureHTTP bool) error {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return errors.New("is required")
+	}
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Host == "" {
+		return errors.New("must be an absolute URL")
+	}
+	if parsed.Scheme != "https" && !(parsed.Scheme == "http" && allowInsecureHTTP) {
+		return errors.New("must use HTTPS (set NODE_ALLOW_INSECURE_HTTP=true only for development)")
+	}
+	return nil
+}
+
+// ValidateWorkstationName validates a normalized workstation name without
+// requiring a full node configuration.
+func ValidateWorkstationName(value string) error {
+	if !validName(strings.TrimSpace(value)) {
+		return errors.New("must be 2-32 lowercase letters, numbers, or hyphens and start with a letter")
 	}
 	return nil
 }

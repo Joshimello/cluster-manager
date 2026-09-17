@@ -5,6 +5,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -77,12 +79,61 @@ func TestLatestReleaseRejectsPrerelease(t *testing.T) {
 func TestInteractiveTokenIsNotEchoed(t *testing.T) {
 	var output bytes.Buffer
 	manager := New("test", strings.NewReader("enroll_secret_value\n"), &output, &output)
-	token, err := manager.readToken("")
+	token, err := manager.readToken(context.Background(), "")
 	if err != nil || token != "enroll_secret_value" {
 		t.Fatalf("unexpected token read: %q, %v", token, err)
 	}
 	if strings.Contains(output.String(), token) {
 		t.Fatalf("secret was echoed: %q", output.String())
+	}
+}
+
+func TestInteractivePlatformURLRepromptsBeforeNextField(t *testing.T) {
+	var output bytes.Buffer
+	manager := New("test", strings.NewReader("d\nhttps://manager.example/\n"), &output, &output)
+
+	platformURL, err := manager.setupPlatformURL(context.Background(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if platformURL != "https://manager.example" {
+		t.Fatalf("unexpected platform URL %q", platformURL)
+	}
+	if !strings.Contains(output.String(), "Invalid platform URL: must be an absolute URL") {
+		t.Fatalf("missing immediate validation error: %q", output.String())
+	}
+	if strings.Contains(output.String(), "Workstation name") {
+		t.Fatalf("setup advanced before the URL was valid: %q", output.String())
+	}
+}
+
+func TestInteractiveValuesShareBufferedInput(t *testing.T) {
+	manager := New("test", strings.NewReader("first\nsecond\n"), io.Discard, io.Discard)
+
+	first, err := manager.value(context.Background(), "", "First")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := manager.value(context.Background(), "", "Second")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first != "first" || second != "second" {
+		t.Fatalf("unexpected values %q and %q", first, second)
+	}
+}
+
+func TestInteractivePromptStopsWhenContextIsCancelled(t *testing.T) {
+	reader, writer := io.Pipe()
+	defer reader.Close()
+	defer writer.Close()
+	manager := New("test", reader, io.Discard, io.Discard)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := manager.value(ctx, "", "Platform URL")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context cancellation, got %v", err)
 	}
 }
 

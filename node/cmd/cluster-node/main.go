@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -14,7 +15,9 @@ import (
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if err := nodecli.Run(ctx, os.Args[1:], buildinfo.Version, os.Stdin, os.Stdout, os.Stderr); err != nil {
+	if err := nodecli.Run(ctx, os.Args[1:], buildinfo.Version, os.Stdin, os.Stdout, os.Stderr); errors.Is(err, context.Canceled) {
+		os.Exit(130)
+	} else if err != nil {
 		fmt.Fprintln(os.Stderr, "cluster-node:", err)
 		os.Exit(1)
 	}
