@@ -708,6 +708,55 @@ hardware-dependent M4 follow-up and does not block GPU-free deployment validatio
 
 ---
 
+## Milestone 8.1 — Release-backed node lifecycle and collision-safe provisioning
+
+### Outcome
+
+An operator can install, diagnose, re-enroll, upgrade, roll back, and safely remove a
+node through one `cluster-node` CLI. Existing Linux usernames are never adopted, and
+only provenance-confirmed accounts are eligible for destructive cleanup.
+
+### Build
+
+- [x] Add `cluster-node` commands for setup, run, status, doctor, re-enrollment,
+      upgrade/rollback, uninstall, and version output.
+- [x] Install `/usr/local/sbin/cluster-node` and `cluster-node.service`, with safe
+      migration from the former executable and unit names.
+- [x] Add an architecture-aware, SHA-256-verifying `install-node.sh` for the latest
+      stable GitHub release.
+- [x] Add GitHub CI and tag-triggered `amd64`/`arm64` release automation.
+- [x] Store token-free mode-0600 configuration and credentials, while sanitizing a
+      successfully enrolled legacy configuration.
+- [x] Add an atomic root-only account-provenance ledger with workstation identity,
+      assignment, UID/GID/home, group, subordinate ranges, and creation time.
+- [x] Reject unowned existing usernames and changed/missing managed identities without
+      modifying local ownership or credential data.
+- [x] Store additive provisioning error codes, show collision remediation to admins
+      and users, and audit only transitions into collision.
+- [x] Make normal uninstall retain users and provenance; make destructive uninstall
+      scan, refuse busy/changed accounts, require exact confirmation, and delete only
+      provenance-confirmed node-created accounts.
+- [x] Rename the manual guide and document the installer, lifecycle, troubleshooting,
+      provenance retention, and both uninstall modes.
+
+### Tests and acceptance
+
+- [x] Unit tests cover CLI parsing, secret-free config, architecture and release
+      selection, checksum verification, atomic writes, and provenance persistence.
+- [x] Disposable Ubuntu reconciliation verifies that a pre-existing user is unchanged
+      across enabled and disabled collision reports.
+- [x] Go tests/vet, platform tests/checks/lint/build, migration checks, shell syntax,
+      and deployment-unit validation pass.
+- [ ] Run the release installer, live service health, upgrade/rollback, and NVIDIA
+      checks on the first physical Ubuntu GPU workstation.
+
+### Completion record
+
+Implemented on 2026-09-17. Physical NVIDIA installation validation remains the final
+hardware-dependent acceptance check before introducing the first production node.
+
+---
+
 ## Deferred beyond v1
 
 Do not pull these into a milestone unless the requirements change:
@@ -770,3 +819,4 @@ concrete while leaving room to make a deliberate choice before the feature is bu
 - [x] Milestone 6 complete
 - [x] Milestone 7 complete
 - [x] Milestone 8 complete
+- [x] Milestone 8.1 implemented (physical NVIDIA validation pending)

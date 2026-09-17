@@ -112,7 +112,7 @@ assignments, reservations, and stop requests are not automatically deleted.
 
 Platform and node logs are newline-delimited JSON. Container logs rotate locally at
 10 MiB × 5 files. Use `docker compose logs --since=1h platform postgres`; use
-`journalctl -u cluster-manager-node --since=-1h -o cat` on a node. Request logs include
+`journalctl -u cluster-node --since=-1h -o cat` on a node. Request logs include
 a response `x-request-id`, path without query strings, status, duration, and authenticated
 username, but never passwords, hashes, enrollment tokens, node credentials, command
 arguments, or process environments.

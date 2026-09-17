@@ -115,8 +115,14 @@ web login and Linux PAM and never stores or sends plaintext. Nodes report pendin
 applied, or errored provisioning state back to both the admin view and the user's
 dashboard.
 
-See [the Ubuntu node installation guide](docs/node-installation.md) for direct node and
-systemd deployment.
+Install a real Ubuntu node from the latest verified GitHub release with:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Joshimello/cluster-manager/main/install-node.sh | sudo bash
+```
+
+See [the Ubuntu node installation guide](docs/node-installation.md) for lifecycle,
+upgrade, diagnostics, and safe uninstall details.
 
 Source changes under `platform/` are mounted into the development container and are
 picked up by Vite. PostgreSQL data and container-installed npm dependencies are kept
@@ -306,16 +312,14 @@ The node can be checked independently:
 cd node
 go test ./...
 go vet ./...
-go run ./cmd/cluster-manager-node --version
+go run ./cmd/cluster-node --version
 ```
 
-For a real Ubuntu node, set at least `NODE_PLATFORM_URL`, `NODE_WORKSTATION_NAME`, and
-`NODE_ENROLLMENT_TOKEN` on first start. The platform URL must use HTTPS unless
-`NODE_ALLOW_INSECURE_HTTP=true` is explicitly set for local development. The node
-stores its generated credential at `/var/lib/cluster-manager/node-credential` by
-default; `NODE_CREDENTIAL_FILE` changes that location. Configuration can alternatively
-be supplied as JSON through `NODE_CONFIG_FILE`, and an enrollment token may be read
-from `NODE_ENROLLMENT_TOKEN_FILE`.
+For real nodes, use `install-node.sh` and the `cluster-node` lifecycle commands rather
+than constructing configuration manually. The active root-only configuration is
+`/etc/cluster-manager/node.json`; the node credential and account-provenance ledger
+live under `/var/lib/cluster-manager`. A legacy configuration containing a one-time
+enrollment token is still read, then rewritten without the token after enrollment.
 
 Simulation uses the normal node binary with `NODE_SIMULATE=true`. Set
 `NODE_SIMULATION_SCENARIO` to `normal`, `high-cpu`, `high-disk`, `multi-user`,

@@ -244,6 +244,14 @@ The node service is responsible for reconciling the required local Linux users o
 
 If Alice is assigned to `ws01`, the node on `ws01` should ensure her Linux account exists.
 
+The node must never adopt an existing Linux account. It keeps a root-only, atomic
+provenance ledger at `/var/lib/cluster-manager/managed-state.json`. If a desired
+username already exists but is not proven by that ledger to have been created for the
+same platform workstation identity, reconciliation reports `username_collision` and
+makes no ownership, password, group, home, SSH-policy, or subordinate-ID changes. A
+recorded account whose UID, GID, or home changes reports `managed_identity_mismatch`.
+Loss of the ledger fails safe; there is no account-adoption override.
+
 If her access is revoked, the node should disable access appropriately without deleting user data unless explicitly requested.
 
 Do not build a generic remote-shell mechanism to accomplish this.
@@ -950,15 +958,18 @@ docker compose up -d
 
 ### Node
 
-Build a Go binary.
-
-Install it on each Ubuntu workstation.
-
-Run it through systemd.
+GitHub Actions builds versioned `cluster-node` Linux binaries for `amd64` and `arm64`.
+The supported installation path is `install-node.sh`, which verifies the release
+SHA-256 and launches interactive setup. Operators use `cluster-node` for setup,
+status, diagnostics, re-enrollment, upgrades/rollback, and uninstall. Run the node as
+`cluster-node.service` through systemd.
 
 Do not require Docker to run the production node service.
 
-Provide simple installation/configuration instructions.
+Normal uninstall must preserve Linux users and the provenance ledger. Destructive
+uninstall may delete only provenance-confirmed, inactive node-created users after a
+read-only scan and exact `DELETE <hostname>` confirmation; it must never terminate
+processes automatically or delete platform history.
 
 ---
 

@@ -1,223 +1,89 @@
-# Ubuntu node installation
+# Install and manage a workstation node
 
-These instructions install the privileged Cluster Manager node directly on a supported
-Ubuntu LTS workstation. The node uses narrowly scoped reconciliation; it does not expose
-an arbitrary command API and never deletes Linux accounts, home directories, or user data.
-
-## Before installation
-
-The workstation needs:
-
-- Ubuntu 24.04 LTS or a later supported LTS release
-- OpenSSH server
-- HTTPS connectivity to the Cluster Manager platform
-- a workstation record and one-time enrollment token created by an administrator
-- for GPU monitoring, a supported NVIDIA driver with a working `nvidia-smi` command
-
-Install the operating-system prerequisites:
+The supported operator path installs the latest stable GitHub release and runs
+interactive setup:
 
 ```bash
-sudo apt update
-sudo apt install openssh-server uidmap
+curl -fsSL https://raw.githubusercontent.com/Joshimello/cluster-manager/main/install-node.sh | sudo bash
 ```
 
-Rootless Podman is recommended for researchers and may be installed now or later:
+Setup supports Ubuntu 24.04 or newer on `amd64` and `arm64`. It verifies systemd,
+HTTPS settings, OpenSSH, `uidmap`, and `nvidia-smi`. It asks once before installing
+missing OS packages. Have the platform URL, workstation name, and a fresh one-time
+enrollment token ready. The token is read without echo and is not saved in the active
+configuration.
+
+To inspect the installer first:
 
 ```bash
-sudo apt install podman
+curl -fsSL https://raw.githubusercontent.com/Joshimello/cluster-manager/main/install-node.sh \
+  -o install-node.sh
+less install-node.sh
+sudo bash install-node.sh
 ```
 
-## Install the binary and configuration
+The installer detects the CPU architecture, downloads the matching release binary,
+verifies it against `checksums.txt`, and starts `cluster-node setup`. Existing
+installations are upgraded with `sudo cluster-node upgrade` instead.
 
-Build a versioned Linux/amd64 node binary from a trusted checkout or use the matching
-release artifact. From the repository root:
+## Lifecycle commands
+
+```text
+cluster-node setup [--platform-url URL] [--name NAME] [--enrollment-token-file PATH]
+cluster-node run
+cluster-node status
+cluster-node doctor
+cluster-node re-enroll [--enrollment-token-file PATH]
+cluster-node upgrade [--version vX.Y.Z]
+cluster-node uninstall [--dry-run] [--purge-created-users]
+cluster-node version
+cluster-node --version
+```
+
+Token files must be root-only. Tokens are unavailable as normal command-line arguments
+because process listings and shell history can expose arguments.
+
+`upgrade` selects the latest non-prerelease by default, or installs an exact tag. It
+verifies SHA-256 before atomically replacing the executable and restarting the service.
+An exact older tag is allowed for rollback. `re-enroll` retains the current credential
+unless the platform accepts its replacement.
+
+Useful troubleshooting commands are:
 
 ```bash
-make VERSION=0.1.0 build-node-linux
-node/bin/cluster-manager-node-linux-amd64 --version # run this after copying to Linux
-sudo install -o root -g root -m 0755 \
-  node/bin/cluster-manager-node-linux-amd64 /usr/local/sbin/cluster-manager-node
+sudo cluster-node status
+sudo cluster-node doctor
+sudo systemctl status cluster-node
+sudo journalctl -u cluster-node -n 100 --no-pager
 ```
 
-Use an immutable release version instead of `development`; the reported version appears
-in the workstation administration pages.
+## Uninstall safely
 
-Create its private state and configuration directories:
+Normal uninstall removes the software, service, active configuration, and credential,
+but retains Linux users, homes, group memberships, subordinate IDs, SSH policy, and
+`/var/lib/cluster-manager/managed-state.json`:
 
 ```bash
-sudo install -d -o root -g root -m 0700 /etc/cluster-manager /var/lib/cluster-manager
-sudo install -o root -g root -m 0600 \
-  node/deploy/config.example.json /etc/cluster-manager/node.json
-sudoedit /etc/cluster-manager/node.json
+sudo cluster-node uninstall
 ```
 
-Set `platformUrl`, `workstationName`, and the one-time `enrollmentToken`. Production
-platform URLs must use HTTPS. The HTTP override is only for isolated local development.
+Disable or revoke the workstation separately in the platform. Reinstalling can trust
+retained provenance only when enrollment returns the same platform workstation ID. A
+different identity treats retained usernames as collisions. Never delete the retained
+provenance ledger casually: without it the node cannot prove ownership, so every
+existing matching username becomes a collision.
 
-Install and start the checked-in systemd unit:
+To preview and perform destructive cleanup:
 
 ```bash
-sudo install -o root -g root -m 0644 \
-  node/deploy/cluster-manager-node.service /etc/systemd/system/cluster-manager-node.service
-sudo systemctl daemon-reload
-sudo systemctl enable --now cluster-manager-node
-sudo journalctl -u cluster-manager-node -f
+sudo cluster-node uninstall --dry-run --purge-created-users
+sudo cluster-node uninstall --purge-created-users
 ```
 
-After the first successful enrollment, remove `enrollmentToken` from
-`/etc/cluster-manager/node.json` and restart the service. The generated node credential
-in `/var/lib/cluster-manager/node-credential` is reused and must remain mode `0600`.
+The destructive form lists provenance-confirmed users, IDs, homes, sizes, process and
+session activity, and mounts. It refuses busy or identity-mismatched accounts, requires
+typing `DELETE <hostname>`, rechecks immediately before deletion, and never terminates
+processes. Only accounts proven to have been created by this node are eligible. Modified
+or unrecognized host state is preserved and reported. Platform history is never deleted.
 
-The node runs as root because it must inspect host processes, manage accounts and SSH
-policy, and signal an exactly revalidated process. The unit blocks kernel, clock,
-hostname, namespace, realtime, SUID/SGID, and IPC changes. It intentionally does not
-hide `/proc`, devices, `/etc`, or home directories because those are required inputs or
-targets. No generic command execution endpoint exists.
-
-## Upgrade, rotate, or revoke
-
-Build/download the matching new release, verify `--version`, then replace atomically
-and restart:
-
-```bash
-sudo systemctl stop cluster-manager-node
-sudo install -o root -g root -m 0755 cluster-manager-node-linux-amd64 \
-  /usr/local/sbin/cluster-manager-node
-sudo systemctl start cluster-manager-node
-sudo systemctl status cluster-manager-node
-```
-
-The credential and configuration are preserved. Watch the platform for the new version
-and a fresh heartbeat before upgrading the next workstation.
-
-To rotate or recover a lost credential, issue a new enrollment token from the
-workstation administration page. On the node, stop the service, remove only
-`/var/lib/cluster-manager/node-credential`, add the new enrollment token to the root-only
-configuration, and start it again. Remove the token after enrollment. Issuing the token
-revokes the prior credential immediately. To revoke without replacement, use **Revoke**
-in the platform; the node will receive 401 responses and stop receiving desired state or
-termination instructions, while existing accounts, SSH sessions, and workloads remain.
-
-## Retire a node while retaining its users
-
-Retiring a workstation means removing the Cluster Manager node service while leaving
-its Linux accounts, passwords, home directories, SSH access, and running workloads in
-place. Stop the node's authority before changing any user assignments.
-
-1. In **Administration → Workstations**, revoke the workstation credential and disable
-   the workstation. Revocation immediately prevents further desired-state or
-   termination instructions.
-2. On the workstation, stop and remove the service and binary:
-
-   ```bash
-   sudo systemctl disable --now cluster-manager-node
-   sudo rm /usr/local/sbin/cluster-manager-node
-   sudo rm /etc/systemd/system/cluster-manager-node.service
-   sudo systemctl daemon-reload
-   ```
-
-3. After confirming the node will not be re-enrolled, optionally remove only its
-   configuration and private credential state:
-
-   ```bash
-   sudo rm -r /etc/cluster-manager
-   sudo rm -r /var/lib/cluster-manager
-   ```
-
-Do not revoke or move the users' platform assignments before the node is stopped or
-its credential is revoked. A still-authorized node can receive the resulting disabled
-desired state and lock those Linux passwords.
-
-Leave the following host state intact so users retain their existing access:
-
-- Linux accounts, password hashes, and home directories;
-- the `cluster-manager-users` group and user memberships;
-- `/etc/subuid` and `/etc/subgid` allocations used by rootless Podman;
-- `/etc/ssh/sshd_config.d/60-cluster-manager.conf`, which keeps password-only SSH
-  policy for the managed group.
-
-After retirement, users keep the last password applied to this workstation, but later
-platform password changes will no longer synchronize there. The platform will show the
-node as stale/offline; GPU telemetry and stop-request execution also cease. The disabled
-workstation record, reservations, and audit history remain available for operations and
-historical review. Responsibility for future account and SSH administration on the
-retired host returns to the workstation operator.
-
-## Account and SSH behavior
-
-The immutable platform username is also the Linux username. The platform validates a
-conservative POSIX-safe form: 3–32 lowercase letters, numbers, `_`, or `-`, beginning
-with a letter.
-
-For an active assignment, the node:
-
-- creates the local account and home directory when absent;
-- preserves existing home contents and changes ownership only on the home root;
-- adds the account to the `cluster-manager-users` group;
-- ensures subordinate UID/GID ranges for rootless Podman;
-- applies the Linux SHA-512 crypt hash received through authenticated desired state;
-- enables password-only SSH for the managed group and disables public-key login for it.
-
-The platform password and SSH password are the same input, but plaintext is never
-stored or sent to the node. The platform keeps an Argon2id verifier for web login and a
-separately salted Linux-compatible verifier for the assigned node.
-
-Revocation locks the Linux password while preserving the account, home directory, and
-files. Existing processes and SSH sessions are not terminated. If desired state is
-unavailable or invalid, the node makes no account changes.
-
-## Verification and troubleshooting
-
-Check status and recent logs:
-
-```bash
-sudo systemctl status cluster-manager-node
-sudo journalctl -u cluster-manager-node -n 100 --no-pager
-sudo sshd -T -C user=example,host=localhost,addr=127.0.0.1 | \
-  grep -E 'passwordauthentication|pubkeyauthentication|authenticationmethods'
-```
-
-Logs are one JSON object per line and never include password hashes, tokens, command
-arguments, or environment variables. A repeated 401 indicates a revoked/mismatched
-credential; connection failures indicate URL, DNS, TLS, proxy, or network trouble.
-
-The platform shows each assignment as pending, applied, or errored. Node errors are
-reported without password hashes. Correct the underlying Ubuntu configuration and let
-the next reconciliation retry; unchanged desired state is safe to reapply.
-
-Run the disposable Ubuntu 24.04 acceptance test from the repository root:
-
-```bash
-docker build -f node/integration/ubuntu.Dockerfile \
-  -t cluster-manager-ubuntu-reconcile-test node
-docker run --rm cluster-manager-ubuntu-reconcile-test
-```
-
-It verifies account and home creation, idempotency, real sshd password login, password
-replacement, public-key rejection, revocation, and home-data preservation.
-
-Also validate the release binary, root-only configuration, and systemd unit on a clean
-Ubuntu 24.04 filesystem:
-
-```bash
-make test-ubuntu-deploy
-```
-
-## GPU monitoring
-
-The node queries NVIDIA UUIDs, model, utilization, VRAM, temperature, and active compute
-processes through `nvidia-smi`. It resolves each reported host PID through `/proc` to
-attribute it to a Linux UID and username. It also maps `/etc/subuid` ranges back to
-their owner for rootless Podman processes that run as a subordinate host UID. Processes
-that exit during a sample are ignored safely.
-
-Only executable names are collected; command arguments and environment variables are
-not sent to the platform. If the NVIDIA driver, `nvidia-smi`, or GPU hardware is absent,
-the node continues reporting its non-GPU inventory and marks NVIDIA telemetry as
-unavailable.
-
-Verify the driver before starting the node on a real workstation:
-
-```bash
-nvidia-smi --query-gpu=uuid,index,name --format=csv,noheader
-```
+For recovery or development, see the [manual procedure](node-installation-manual.md).
