@@ -44,7 +44,7 @@
             name="newPassword"
             type="password"
             autocomplete="new-password"
-            minlength={12}
+            minlength={8}
             maxlength={128}
             required
           />
@@ -56,7 +56,7 @@
             name="confirmation"
             type="password"
             autocomplete="new-password"
-            minlength={12}
+            minlength={8}
             maxlength={128}
             required
           />

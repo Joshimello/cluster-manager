@@ -246,7 +246,7 @@ installation because it changes the initial admin password and creates a test us
 BASE_URL=http://localhost:5173 \
 ADMIN_USERNAME=admin \
 ADMIN_TEMPORARY_PASSWORD='the-bootstrap-password' \
-ADMIN_NEW_PASSWORD='a-new-test-password-of-at-least-12-characters' \
+ADMIN_NEW_PASSWORD='a-new-test-password-of-at-least-8-characters' \
 npm --prefix platform run test:auth-smoke
 ```
 

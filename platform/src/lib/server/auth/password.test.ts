@@ -20,6 +20,7 @@ describe('passwords', () => {
   });
 
   it('enforces password length boundaries', () => {
+    expect(minimumPasswordLength).toBe(8);
     expect(validatePassword('a'.repeat(minimumPasswordLength - 1))).toContain('at least');
     expect(validatePassword('a'.repeat(minimumPasswordLength))).toBeNull();
     expect(validatePassword('a'.repeat(maximumPasswordLength + 1))).toContain('no more');

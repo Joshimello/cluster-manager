@@ -3,7 +3,7 @@ import { randomBytes } from 'node:crypto';
 
 import { hashLinuxPassword } from './linux-password';
 
-export const minimumPasswordLength = 12;
+export const minimumPasswordLength = 8;
 export const maximumPasswordLength = 128;
 
 const argon2Options = {
