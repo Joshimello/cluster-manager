@@ -27,6 +27,36 @@ func TestArchitectureSelection(t *testing.T) {
 	}
 }
 
+func TestSupportedOSRelease(t *testing.T) {
+	for name, contents := range map[string]string{
+		"Ubuntu 24.04": "ID=ubuntu\nVERSION_ID=\"24.04\"\n",
+		"newer Ubuntu": "ID=ubuntu\nVERSION_ID=26.04\n",
+		"Debian 12":    "ID=debian\nVERSION_ID=\"12\"\n",
+		"Debian 13":    "ID=debian\nVERSION_ID=13\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := validateOSRelease(contents); err != nil {
+				t.Fatalf("expected supported release: %v", err)
+			}
+		})
+	}
+}
+
+func TestUnsupportedOSRelease(t *testing.T) {
+	for name, contents := range map[string]string{
+		"old Ubuntu":   "ID=ubuntu\nVERSION_ID=22.04\n",
+		"old Debian":   "ID=debian\nVERSION_ID=11\n",
+		"other distro": "ID=fedora\nVERSION_ID=43\n",
+		"bad version":  "ID=debian\nVERSION_ID=trixie\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := validateOSRelease(contents); err == nil {
+				t.Fatal("expected unsupported release to fail")
+			}
+		})
+	}
+}
+
 func TestChecksumSelection(t *testing.T) {
 	hash := strings.Repeat("a", 64)
 	got, err := checksumFor([]byte(hash+"  cluster-node-linux-amd64\n"), "cluster-node-linux-amd64")

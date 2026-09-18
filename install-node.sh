@@ -28,7 +28,21 @@ fi
 temporary_directory="$(mktemp -d)"
 trap 'rm -rf -- "${temporary_directory}"' EXIT
 
-latest_url="$(curl -fsSIL -o /dev/null -w '%{url_effective}' "https://github.com/${repository}/releases/latest")"
+curl_options=(
+  --fail
+  --location
+  --show-error
+  --retry 3
+  --retry-delay 2
+  --retry-all-errors
+  --connect-timeout 10
+  --max-time 600
+  --speed-limit 1024
+  --speed-time 30
+)
+
+echo "[1/4] Resolving the latest stable cluster-node release..."
+latest_url="$(curl "${curl_options[@]}" --silent --head -o /dev/null -w '%{url_effective}' "https://github.com/${repository}/releases/latest")"
 version="${latest_url##*/}"
 if [[ ! ${version} =~ ^v[0-9A-Za-z.+-]+$ ]]; then
   echo "Could not determine the latest stable cluster-node release." >&2
@@ -37,9 +51,12 @@ fi
 
 asset="cluster-node-linux-${architecture}"
 base="https://github.com/${repository}/releases/download/${version}"
-curl -fsSL "${base}/checksums.txt" -o "${temporary_directory}/checksums.txt"
-curl -fsSL "${base}/${asset}" -o "${temporary_directory}/${asset}"
+echo "[2/4] Downloading checksums for ${version}..."
+curl "${curl_options[@]}" --progress-bar "${base}/checksums.txt" -o "${temporary_directory}/checksums.txt"
+echo "[3/4] Downloading ${asset} (${version})..."
+curl "${curl_options[@]}" --progress-bar "${base}/${asset}" -o "${temporary_directory}/${asset}"
 
+echo "[4/4] Verifying the downloaded binary..."
 expected="$(awk -v asset="${asset}" '$2 == asset || $2 == "*" asset { print $1; exit }' "${temporary_directory}/checksums.txt")"
 if [[ ! ${expected} =~ ^[0-9a-fA-F]{64}$ ]]; then
   echo "checksums.txt does not contain a valid SHA-256 for ${asset}." >&2

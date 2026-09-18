@@ -7,8 +7,8 @@ interactive setup:
 curl -fsSL https://raw.githubusercontent.com/Joshimello/cluster-manager/main/install-node.sh | sudo bash
 ```
 
-Setup supports Ubuntu 24.04 or newer on `amd64` and `arm64`. It verifies systemd,
-HTTPS settings, OpenSSH, `uidmap`, and `nvidia-smi`. It asks once before installing
+Setup supports Debian 12 or newer and Ubuntu 24.04 or newer on `amd64` and `arm64`.
+It verifies systemd, HTTPS settings, OpenSSH, `uidmap`, and `nvidia-smi`. It asks once before installing
 missing OS packages. Have the platform URL, workstation name, and a fresh one-time
 enrollment token ready. The token is read without echo and is not saved in the active
 configuration.
@@ -35,8 +35,9 @@ less install-node.sh
 sudo bash install-node.sh
 ```
 
-The installer detects the CPU architecture, downloads the matching release binary,
-verifies it against `checksums.txt`, and starts `cluster-node setup`. Existing
+The installer detects the CPU architecture, shows progress while downloading the
+matching release binary, retries transient or stalled transfers, verifies it against
+`checksums.txt`, and starts `cluster-node setup`. Existing
 installations are upgraded with `sudo cluster-node upgrade` instead.
 
 ## Lifecycle commands

@@ -73,6 +73,8 @@ jobs:
         run: make test-ubuntu-reconcile
       - name: Ubuntu deployment rehearsal
         run: make test-ubuntu-deploy
+      - name: Debian deployment rehearsal
+        run: make test-debian-deploy
       - name: Dual-client shared POSIX identity test
         run: make test-shared-posix
 

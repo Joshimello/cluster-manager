@@ -74,6 +74,7 @@ Node-specific acceptance tests:
 ```bash
 make test-ubuntu-reconcile   # real account, SSH, collision, and signal behavior
 make test-ubuntu-deploy      # binary, config permissions, and systemd unit
+make test-debian-deploy      # the same deployment checks on Debian 13
 make test-shared-posix       # two-client shared-volume ownership behavior
 ```
 
@@ -218,7 +219,7 @@ go vet ./...
 go run ./cmd/cluster-node --version
 ```
 
-Production nodes run directly on Ubuntu under systemd. The node container exists for
+Production nodes run directly on Debian or Ubuntu under systemd. The node container exists for
 reproducible builds and simulation, not as the production deployment model. Active
 root-only configuration is stored at `/etc/cluster-manager/node.json`; credentials and
 the account-provenance ledger live under `/var/lib/cluster-manager`.

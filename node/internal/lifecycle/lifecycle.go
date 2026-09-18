@@ -697,21 +697,39 @@ func validVersion(value string) bool {
 
 func validateHost(ctx context.Context) error {
 	if runtime.GOOS != "linux" || (runtime.GOARCH != "amd64" && runtime.GOARCH != "arm64") {
-		return fmt.Errorf("cluster-node setup supports Ubuntu Linux amd64 and arm64")
+		return fmt.Errorf("cluster-node setup supports Debian and Ubuntu Linux on amd64 and arm64")
 	}
 	contents, err := os.ReadFile("/etc/os-release")
-	if err != nil || !strings.Contains(string(contents), "ID=ubuntu") {
-		return errors.New("Ubuntu 24.04 or newer is required")
+	if err != nil {
+		return errors.New("could not read /etc/os-release")
 	}
-	version := osReleaseValue(string(contents), "VERSION_ID")
-	major, _ := strconv.Atoi(strings.Split(version, ".")[0])
-	if major < 24 {
-		return errors.New("Ubuntu 24.04 or newer is required")
+	if err := validateOSRelease(string(contents)); err != nil {
+		return err
 	}
 	if err := command(ctx, "systemctl", "--version"); err != nil {
 		return errors.New("systemd is required")
 	}
 	return nil
+}
+
+func validateOSRelease(contents string) error {
+	distribution := strings.ToLower(osReleaseValue(contents, "ID"))
+	version := osReleaseValue(contents, "VERSION_ID")
+	major, err := strconv.Atoi(strings.Split(version, ".")[0])
+	if err != nil {
+		return errors.New("could not determine the operating system version from /etc/os-release")
+	}
+	switch distribution {
+	case "ubuntu":
+		if major >= 24 {
+			return nil
+		}
+	case "debian":
+		if major >= 12 {
+			return nil
+		}
+	}
+	return errors.New("Ubuntu 24.04 or newer, or Debian 12 or newer, is required")
 }
 
 func osReleaseValue(contents, key string) string {

@@ -1,6 +1,6 @@
 # Cluster Manager
 
-Cluster Manager is a small, self-hosted platform for operating shared Ubuntu GPU
+Cluster Manager is a small, self-hosted platform for operating shared Debian and Ubuntu GPU
 workstations in a research lab. It combines a central web application with a
 privileged node service on each workstation.
 
@@ -71,7 +71,7 @@ The command prints a one-time temporary password. Sign in and replace it when
 prompted. For source-mounted development with simulated workstations, use the
 [development guide](docs/development.md).
 
-To install a real Ubuntu node from the latest verified release:
+To install a real Debian or Ubuntu node from the latest verified release:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Joshimello/cluster-manager/main/install-node.sh | sudo bash

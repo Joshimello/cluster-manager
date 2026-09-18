@@ -62,6 +62,7 @@ jobs:
           shellcheck node/integration/shared_posix_test.sh
       - run: make test-ubuntu-reconcile
       - run: make test-ubuntu-deploy
+      - run: make test-debian-deploy
       - run: make test-shared-posix
 
   build:

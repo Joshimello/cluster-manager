@@ -1,14 +1,14 @@
-# Manual Ubuntu node installation (legacy)
+# Manual Debian/Ubuntu node installation (legacy)
 
 These instructions install the privileged Cluster Manager node directly on a supported
-Ubuntu LTS workstation. The node uses narrowly scoped reconciliation; it does not expose
+Debian or Ubuntu workstation. The node uses narrowly scoped reconciliation; it does not expose
 an arbitrary command API and never deletes Linux accounts, home directories, or user data.
 
 ## Before installation
 
 The workstation needs:
 
-- Ubuntu 24.04 LTS or a later supported LTS release
+- Debian 12 or newer, or Ubuntu 24.04 LTS or newer
 - OpenSSH server
 - HTTPS connectivity to the Cluster Manager platform
 - a workstation record and one-time enrollment token created by an administrator
@@ -193,7 +193,7 @@ arguments, or environment variables. A repeated 401 indicates a revoked/mismatch
 credential; connection failures indicate URL, DNS, TLS, proxy, or network trouble.
 
 The platform shows each assignment as pending, applied, or errored. Node errors are
-reported without password hashes. Correct the underlying Ubuntu configuration and let
+reported without password hashes. Correct the underlying host configuration and let
 the next reconciliation retry; unchanged desired state is safe to reapply.
 
 Run the disposable Ubuntu 24.04 acceptance test from the repository root:
@@ -208,11 +208,12 @@ It verifies exact UID/GID/private-group and home creation, idempotency, collisio
 safety, real sshd password login, password replacement, public-key rejection,
 revocation, and home-data preservation.
 
-Also validate the release binary, root-only configuration, and systemd unit on a clean
-Ubuntu 24.04 filesystem:
+Also validate the release binary, root-only configuration, and systemd unit on clean
+Ubuntu 24.04 and Debian 13 filesystems:
 
 ```bash
 make test-ubuntu-deploy
+make test-debian-deploy
 ```
 
 ## GPU monitoring
