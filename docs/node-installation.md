@@ -40,6 +40,10 @@ matching release binary, retries transient or stalled transfers, verifies it aga
 `checksums.txt`, and starts `cluster-node setup`. Existing
 installations are upgraded with `sudo cluster-node upgrade` instead.
 
+The canonical executable is `/usr/local/sbin/cluster-node`. Setup also creates the
+managed command link `/usr/local/bin/cluster-node`, so the CLI remains available to
+normal login shells whose PATH does not include the system administration directories.
+
 ## Lifecycle commands
 
 ```text

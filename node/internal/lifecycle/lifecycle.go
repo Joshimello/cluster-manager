@@ -35,19 +35,20 @@ const (
 )
 
 type Paths struct {
-	Config, Credential, State, Binary, Unit, OldBinary, OldUnit, SSHPolicy string
+	Config, Credential, State, Binary, CommandLink, Unit, OldBinary, OldUnit, SSHPolicy string
 }
 
 func DefaultPaths() Paths {
 	return Paths{
-		Config:     config.DefaultPath,
-		Credential: "/var/lib/cluster-manager/node-credential",
-		State:      ManagedStatePath,
-		Binary:     "/usr/local/sbin/cluster-node",
-		Unit:       "/etc/systemd/system/cluster-node.service",
-		OldBinary:  "/usr/local/sbin/cluster-manager-node",
-		OldUnit:    "/etc/systemd/system/cluster-manager-node.service",
-		SSHPolicy:  "/etc/ssh/sshd_config.d/60-cluster-manager.conf",
+		Config:      config.DefaultPath,
+		Credential:  "/var/lib/cluster-manager/node-credential",
+		State:       ManagedStatePath,
+		Binary:      "/usr/local/sbin/cluster-node",
+		CommandLink: "/usr/local/bin/cluster-node",
+		Unit:        "/etc/systemd/system/cluster-node.service",
+		OldBinary:   "/usr/local/sbin/cluster-manager-node",
+		OldUnit:     "/etc/systemd/system/cluster-manager-node.service",
+		SSHPolicy:   "/etc/ssh/sshd_config.d/60-cluster-manager.conf",
 	}
 }
 
@@ -74,6 +75,9 @@ func (m *Manager) Setup(ctx context.Context, options SetupOptions) error {
 		return err
 	}
 	if err := validateHost(ctx); err != nil {
+		return err
+	}
+	if err := m.validateCommandLink(); err != nil {
 		return err
 	}
 	platformURL, err := m.setupPlatformURL(ctx, options.PlatformURL)
@@ -122,6 +126,9 @@ func (m *Manager) Setup(ctx context.Context, options SetupOptions) error {
 		return err
 	}
 	if err := m.installSelf(); err != nil {
+		return err
+	}
+	if err := m.ensureCommandLink(); err != nil {
 		return err
 	}
 	if err := atomicWrite(m.Paths.Unit, []byte(ServiceUnit), 0o644); err != nil {
@@ -266,6 +273,9 @@ func (m *Manager) Upgrade(ctx context.Context, requestedVersion string) error {
 	if err := requireRoot(); err != nil {
 		return err
 	}
+	if err := m.validateCommandLink(); err != nil {
+		return err
+	}
 	version := requestedVersion
 	if version == "" {
 		var err error
@@ -300,6 +310,9 @@ func (m *Manager) Upgrade(ctx context.Context, requestedVersion string) error {
 		return errors.New("downloaded binary SHA-256 does not match checksums.txt")
 	}
 	if err := atomicWrite(m.Paths.Binary, binary, 0o755); err != nil {
+		return err
+	}
+	if err := m.ensureCommandLink(); err != nil {
 		return err
 	}
 	if err := atomicWrite(m.Paths.Unit, []byte(ServiceUnit), 0o644); err != nil {
@@ -412,6 +425,9 @@ func (m *Manager) Uninstall(ctx context.Context, dryRun, purge bool) error {
 	for _, service := range []string{"cluster-node.service", "cluster-manager-node.service"} {
 		_ = command(ctx, "systemctl", "disable", "--now", service)
 	}
+	if err := m.removeCommandLink(); err != nil {
+		return err
+	}
 	for _, path := range []string{m.Paths.Config, m.Paths.Credential, m.Paths.Unit, m.Paths.OldUnit, m.Paths.Binary, m.Paths.OldBinary} {
 		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("remove %s: %w", path, err)
@@ -515,6 +531,69 @@ func (m *Manager) installSelf() error {
 		return err
 	}
 	return atomicWrite(m.Paths.Binary, contents, 0o755)
+}
+
+func (m *Manager) ensureCommandLink() error {
+	if err := m.validateCommandLink(); err != nil {
+		return err
+	}
+	if _, err := os.Lstat(m.Paths.CommandLink); err == nil {
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("inspect command link %s: %w", m.Paths.CommandLink, err)
+	}
+	if err := os.MkdirAll(filepath.Dir(m.Paths.CommandLink), 0o755); err != nil {
+		return err
+	}
+	if err := os.Symlink(m.Paths.Binary, m.Paths.CommandLink); err != nil {
+		return fmt.Errorf("create command link %s: %w", m.Paths.CommandLink, err)
+	}
+	return nil
+}
+
+func (m *Manager) validateCommandLink() error {
+	info, err := os.Lstat(m.Paths.CommandLink)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("inspect command link %s: %w", m.Paths.CommandLink, err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		return fmt.Errorf("refusing to replace existing non-symlink command path %s", m.Paths.CommandLink)
+	}
+	target, err := os.Readlink(m.Paths.CommandLink)
+	if err != nil {
+		return fmt.Errorf("read command link %s: %w", m.Paths.CommandLink, err)
+	}
+	if target != m.Paths.Binary {
+		return fmt.Errorf("refusing to replace command link %s pointing to %s", m.Paths.CommandLink, target)
+	}
+	return nil
+}
+
+func (m *Manager) removeCommandLink() error {
+	info, err := os.Lstat(m.Paths.CommandLink)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("inspect command link %s: %w", m.Paths.CommandLink, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		target, readErr := os.Readlink(m.Paths.CommandLink)
+		if readErr != nil {
+			return fmt.Errorf("read command link %s: %w", m.Paths.CommandLink, readErr)
+		}
+		if target == m.Paths.Binary {
+			if err := os.Remove(m.Paths.CommandLink); err != nil {
+				return fmt.Errorf("remove command link %s: %w", m.Paths.CommandLink, err)
+			}
+			return nil
+		}
+	}
+	fmt.Fprintf(m.Out, "Preserved unrecognized command path %s for manual review.\n", m.Paths.CommandLink)
+	return nil
 }
 
 func (m *Manager) ensurePackages(ctx context.Context) error {

@@ -175,6 +175,62 @@ func TestServiceAndMigrationPathsUseNewNames(t *testing.T) {
 	if paths.Binary == paths.OldBinary || paths.Unit == paths.OldUnit {
 		t.Fatalf("new and migration paths must remain distinct: %#v", paths)
 	}
+	if paths.CommandLink != "/usr/local/bin/cluster-node" {
+		t.Fatalf("unexpected command link path: %s", paths.CommandLink)
+	}
+}
+
+func TestCommandLinkLifecycle(t *testing.T) {
+	root := t.TempDir()
+	var output bytes.Buffer
+	manager := New("test", strings.NewReader(""), &output, &output)
+	manager.Paths.Binary = filepath.Join(root, "sbin", "cluster-node")
+	manager.Paths.CommandLink = filepath.Join(root, "bin", "cluster-node")
+
+	if err := manager.ensureCommandLink(); err != nil {
+		t.Fatal(err)
+	}
+	target, err := os.Readlink(manager.Paths.CommandLink)
+	if err != nil || target != manager.Paths.Binary {
+		t.Fatalf("unexpected command link target %q: %v", target, err)
+	}
+	if err := manager.ensureCommandLink(); err != nil {
+		t.Fatalf("expected existing managed link to be idempotent: %v", err)
+	}
+	if err := manager.removeCommandLink(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(manager.Paths.CommandLink); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("managed command link remains: %v", err)
+	}
+}
+
+func TestCommandLinkRefusesAndPreservesUnrecognizedPath(t *testing.T) {
+	root := t.TempDir()
+	var output bytes.Buffer
+	manager := New("test", strings.NewReader(""), &output, &output)
+	manager.Paths.Binary = filepath.Join(root, "sbin", "cluster-node")
+	manager.Paths.CommandLink = filepath.Join(root, "bin", "cluster-node")
+	if err := os.MkdirAll(filepath.Dir(manager.Paths.CommandLink), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manager.Paths.CommandLink, []byte("operator file"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := manager.ensureCommandLink(); err == nil {
+		t.Fatal("expected non-symlink command path to be rejected")
+	}
+	if err := manager.removeCommandLink(); err != nil {
+		t.Fatal(err)
+	}
+	contents, err := os.ReadFile(manager.Paths.CommandLink)
+	if err != nil || string(contents) != "operator file" {
+		t.Fatalf("unrecognized path was not preserved: %q, %v", contents, err)
+	}
+	if !strings.Contains(output.String(), "Preserved unrecognized command path") {
+		t.Fatalf("missing preservation notice: %q", output.String())
+	}
 }
 
 func TestAtomicWriteLeavesNoTemporaryFile(t *testing.T) {

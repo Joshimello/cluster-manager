@@ -20,10 +20,13 @@ COPY --from=build /out/cluster-node /usr/local/sbin/cluster-node
 COPY deploy/config.example.json /etc/cluster-manager/node.json
 COPY deploy/cluster-node.service /etc/systemd/system/cluster-node.service
 RUN chmod 0755 /usr/local/sbin/cluster-node \
+    && ln -s /usr/local/sbin/cluster-node /usr/local/bin/cluster-node \
     && chmod 0600 /etc/cluster-manager/node.json \
     && mkdir -p /run/sshd \
     && /usr/sbin/sshd -t \
     && systemd-analyze verify /etc/systemd/system/cluster-node.service \
     && test "$(stat -c %a /etc/cluster-manager/node.json)" = 600 \
+    && command -v cluster-node >/dev/null \
+    && test "$(readlink /usr/local/bin/cluster-node)" = "/usr/local/sbin/cluster-node" \
     && test "$(/usr/local/sbin/cluster-node --version)" = "cluster-node rehearsal"
 CMD ["/usr/local/sbin/cluster-node", "--version"]
