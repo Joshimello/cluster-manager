@@ -3,33 +3,15 @@ set -euo pipefail
 
 repository="Joshimello/cluster-manager"
 install_path="/usr/local/sbin/cluster-node"
-command_path="/usr/local/bin/cluster-node"
 
 if [[ ${EUID} -ne 0 ]]; then
   echo "install-node.sh must run as root (for example: curl ... | sudo bash)." >&2
   exit 1
 fi
 
-ensure_command_link() {
-  if [[ -L ${command_path} ]]; then
-    if [[ $(readlink "${command_path}") != "${install_path}" ]]; then
-      echo "Refusing to replace ${command_path}; it points somewhere unexpected." >&2
-      exit 1
-    fi
-    return
-  fi
-  if [[ -e ${command_path} ]]; then
-    echo "Refusing to replace existing non-symlink path: ${command_path}" >&2
-    exit 1
-  fi
-  ln -s "${install_path}" "${command_path}"
-  echo "Installed command link: ${command_path} -> ${install_path}"
-}
-
 if [[ -x ${install_path} ]]; then
-  ensure_command_link
   echo "cluster-node is already installed. Run: sudo cluster-node upgrade" >&2
-  exit 0
+  exit 2
 fi
 
 case "$(uname -m)" in

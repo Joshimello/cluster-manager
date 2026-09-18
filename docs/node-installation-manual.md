@@ -38,7 +38,6 @@ make VERSION=0.1.0 build-node-linux
 node/bin/cluster-node-linux-amd64 --version # run this after copying to Linux
 sudo install -o root -g root -m 0755 \
   node/bin/cluster-node-linux-amd64 /usr/local/sbin/cluster-node
-sudo ln -s /usr/local/sbin/cluster-node /usr/local/bin/cluster-node
 ```
 
 Use an immutable release version instead of `development`; the reported version appears
