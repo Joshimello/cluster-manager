@@ -35,6 +35,11 @@ Open <http://localhost:5173>. The readiness endpoint is
 <http://localhost:5173/health>. The stack runs PostgreSQL, the SvelteKit platform, and
 two independently enrolled simulated nodes named `ws01` and `ws02`.
 
+To reach the development server through a trusted HTTPS proxy such as Tailscale
+Serve, set `DEV_PLATFORM_ALLOWED_HOST` in `.env` to that proxy's exact hostname and
+recreate the `platform` service. The value is added only to Vite's development host
+allow-list; do not use a wildcard.
+
 Create the first administrator after the stack becomes healthy:
 
 ```bash

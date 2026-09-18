@@ -22,6 +22,7 @@ services:
       target: development
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-cluster_manager}:${POSTGRES_PASSWORD:-cluster_manager_development_only}@postgres:5432/${POSTGRES_DB:-cluster_manager}
+      __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS: ${DEV_PLATFORM_ALLOWED_HOST:-}
       NODE_DEV_SEED_WORKSTATIONS: "true"
       NODE_WS01_ENROLLMENT_TOKEN: ${NODE_WS01_ENROLLMENT_TOKEN:-cmenroll_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA}
       NODE_WS02_ENROLLMENT_TOKEN: ${NODE_WS02_ENROLLMENT_TOKEN:-cmenroll_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB}
@@ -39,7 +40,7 @@ services:
           "CMD",
           "node",
           "-e",
-          "fetch('http://127.0.0.1:5173/health').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))"
+          "fetch('http://127.0.0.1:5173/health').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))",
         ]
       interval: 5s
       timeout: 3s
