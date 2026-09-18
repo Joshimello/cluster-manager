@@ -42,6 +42,10 @@ installations are upgraded with `sudo cluster-node upgrade` instead.
 
 ## Lifecycle commands
 
+The executable intentionally lives in `/usr/local/sbin` because node lifecycle
+operations are root-controlled. That directory may be absent from an unprivileged
+login shell's PATH; invoke administrative commands through `sudo`, as shown below.
+
 ```text
 cluster-node setup [--platform-url URL] [--name NAME] [--enrollment-token-file PATH]
 cluster-node run
