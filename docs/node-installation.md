@@ -55,8 +55,9 @@ sudo /usr/local/sbin/cluster-node setup
 The installer detects the CPU architecture, shows progress while downloading the
 matching release binary, retries transient or stalled transfers, verifies it against
 `checksums.txt`, and installs it to `/usr/local/sbin/cluster-node`. Setup is a separate
-explicit command. Existing
-installations are upgraded with `sudo cluster-node upgrade` instead.
+explicit command. Rerunning the installer may replace an unconfigured CLI when setup
+has not completed. Configured installations are upgraded with
+`sudo /usr/local/sbin/cluster-node upgrade` instead.
 
 ## Lifecycle commands
 

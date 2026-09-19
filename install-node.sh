@@ -10,8 +10,11 @@ if [[ ${EUID} -ne 0 ]]; then
 fi
 
 if [[ -x ${install_path} ]]; then
-  echo "cluster-node is already installed. Run: sudo ${install_path} upgrade" >&2
-  exit 2
+  if [[ -e /etc/cluster-manager/node.json || -e /etc/systemd/system/cluster-node.service || -e /etc/systemd/system/cluster-manager-node.service ]]; then
+    echo "cluster-node is already configured. Run: sudo ${install_path} upgrade" >&2
+    exit 2
+  fi
+  echo "Replacing an existing unconfigured cluster-node CLI."
 fi
 
 case "$(uname -m)" in
