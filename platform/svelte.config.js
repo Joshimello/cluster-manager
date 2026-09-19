@@ -5,7 +5,10 @@ import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 const config = {
   preprocess: vitePreprocess(),
   kit: {
-    adapter: adapter()
+    adapter: adapter(),
+    // The built-in list is generated at build time, but deployment-specific trusted
+    // origins are runtime configuration. hooks.server.ts applies the equivalent check.
+    csrf: { trustedOrigins: ['*'] }
   }
 };
 

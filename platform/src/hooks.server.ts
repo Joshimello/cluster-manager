@@ -1,4 +1,4 @@
-import type { Handle } from '@sveltejs/kit';
+import { json, text, type Handle } from '@sveltejs/kit';
 import { randomUUID } from 'node:crypto';
 
 import {
@@ -8,12 +8,31 @@ import {
 } from '$lib/server/auth/session';
 import { structuredLog } from '$lib/server/logging';
 import { runMaintenanceIfDue } from '$lib/server/maintenance';
+import { isAllowedFormSubmission, parseTrustedOrigins } from '$lib/server/security/csrf';
+
+const csrfTrustedOrigins = parseTrustedOrigins(process.env.CSRF_TRUSTED_ORIGINS);
 
 export const handle: Handle = async ({ event, resolve }) => {
   const requestId = event.request.headers.get('x-request-id')?.slice(0, 128) || randomUUID();
   const startedAt = performance.now();
   event.locals.session = null;
   event.locals.user = null;
+
+  if (!isAllowedFormSubmission(event.request, event.url.origin, csrfTrustedOrigins)) {
+    const message = `Cross-site ${event.request.method} form submissions are forbidden`;
+    const response =
+      event.request.headers.get('accept') === 'application/json'
+        ? json({ message }, { status: 403 })
+        : text(message, { status: 403 });
+    response.headers.set('x-request-id', requestId);
+    structuredLog('warn', 'http.csrf_rejected', {
+      requestId,
+      method: event.request.method,
+      path: event.url.pathname,
+      requestOrigin: event.request.headers.get('origin')
+    });
+    return response;
+  }
 
   const token = event.cookies.get(sessionCookieName);
 

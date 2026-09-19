@@ -27,6 +27,7 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-cluster_manager}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-cluster_manager}
       ORIGIN: ${ORIGIN:?set the platform ORIGIN in .env}
       ALLOW_HTTP: ${ALLOW_HTTP:-false}
+      CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-}
       PLATFORM_VERSION: ${PLATFORM_VERSION:?set PLATFORM_VERSION in .env}
       TELEMETRY_RETENTION_HOURS: ${TELEMETRY_RETENTION_HOURS:-24}
     ports:
@@ -40,7 +41,7 @@ services:
           "CMD",
           "node",
           "-e",
-          "fetch('http://127.0.0.1:3000/health').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))"
+          "fetch('http://127.0.0.1:3000/health').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))",
         ]
       interval: 10s
       timeout: 3s

@@ -7,7 +7,7 @@ const requiredEnvironment = {
   TELEMETRY_RETENTION_HOURS: '24'
 };
 
-function validate(origin: string, allowHttp?: string) {
+function validate(origin: string, allowHttp?: string, csrfTrustedOrigins?: string) {
   return spawnSync(process.execPath, ['scripts/validate-env.mjs'], {
     cwd: process.cwd(),
     encoding: 'utf8',
@@ -15,7 +15,8 @@ function validate(origin: string, allowHttp?: string) {
       ...process.env,
       ...requiredEnvironment,
       ORIGIN: origin,
-      ...(allowHttp === undefined ? { ALLOW_HTTP: '' } : { ALLOW_HTTP: allowHttp })
+      ...(allowHttp === undefined ? { ALLOW_HTTP: '' } : { ALLOW_HTTP: allowHttp }),
+      CSRF_TRUSTED_ORIGINS: csrfTrustedOrigins ?? ''
     }
   });
 }
@@ -38,5 +39,27 @@ describe('production environment validation', () => {
     expect(validate('http://100.64.0.10:3000', 'yes').stderr).toContain(
       'ALLOW_HTTP must be either true or false'
     );
+  });
+
+  it('accepts explicit same-protocol trusted origins', () => {
+    expect(
+      validate(
+        'http://manager.example:3000',
+        'true',
+        'http://192.168.50.141:3000,http://localhost:3000'
+      ).status
+    ).toBe(0);
+  });
+
+  it('rejects wildcard, path-bearing, and mixed-protocol trusted origins', () => {
+    expect(validate('https://manager.example', undefined, '*').stderr).toContain(
+      'does not allow wildcards'
+    );
+    expect(
+      validate('https://manager.example', undefined, 'https://other.example/login').stderr
+    ).toContain('only scheme, host, and optional port');
+    expect(
+      validate('https://manager.example', undefined, 'http://localhost:3000').stderr
+    ).toContain('must use the same protocol as ORIGIN');
   });
 });

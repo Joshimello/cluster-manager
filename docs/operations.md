@@ -20,6 +20,11 @@ curl --fail http://127.0.0.1:3000/health
 ```
 
 Every placeholder must be replaced. `ORIGIN` is the exact browser-facing origin.
+If operators must also use other names or addresses, `CSRF_TRUSTED_ORIGINS` accepts a
+comma-separated list of additional exact origins, such as
+`http://192.168.50.141:3000,http://localhost:3000`. Wildcards, paths, credentials, and
+mixed HTTP/HTTPS lists are rejected. Keep this list as small as possible; it relaxes
+form-submission origin checks only for the named origins and does not configure CORS.
 `PLATFORM_VERSION` selects the image tag from
 `ghcr.io/joshimello/cluster-manager-platform`; use a release tag for reproducible
 deployments or `latest` for the newest stable release. The image supports Linux
