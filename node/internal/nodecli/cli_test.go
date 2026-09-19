@@ -29,6 +29,9 @@ func TestHelpListsLifecycleCommands(t *testing.T) {
 			t.Fatalf("help omits %s: %s", command, output.String())
 		}
 	}
+	if !strings.Contains(output.String(), "--allow-http") {
+		t.Fatalf("help omits explicit HTTP setup option: %s", output.String())
+	}
 }
 
 func TestParsingRejectsTokensAndTrailingArguments(t *testing.T) {

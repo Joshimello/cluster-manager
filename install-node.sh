@@ -9,6 +9,12 @@ if [[ ${EUID} -ne 0 ]]; then
   exit 1
 fi
 
+allow_http="${ALLOW_HTTP:-false}"
+if [[ ${allow_http} != "true" && ${allow_http} != "false" ]]; then
+  echo "ALLOW_HTTP must be either true or false." >&2
+  exit 1
+fi
+
 if [[ -x ${install_path} ]]; then
   echo "cluster-node is already installed. Run: sudo cluster-node upgrade" >&2
   exit 2
@@ -70,4 +76,8 @@ fi
 
 chmod 0755 "${temporary_directory}/${asset}"
 echo "Verified cluster-node ${version}; starting interactive setup."
-"${temporary_directory}/${asset}" setup </dev/tty >/dev/tty
+setup_options=()
+if [[ ${allow_http} == "true" ]]; then
+  setup_options+=(--allow-http)
+fi
+"${temporary_directory}/${asset}" setup "${setup_options[@]}" </dev/tty >/dev/tty

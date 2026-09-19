@@ -182,7 +182,7 @@ func ValidatePlatformURL(value string, allowInsecureHTTP bool) error {
 		return errors.New("must be an absolute URL")
 	}
 	if parsed.Scheme != "https" && !(parsed.Scheme == "http" && allowInsecureHTTP) {
-		return errors.New("must use HTTPS (set NODE_ALLOW_INSECURE_HTTP=true only for development)")
+		return errors.New("must use HTTPS unless HTTP was explicitly allowed")
 	}
 	return nil
 }

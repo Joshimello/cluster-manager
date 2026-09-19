@@ -740,7 +740,8 @@ Requirements:
 
 - nodes must identify themselves securely
 - one node must not impersonate another
-- communication should occur over HTTPS in production
+- communication should use HTTPS by default; an explicit HTTP opt-in is acceptable
+  when the entire path is confined to an authenticated, encrypted private overlay
 - node credentials should be revocable
 - secrets should not be hard-coded in source
 

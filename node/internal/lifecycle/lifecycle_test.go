@@ -122,7 +122,7 @@ func TestInteractivePlatformURLRepromptsBeforeNextField(t *testing.T) {
 	var output bytes.Buffer
 	manager := New("test", strings.NewReader("d\nhttps://manager.example/\n"), &output, &output)
 
-	platformURL, err := manager.setupPlatformURL(context.Background(), "")
+	platformURL, err := manager.setupPlatformURL(context.Background(), "", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,6 +134,21 @@ func TestInteractivePlatformURLRepromptsBeforeNextField(t *testing.T) {
 	}
 	if strings.Contains(output.String(), "Workstation name") {
 		t.Fatalf("setup advanced before the URL was valid: %q", output.String())
+	}
+}
+
+func TestPlatformURLAllowsHTTPOnlyWhenExplicit(t *testing.T) {
+	manager := New("test", strings.NewReader(""), io.Discard, io.Discard)
+
+	if _, err := manager.setupPlatformURL(context.Background(), "http://100.64.0.10:3000", false); err == nil {
+		t.Fatal("expected HTTP URL to be rejected by default")
+	}
+	platformURL, err := manager.setupPlatformURL(context.Background(), "http://100.64.0.10:3000/", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if platformURL != "http://100.64.0.10:3000" {
+		t.Fatalf("unexpected platform URL %q", platformURL)
 	}
 }
 

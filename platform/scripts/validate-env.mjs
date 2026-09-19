@@ -3,9 +3,15 @@ for (const name of required) {
   if (!process.env[name]?.trim()) throw new Error(`${name} is required`);
 }
 
+const allowHttpValue = process.env.ALLOW_HTTP?.trim() || 'false';
+if (allowHttpValue !== 'true' && allowHttpValue !== 'false') {
+  throw new Error('ALLOW_HTTP must be either true or false');
+}
+const allowHttp = allowHttpValue === 'true';
+
 const origin = new URL(process.env.ORIGIN);
-if (origin.protocol !== 'https:' && process.env.ALLOW_INSECURE_PRODUCTION_ORIGIN !== 'true') {
-  throw new Error('ORIGIN must use HTTPS in production');
+if (origin.protocol !== 'https:' && !(allowHttp && origin.protocol === 'http:')) {
+  throw new Error('ORIGIN must use HTTPS unless ALLOW_HTTP=true');
 }
 if (origin.pathname !== '/' || origin.search || origin.hash) {
   throw new Error('ORIGIN must contain only scheme, host, and optional port');
@@ -23,6 +29,7 @@ console.log(
     event: 'environment.validated',
     platformVersion: process.env.PLATFORM_VERSION,
     origin: origin.origin,
+    allowHttp,
     telemetryRetentionHours: Number(retention)
   })
 );

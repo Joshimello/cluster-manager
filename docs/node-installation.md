@@ -7,8 +7,18 @@ interactive setup:
 curl -fsSL https://raw.githubusercontent.com/Joshimello/cluster-manager/main/install-node.sh | sudo bash
 ```
 
+HTTPS is the default. If the platform deliberately uses HTTP inside an encrypted,
+access-controlled private network, opt in explicitly during installation:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Joshimello/cluster-manager/main/install-node.sh \
+  | sudo env ALLOW_HTTP=true bash
+```
+
+This does not make HTTP safe on an untrusted LAN or the public internet.
+
 Setup supports Debian 12 or newer and Ubuntu 24.04 or newer on `amd64` and `arm64`.
-It verifies systemd, HTTPS settings, OpenSSH, `uidmap`, and `nvidia-smi`. It asks once before installing
+It verifies systemd, platform URL security, OpenSSH, `uidmap`, and `nvidia-smi`. It asks once before installing
 missing OS packages. Have the platform URL, workstation name, and a fresh one-time
 enrollment token ready. The token is read without echo and is not saved in the active
 configuration.
@@ -47,7 +57,7 @@ operations are root-controlled. That directory may be absent from an unprivilege
 login shell's PATH; invoke administrative commands through `sudo`, as shown below.
 
 ```text
-cluster-node setup [--platform-url URL] [--name NAME] [--enrollment-token-file PATH]
+cluster-node setup [--platform-url URL] [--name NAME] [--enrollment-token-file PATH] [--allow-http]
 cluster-node run
 cluster-node status
 cluster-node doctor

@@ -16,7 +16,7 @@ import (
 )
 
 const Usage = `Usage:
-  cluster-node setup [--platform-url URL] [--name NAME] [--enrollment-token-file PATH]
+  cluster-node setup [--platform-url URL] [--name NAME] [--enrollment-token-file PATH] [--allow-http]
   cluster-node run
   cluster-node status
   cluster-node doctor
@@ -47,13 +47,14 @@ func Run(ctx context.Context, args []string, version string, in io.Reader, out, 
 		return runAgent(ctx, version, out)
 	case "setup":
 		flags := newFlags("setup", errOut)
-		platformURL := flags.String("platform-url", "", "platform HTTPS URL")
+		platformURL := flags.String("platform-url", "", "platform URL")
 		name := flags.String("name", "", "workstation name")
 		tokenFile := flags.String("enrollment-token-file", "", "root-only token file")
+		allowHTTP := flags.Bool("allow-http", false, "allow an HTTP platform URL")
 		if err := parse(flags, args[1:]); err != nil {
 			return err
 		}
-		return manager.Setup(ctx, lifecycle.SetupOptions{PlatformURL: *platformURL, Name: *name, EnrollmentTokenFile: *tokenFile})
+		return manager.Setup(ctx, lifecycle.SetupOptions{PlatformURL: *platformURL, Name: *name, EnrollmentTokenFile: *tokenFile, AllowHTTP: *allowHTTP})
 	case "status":
 		if len(args) != 1 {
 			return errors.New("status takes no arguments")

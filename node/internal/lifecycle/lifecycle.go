@@ -67,7 +67,10 @@ func New(version string, in io.Reader, out, errOut io.Writer) *Manager {
 	return &Manager{Paths: DefaultPaths(), Version: version, In: in, Out: out, Err: errOut, HTTPClient: &http.Client{Timeout: 30 * time.Second}, ReleaseAPI: defaultReleaseAPI, ReleaseBase: defaultReleaseBase, input: bufio.NewReader(in)}
 }
 
-type SetupOptions struct{ PlatformURL, Name, EnrollmentTokenFile string }
+type SetupOptions struct {
+	PlatformURL, Name, EnrollmentTokenFile string
+	AllowHTTP                              bool
+}
 
 func (m *Manager) Setup(ctx context.Context, options SetupOptions) error {
 	if err := requireRoot(); err != nil {
@@ -76,7 +79,7 @@ func (m *Manager) Setup(ctx context.Context, options SetupOptions) error {
 	if err := validateHost(ctx); err != nil {
 		return err
 	}
-	platformURL, err := m.setupPlatformURL(ctx, options.PlatformURL)
+	platformURL, err := m.setupPlatformURL(ctx, options.PlatformURL, options.AllowHTTP)
 	if err != nil {
 		return err
 	}
@@ -84,7 +87,7 @@ func (m *Manager) Setup(ctx context.Context, options SetupOptions) error {
 	if err != nil {
 		return err
 	}
-	cfg := config.Config{PlatformURL: platformURL, WorkstationName: name, CredentialFile: m.Paths.Credential, HeartbeatInterval: 15 * time.Second, SimulationScenario: "normal"}
+	cfg := config.Config{PlatformURL: platformURL, WorkstationName: name, CredentialFile: m.Paths.Credential, HeartbeatInterval: 15 * time.Second, SimulationScenario: "normal", AllowInsecureHTTP: options.AllowHTTP}
 	if err := cfg.Validate(); err != nil {
 		return err
 	}
@@ -544,7 +547,7 @@ type inputResult struct {
 	err   error
 }
 
-func (m *Manager) setupPlatformURL(ctx context.Context, existing string) (string, error) {
+func (m *Manager) setupPlatformURL(ctx context.Context, existing string, allowHTTP bool) (string, error) {
 	interactive := strings.TrimSpace(existing) == ""
 	for {
 		value, err := m.value(ctx, existing, "Platform URL")
@@ -552,7 +555,7 @@ func (m *Manager) setupPlatformURL(ctx context.Context, existing string) (string
 			return "", err
 		}
 		value = strings.TrimRight(strings.TrimSpace(value), "/")
-		if err := config.ValidatePlatformURL(value, false); err == nil {
+		if err := config.ValidatePlatformURL(value, allowHTTP); err == nil {
 			return value, nil
 		} else if !interactive {
 			return "", fmt.Errorf("platform URL %w", err)

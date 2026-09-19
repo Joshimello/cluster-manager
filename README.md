@@ -26,7 +26,7 @@ reconciles those accounts and reports host and NVIDIA telemetry.
 
 ```mermaid
 flowchart LR
-    U[Users and administrators] -->|HTTPS| P[SvelteKit platform]
+    U[Users and administrators] -->|HTTPS or private-overlay HTTP| P[SvelteKit platform]
     P --> DB[(PostgreSQL)]
 
     N1[cluster-node on WS01] -->|Authenticated state and telemetry| P
@@ -46,7 +46,8 @@ report observed state; they do not expose a generic remote-command interface.
 
 ## Quick start
 
-Requirements: Docker with Docker Compose and an HTTPS reverse proxy for production.
+Requirements: Docker with Docker Compose. HTTPS is the production default; explicitly
+allowed HTTP is supported when access stays inside an encrypted private overlay.
 
 ```bash
 git clone https://github.com/Joshimello/cluster-manager.git
@@ -59,8 +60,9 @@ docker compose up -d --wait
 ```
 
 The Compose file pulls the prebuilt multi-architecture platform image from GitHub
-Container Registry and starts it with PostgreSQL. After configuring the documented
-HTTPS reverse proxy, create the initial administrator:
+Container Registry and starts it with PostgreSQL. Configure the documented HTTPS
+reverse proxy, or set `ALLOW_HTTP=true` and bind specifically to a trusted private
+overlay address. Then create the initial administrator:
 
 ```bash
 docker compose exec platform \

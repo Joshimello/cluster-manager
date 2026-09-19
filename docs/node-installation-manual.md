@@ -10,7 +10,7 @@ The workstation needs:
 
 - Debian 12 or newer, or Ubuntu 24.04 LTS or newer
 - OpenSSH server
-- HTTPS connectivity to the Cluster Manager platform
+- connectivity to the Cluster Manager platform (HTTPS by default)
 - a workstation record and one-time enrollment token created by an administrator
 - for GPU monitoring, a supported NVIDIA driver with a working `nvidia-smi` command
 - UID/GID range `20000–59999` reserved exclusively for Cluster Manager
@@ -52,8 +52,10 @@ sudo install -o root -g root -m 0600 \
 sudoedit /etc/cluster-manager/node.json
 ```
 
-Set `platformUrl`, `workstationName`, and the one-time `enrollmentToken`. Production
-platform URLs must use HTTPS. The HTTP override is only for isolated local development.
+Set `platformUrl`, `workstationName`, and the one-time `enrollmentToken`. Platform URLs
+must use HTTPS by default. For an HTTP platform deliberately confined to an
+authenticated, encrypted private overlay, also set `allowInsecureHttp` to `true`. Do
+not use that override on an untrusted LAN or the public internet.
 
 Install and start the checked-in systemd unit:
 

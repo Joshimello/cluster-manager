@@ -19,7 +19,7 @@ docker compose ps
 curl --fail http://127.0.0.1:3000/health
 ```
 
-Every placeholder must be replaced. `ORIGIN` is the public HTTPS origin.
+Every placeholder must be replaced. `ORIGIN` is the exact browser-facing origin.
 `PLATFORM_VERSION` selects the image tag from
 `ghcr.io/joshimello/cluster-manager-platform`; use a release tag for reproducible
 deployments or `latest` for the newest stable release. The image supports Linux
@@ -28,6 +28,24 @@ PostgreSQL is not published to the
 host. Its data lives in the `postgres-data` named volume. The app port binds to
 loopback by default; change `PLATFORM_BIND_ADDRESS` only when the reverse proxy runs on
 another trusted host or container network.
+
+HTTPS is required by default. For a deployment reached directly through an encrypted
+private overlay network, HTTP may be enabled explicitly:
+
+```dotenv
+ORIGIN=http://100.64.0.10:3000
+ALLOW_HTTP=true
+PLATFORM_BIND_ADDRESS=100.64.0.10
+PLATFORM_PORT=3000
+```
+
+Replace the example address with the management host's private-overlay address. Bind
+to that address specifically: do not use `0.0.0.0`, which would also publish the
+platform on unrelated host interfaces. HTTP mode issues non-`Secure` session cookies
+because browsers will not send `Secure` cookies over HTTP. The overlay must provide
+authenticated encryption and access control; use HTTPS for ordinary LAN, institutional,
+or internet-facing deployments. `ALLOW_HTTP` accepts only `true` or `false` and
+defaults to `false`.
 
 Bootstrap the first administrator once:
 
@@ -68,8 +86,9 @@ NAS reverse proxy in front of `127.0.0.1:3000`. The proxy must:
 - restrict request-body sizes and apply normal access-log rotation;
 - not expose PostgreSQL or any node credential/state file.
 
-Do not enable `ALLOW_INSECURE_PRODUCTION_ORIGIN`; it exists only for isolated automated
-rehearsals. Nodes must use the public HTTPS URL and validate its certificate.
+Nodes should use the public HTTPS URL and validate its certificate. An explicitly
+private HTTP deployment must instead enroll nodes with `cluster-node setup
+--allow-http`; the node records that opt-in in its root-only configuration.
 
 ## Updates
 

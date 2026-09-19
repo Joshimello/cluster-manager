@@ -37,6 +37,20 @@ export function generateSessionToken(): string {
   return randomBytes(32).toString('base64url');
 }
 
+export function shouldUseSecureSessionCookie(
+  development: boolean,
+  origin: string | undefined
+): boolean {
+  if (development) return false;
+  if (!origin) return true;
+
+  try {
+    return new URL(origin).protocol !== 'http:';
+  } catch {
+    return true;
+  }
+}
+
 export async function createSession(userId: string): Promise<{
   session: AuthSession;
   token: string;
@@ -114,7 +128,7 @@ export function setSessionCookie(cookies: Cookies, token: string, expiresAt: Dat
   cookies.set(sessionCookieName, token, {
     httpOnly: true,
     sameSite: 'lax',
-    secure: !dev,
+    secure: shouldUseSecureSessionCookie(dev, process.env.ORIGIN),
     path: '/',
     expires: expiresAt
   });
@@ -124,7 +138,7 @@ export function deleteSessionCookie(cookies: Cookies): void {
   cookies.delete(sessionCookieName, {
     httpOnly: true,
     sameSite: 'lax',
-    secure: !dev,
+    secure: shouldUseSecureSessionCookie(dev, process.env.ORIGIN),
     path: '/'
   });
 }
