@@ -1009,9 +1009,10 @@ docker compose up -d
 ### Node
 
 GitHub Actions builds versioned `cluster-node` Linux binaries for `amd64` and `arm64`.
-The supported installation path is `install-node.sh`, which verifies the release
-SHA-256 and launches interactive setup. Operators use `cluster-node` for setup,
-status, diagnostics, re-enrollment, upgrades/rollback, and uninstall. Run the node as
+The supported installation path is the non-interactive `install-node.sh`, which
+verifies the release SHA-256 and installs the CLI. Operators then use
+`cluster-node setup` for interactive enrollment, and `cluster-node` for status,
+diagnostics, re-enrollment, upgrades/rollback, and uninstall. Run the node as
 `cluster-node.service` through systemd.
 
 Do not require Docker to run the production node service.

@@ -77,6 +77,7 @@ To install a real Debian or Ubuntu node from the latest verified release:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Joshimello/cluster-manager/main/install-node.sh | sudo bash
+sudo /usr/local/sbin/cluster-node setup
 ```
 
 ## Documentation

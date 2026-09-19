@@ -1,18 +1,24 @@
 # Install and manage a workstation node
 
-The supported operator path installs the latest stable GitHub release and runs
-interactive setup:
+The supported operator path installs the latest stable GitHub release, then runs
+interactive setup as a separate command:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Joshimello/cluster-manager/main/install-node.sh | sudo bash
+sudo /usr/local/sbin/cluster-node setup
 ```
+
+The piped installer is deliberately non-interactive: it only downloads, verifies,
+and installs the CLI. Run `setup` separately so it is attached directly to your
+terminal and Ctrl-C always works.
 
 HTTPS is the default. If the platform deliberately uses HTTP inside an encrypted,
 access-controlled private network, opt in explicitly during installation:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Joshimello/cluster-manager/main/install-node.sh \
-  | sudo env ALLOW_HTTP=true bash
+  | sudo bash
+sudo /usr/local/sbin/cluster-node setup --allow-http
 ```
 
 This does not make HTTP safe on an untrusted LAN or the public internet.
@@ -43,11 +49,13 @@ curl -fsSL https://raw.githubusercontent.com/Joshimello/cluster-manager/main/ins
   -o install-node.sh
 less install-node.sh
 sudo bash install-node.sh
+sudo /usr/local/sbin/cluster-node setup
 ```
 
 The installer detects the CPU architecture, shows progress while downloading the
 matching release binary, retries transient or stalled transfers, verifies it against
-`checksums.txt`, and starts `cluster-node setup`. Existing
+`checksums.txt`, and installs it to `/usr/local/sbin/cluster-node`. Setup is a separate
+explicit command. Existing
 installations are upgraded with `sudo cluster-node upgrade` instead.
 
 ## Lifecycle commands

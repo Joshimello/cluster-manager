@@ -9,14 +9,8 @@ if [[ ${EUID} -ne 0 ]]; then
   exit 1
 fi
 
-allow_http="${ALLOW_HTTP:-false}"
-if [[ ${allow_http} != "true" && ${allow_http} != "false" ]]; then
-  echo "ALLOW_HTTP must be either true or false." >&2
-  exit 1
-fi
-
 if [[ -x ${install_path} ]]; then
-  echo "cluster-node is already installed. Run: sudo cluster-node upgrade" >&2
+  echo "cluster-node is already installed. Run: sudo ${install_path} upgrade" >&2
   exit 2
 fi
 
@@ -25,11 +19,6 @@ case "$(uname -m)" in
   aarch64|arm64) architecture="arm64" ;;
   *) echo "Unsupported architecture: $(uname -m)" >&2; exit 1 ;;
 esac
-
-if [[ ! -r /dev/tty ]]; then
-  echo "Interactive setup requires a terminal. Download and inspect this script, then run it from a terminal." >&2
-  exit 1
-fi
 
 temporary_directory="$(mktemp -d)"
 trap 'rm -rf -- "${temporary_directory}"' EXIT
@@ -74,10 +63,9 @@ if [[ ${actual,,} != "${expected,,}" ]]; then
   exit 1
 fi
 
-chmod 0755 "${temporary_directory}/${asset}"
-echo "Verified cluster-node ${version}; starting interactive setup."
-setup_options=()
-if [[ ${allow_http} == "true" ]]; then
-  setup_options+=(--allow-http)
-fi
-"${temporary_directory}/${asset}" setup "${setup_options[@]}" </dev/tty >/dev/tty
+install -m 0755 "${temporary_directory}/${asset}" "${install_path}.new"
+mv -f "${install_path}.new" "${install_path}"
+
+echo "Verified and installed cluster-node ${version} at ${install_path}."
+echo "Run interactive setup next:"
+echo "  sudo ${install_path} setup"
