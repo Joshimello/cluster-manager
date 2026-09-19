@@ -19,11 +19,13 @@
     maximumFractionDigits: 1
   });
   const gigabytes = (value: number) => bytes.format(value / 1_000_000_000);
-  const reservationTime = new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-    timeZone: 'Asia/Kuala_Lumpur'
-  });
+  let reservationTime = $derived(
+    new Intl.DateTimeFormat(undefined, {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+      timeZone: data.user.timeZone ?? 'UTC'
+    })
+  );
   const now = new Date();
 </script>
 
@@ -179,6 +181,7 @@
           gpuStatus={assignment.inventory?.gpuStatus ?? 'unavailable'}
           processScope="user"
           allowStopRequests={true}
+          timeZone={data.user.timeZone ?? 'UTC'}
         />
       </section>
     {/each}
@@ -189,7 +192,7 @@
           <Card.Title class="flex items-center gap-2"
             ><CalendarDaysIcon class="size-5" />Current and upcoming reservations</Card.Title
           >
-          <Card.Description>Times are shown in Asia/Kuala_Lumpur.</Card.Description>
+          <Card.Description>Times are shown in {data.user.timeZone ?? 'UTC'}.</Card.Description>
         </div>
         <Button href={resolve('/reservations')} variant="outline">Manage reservations</Button>
       </Card.Header>

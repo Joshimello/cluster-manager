@@ -9,10 +9,13 @@
   import * as Table from '$lib/components/ui/table/index.js';
 
   let { data } = $props();
-  const dateFormatter = new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'medium'
-  });
+  let dateFormatter = $derived(
+    new Intl.DateTimeFormat(undefined, {
+      dateStyle: 'medium',
+      timeStyle: 'medium',
+      timeZone: data.user.timeZone ?? 'UTC'
+    })
+  );
 </script>
 
 <svelte:head><title>Audit history · Cluster Manager</title></svelte:head>
@@ -27,8 +30,8 @@
     <Card.Header>
       <Card.Title>Filter events</Card.Title>
       <Card.Description
-        >Dates are interpreted as UTC. Audit history is retained indefinitely by default; include it
-        in database backups.</Card.Description
+        >Dates are interpreted as {data.user.timeZone ?? 'UTC'}. Audit history is retained
+        indefinitely by default; include it in database backups.</Card.Description
       >
     </Card.Header>
     <Card.Content>

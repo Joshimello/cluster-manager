@@ -9,7 +9,13 @@
   import * as Table from '$lib/components/ui/table/index.js';
 
   let { data } = $props();
-  const dateTime = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'medium' });
+  let dateTime = $derived(
+    new Intl.DateTimeFormat(undefined, {
+      dateStyle: 'medium',
+      timeStyle: 'medium',
+      timeZone: data.user.timeZone ?? 'UTC'
+    })
+  );
 </script>
 
 <svelte:head><title>Stop requests · Administration · Cluster Manager</title></svelte:head>

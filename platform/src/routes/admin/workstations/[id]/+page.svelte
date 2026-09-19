@@ -13,7 +13,13 @@
 
   let { data } = $props();
   let ws = $derived(data.workstation);
-  const dateTime = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'medium' });
+  let dateTime = $derived(
+    new Intl.DateTimeFormat(undefined, {
+      dateStyle: 'medium',
+      timeStyle: 'medium',
+      timeZone: data.user.timeZone ?? 'UTC'
+    })
+  );
   const bytes = new Intl.NumberFormat(undefined, {
     style: 'unit',
     unit: 'gigabyte',
@@ -130,7 +136,11 @@
           Current NVIDIA telemetry refreshes every 10 seconds.
         </p>
       </div>
-      <GpuMonitor gpus={data.gpus} gpuStatus={ws.inventory.gpuStatus} />
+      <GpuMonitor
+        gpus={data.gpus}
+        gpuStatus={ws.inventory.gpuStatus}
+        timeZone={data.user.timeZone ?? 'UTC'}
+      />
     </section>
 
     <Card.Root>

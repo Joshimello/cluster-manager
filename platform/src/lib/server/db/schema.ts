@@ -67,6 +67,7 @@ export const users = pgTable(
     passwordHash: text('password_hash').notNull(),
     linuxPasswordHash: text('linux_password_hash'),
     mustChangePassword: boolean('must_change_password').notNull().default(true),
+    timeZone: varchar('time_zone', { length: 64 }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
   },

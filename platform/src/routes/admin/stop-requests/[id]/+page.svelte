@@ -11,7 +11,13 @@
   import { Label } from '$lib/components/ui/label/index.js';
 
   let { data, form } = $props();
-  const dateTime = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'medium' });
+  let dateTime = $derived(
+    new Intl.DateTimeFormat(undefined, {
+      dateStyle: 'medium',
+      timeStyle: 'medium',
+      timeZone: data.user.timeZone ?? 'UTC'
+    })
+  );
   const gigabytes = (value: number) => `${(value / 1_000_000_000).toFixed(1)} GB`;
 </script>
 

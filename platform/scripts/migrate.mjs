@@ -14,6 +14,7 @@ const migrationsFolder = fileURLToPath(new URL('../drizzle', import.meta.url));
 const client = postgres(databaseUrl, {
   max: 1,
   prepare: false,
+  connection: { TimeZone: 'UTC' },
   onnotice: () => {}
 });
 

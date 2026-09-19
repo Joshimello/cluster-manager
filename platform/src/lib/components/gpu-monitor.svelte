@@ -50,16 +50,20 @@
     gpuStatus = 'available',
     processScope = 'all',
     autoRefresh = true,
-    allowStopRequests = false
+    allowStopRequests = false,
+    timeZone = 'UTC'
   }: {
     gpus: GPU[];
     gpuStatus?: 'available' | 'unavailable';
     processScope?: 'all' | 'user';
     autoRefresh?: boolean;
     allowStopRequests?: boolean;
+    timeZone?: string;
   } = $props();
 
-  const dateTime = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'medium' });
+  let dateTime = $derived(
+    new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'medium', timeZone })
+  );
   const bytes = new Intl.NumberFormat(undefined, {
     style: 'unit',
     unit: 'gigabyte',

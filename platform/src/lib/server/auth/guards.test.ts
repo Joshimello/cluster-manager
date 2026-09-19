@@ -15,7 +15,8 @@ const normalUser: AuthUser = {
   role: 'user',
   posixUid: 20000,
   posixGid: 20000,
-  mustChangePassword: false
+  mustChangePassword: false,
+  timeZone: 'UTC'
 };
 
 describe('authentication guards', () => {

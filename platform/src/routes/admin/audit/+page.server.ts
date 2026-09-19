@@ -1,20 +1,30 @@
-import { and, asc, count, desc, eq, gte, ilike, lte, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gte, ilike, lt, or, sql, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 
 import { requireAdmin } from '$lib/server/auth/guards';
 import { getDatabase } from '$lib/server/db';
 import { auditEvents, users } from '$lib/server/db/schema';
+import { parseZonedDateTime } from '$lib/server/reservations/time';
+import { defaultTimeZone } from '$lib/time-zone';
 
 import type { PageServerLoad } from './$types';
 
-function validDate(value: string, endOfDay = false): Date | null {
+function validDate(value: string, timeZone: string): Date | null {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
-  const date = new Date(`${value}T${endOfDay ? '23:59:59.999' : '00:00:00.000'}Z`);
-  return Number.isNaN(date.getTime()) ? null : date;
+  return parseZonedDateTime(`${value}T00:00`, timeZone);
+}
+
+function nextDate(value: string): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== value) return null;
+  date.setUTCDate(date.getUTCDate() + 1);
+  return date.toISOString().slice(0, 10);
 }
 
 export const load: PageServerLoad = async ({ locals, url }) => {
-  requireAdmin(locals);
+  const user = requireAdmin(locals);
+  const timeZone = user.timeZone ?? defaultTimeZone;
   const actors = alias(users, 'actors');
   const query = url.searchParams.get('q')?.trim().slice(0, 100) ?? '';
   const actionValue = url.searchParams.get('action')?.trim().slice(0, 100) ?? '';
@@ -38,10 +48,11 @@ export const load: PageServerLoad = async ({ locals, url }) => {
   }
   if (action) filters.push(eq(auditEvents.action, action));
   if (actor) filters.push(ilike(actors.username, `%${actor}%`));
-  const fromDate = validDate(from);
-  const toDate = validDate(to, true);
+  const fromDate = validDate(from, timeZone);
+  const nextTo = nextDate(to);
+  const toDate = nextTo ? validDate(nextTo, timeZone) : null;
   if (fromDate) filters.push(gte(auditEvents.createdAt, fromDate));
-  if (toDate) filters.push(lte(auditEvents.createdAt, toDate));
+  if (toDate) filters.push(lt(auditEvents.createdAt, toDate));
   const where = filters.length > 0 ? and(...filters) : undefined;
 
   const database = getDatabase();

@@ -14,9 +14,9 @@ import { cancelReservation, createReservation } from '$lib/server/reservations/s
 import {
   formatDateTimeInput,
   nextHalfHour,
-  parseZonedDateTime,
-  reservationTimeZone
+  parseZonedDateTime
 } from '$lib/server/reservations/time';
+import { defaultTimeZone } from '$lib/time-zone';
 
 import type { Actions, PageServerLoad } from './$types';
 
@@ -25,7 +25,8 @@ function formString(formData: FormData, name: string): string {
 }
 
 export const load: PageServerLoad = async ({ locals }) => {
-  requireAdmin(locals);
+  const actor = requireAdmin(locals);
+  const timeZone = actor.timeZone ?? defaultTimeZone;
   const now = new Date();
   const [eligibleUsers, availableGpus, rows] = await Promise.all([
     getDatabase()
@@ -109,22 +110,23 @@ export const load: PageServerLoad = async ({ locals }) => {
               : 'upcoming',
       cancellable: reservation.status === 'active' && reservation.endAt > now
     })),
-    timeZone: reservationTimeZone,
-    defaultStart: formatDateTimeInput(defaultStart),
-    defaultEnd: formatDateTimeInput(new Date(defaultStart.getTime() + 2 * 60 * 60_000))
+    timeZone,
+    defaultStart: formatDateTimeInput(defaultStart, timeZone),
+    defaultEnd: formatDateTimeInput(new Date(defaultStart.getTime() + 2 * 60 * 60_000), timeZone)
   };
 };
 
 export const actions: Actions = {
   create: async ({ locals, request }) => {
     const actor = requireAdmin(locals);
+    const timeZone = actor.timeZone ?? defaultTimeZone;
     const formData = await request.formData();
     const target = formString(formData, 'target');
     const [userId = '', gpuId = '', extra] = target.split(':');
     const start = formString(formData, 'startAt');
     const end = formString(formData, 'endAt');
-    const startAt = parseZonedDateTime(start);
-    const endAt = parseZonedDateTime(end);
+    const startAt = parseZonedDateTime(start, timeZone);
+    const endAt = parseZonedDateTime(end, timeZone);
     const adminOverride = formData.get('adminOverride') === 'true';
     const overrideReason = formString(formData, 'overrideReason');
     const values = { target, startAt: start, endAt: end, adminOverride, overrideReason };
@@ -134,7 +136,7 @@ export const actions: Actions = {
     if (!startAt || !endAt) {
       return fail(400, {
         action: 'create',
-        message: `Enter unambiguous dates and times in ${reservationTimeZone}.`,
+        message: `Enter unambiguous dates and times in ${timeZone}.`,
         values
       });
     }

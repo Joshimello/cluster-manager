@@ -13,7 +13,8 @@ function createDatabase() {
 
   const client = postgres(env.DATABASE_URL, {
     max: 10,
-    prepare: false
+    prepare: false,
+    connection: { TimeZone: 'UTC' }
   });
 
   return drizzle(client, { schema });

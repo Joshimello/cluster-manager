@@ -5,11 +5,30 @@
   import LogOutIcon from '@lucide/svelte/icons/log-out';
   import ShieldAlertIcon from '@lucide/svelte/icons/shield-alert';
   import SettingsIcon from '@lucide/svelte/icons/settings';
+  import UserRoundCogIcon from '@lucide/svelte/icons/user-round-cog';
+  import { browser } from '$app/environment';
+  import { invalidateAll } from '$app/navigation';
   import { resolve } from '$app/paths';
   import { Button } from '$lib/components/ui/button/index.js';
   import '../app.css';
 
   let { data, children } = $props();
+  let detectingTimeZone = false;
+
+  $effect(() => {
+    if (!browser || !data.user || data.user.timeZone || detectingTimeZone) return;
+    detectingTimeZone = true;
+    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    void fetch(resolve('/api/account/time-zone'), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ timeZone })
+    })
+      .then(async (response) => {
+        if (response.ok) await invalidateAll();
+      })
+      .catch(() => undefined);
+  });
 </script>
 
 <header
@@ -50,6 +69,11 @@
               <span class="sr-only sm:hidden">Administration</span>
             </Button>
           {/if}
+          <Button href={resolve('/settings')} variant="ghost" size="sm">
+            <UserRoundCogIcon data-icon="inline-start" />
+            <span class="hidden sm:inline">Account</span>
+            <span class="sr-only sm:hidden">Account settings</span>
+          </Button>
         {/if}
         <span class="text-muted-foreground hidden max-w-40 truncate px-2 text-sm md:inline"
           >{data.user.displayName}</span

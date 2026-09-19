@@ -13,7 +13,13 @@
   import { Separator } from '$lib/components/ui/separator/index.js';
 
   let { data, form } = $props();
-  const dateTime = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'medium' });
+  let dateTime = $derived(
+    new Intl.DateTimeFormat(undefined, {
+      dateStyle: 'medium',
+      timeStyle: 'medium',
+      timeZone: data.user.timeZone ?? 'UTC'
+    })
+  );
 </script>
 
 <svelte:head><title>Workstations · Cluster Manager</title></svelte:head>

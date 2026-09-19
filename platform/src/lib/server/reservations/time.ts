@@ -1,4 +1,5 @@
-export const reservationTimeZone = 'Asia/Kuala_Lumpur';
+import { defaultTimeZone } from '$lib/time-zone';
+
 export const halfHourMilliseconds = 30 * 60_000;
 
 type LocalParts = {
@@ -47,7 +48,7 @@ function sameParts(left: LocalParts, right: LocalParts): boolean {
   );
 }
 
-export function parseZonedDateTime(value: string, timeZone = reservationTimeZone): Date | null {
+export function parseZonedDateTime(value: string, timeZone = defaultTimeZone): Date | null {
   const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(value);
   if (!match) return null;
   const desired: LocalParts = {
@@ -76,14 +77,14 @@ export function parseZonedDateTime(value: string, timeZone = reservationTimeZone
   }
 
   const candidates: Date[] = [];
-  for (let offsetMinutes = -14 * 60; offsetMinutes <= 14 * 60; offsetMinutes += 30) {
+  for (let offsetMinutes = -14 * 60; offsetMinutes <= 14 * 60; offsetMinutes += 15) {
     const candidate = new Date(naive + offsetMinutes * 60_000);
     if (sameParts(partsAt(candidate, timeZone), desired)) candidates.push(candidate);
   }
   return candidates.length === 1 ? candidates[0] : null;
 }
 
-export function formatDateTimeInput(date: Date, timeZone = reservationTimeZone): string {
+export function formatDateTimeInput(date: Date, timeZone = defaultTimeZone): string {
   const parts = partsAt(date, timeZone);
   const pad = (value: number) => String(value).padStart(2, '0');
   return `${parts.year}-${pad(parts.month)}-${pad(parts.day)}T${pad(parts.hour)}:${pad(parts.minute)}`;
@@ -93,7 +94,7 @@ export function nextHalfHour(date = new Date()): Date {
   return new Date(Math.ceil((date.getTime() + 1) / halfHourMilliseconds) * halfHourMilliseconds);
 }
 
-export function formatReservationTime(date: Date, timeZone = reservationTimeZone): string {
+export function formatReservationTime(date: Date, timeZone = defaultTimeZone): string {
   return new Intl.DateTimeFormat('en-MY', {
     timeZone,
     year: 'numeric',

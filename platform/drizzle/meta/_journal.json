@@ -71,6 +71,13 @@
       "when": 1789678500000,
       "tag": "0009_immutable_posix_identity",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1789809644565,
+      "tag": "0010_flippant_sage",
+      "breakpoints": true
     }
   ]
 }

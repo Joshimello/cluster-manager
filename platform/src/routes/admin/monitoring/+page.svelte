@@ -84,6 +84,7 @@
           gpus={workstation.gpus}
           gpuStatus={workstation.inventory?.gpuStatus ?? 'unavailable'}
           autoRefresh={false}
+          timeZone={data.user.timeZone ?? 'UTC'}
         />
       </section>
     {/each}

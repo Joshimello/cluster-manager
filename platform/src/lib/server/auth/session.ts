@@ -17,6 +17,7 @@ export type AuthUser = Readonly<{
   posixUid: number;
   posixGid: number;
   mustChangePassword: boolean;
+  timeZone: string | null;
 }>;
 
 export type AuthSession = Readonly<{
@@ -83,7 +84,8 @@ export async function validateSessionToken(token: string): Promise<SessionValida
       posixUid: users.posixUid,
       posixGid: users.posixGid,
       status: users.status,
-      mustChangePassword: users.mustChangePassword
+      mustChangePassword: users.mustChangePassword,
+      timeZone: users.timeZone
     })
     .from(sessions)
     .innerJoin(users, eq(sessions.userId, users.id))
@@ -111,7 +113,8 @@ export async function validateSessionToken(token: string): Promise<SessionValida
       role: result.role,
       posixUid: result.posixUid,
       posixGid: result.posixGid,
-      mustChangePassword: result.mustChangePassword
+      mustChangePassword: result.mustChangePassword,
+      timeZone: result.timeZone
     }
   };
 }

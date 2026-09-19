@@ -13,10 +13,13 @@
   import { Separator } from '$lib/components/ui/separator/index.js';
 
   let { data, form } = $props();
-  const dateFormatter = new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short'
-  });
+  let dateFormatter = $derived(
+    new Intl.DateTimeFormat(undefined, {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+      timeZone: data.user.timeZone ?? 'UTC'
+    })
+  );
   const bytes = new Intl.NumberFormat(undefined, {
     style: 'unit',
     unit: 'gigabyte',
