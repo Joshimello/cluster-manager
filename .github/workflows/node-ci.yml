@@ -48,6 +48,8 @@ jobs:
         run: npm run build
       - working-directory: platform
         run: npm run test:m8-2-db-smoke
+      - working-directory: platform
+        run: npm run test:maintenance-db
 
   test:
     runs-on: ubuntu-24.04

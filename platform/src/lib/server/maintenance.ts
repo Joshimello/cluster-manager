@@ -20,21 +20,25 @@ export function telemetryRetentionHours(value = process.env.TELEMETRY_RETENTION_
   return parsed;
 }
 
-export async function runMaintenance(now = new Date()): Promise<void> {
+export async function runMaintenance(now = new Date(), database = getDatabase()): Promise<void> {
   const retentionHours = telemetryRetentionHours();
   const cutoff = new Date(now.getTime() - retentionHours * 60 * 60_000);
-  const database = getDatabase();
+  const nowTimestamp = now.toISOString();
+  const cutoffTimestamp = cutoff.toISOString();
   const [sessionsResult, observationsResult] = await Promise.all([
     database.execute(sql`
       with expired as (
-        select id from sessions where expires_at <= ${now} order by expires_at limit 10000
+        select id from sessions
+        where expires_at <= ${nowTimestamp}::timestamptz
+        order by expires_at
+        limit 10000
       )
       delete from sessions where id in (select id from expired)
     `),
     database.execute(sql`
       with expired as (
         select id from gpu_observations
-        where observed_at < ${cutoff}
+        where observed_at < ${cutoffTimestamp}::timestamptz
         order by observed_at
         limit 50000
       )

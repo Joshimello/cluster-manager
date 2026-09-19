@@ -32,6 +32,7 @@
     "test:m6-smoke": "node scripts/m6-smoke.mjs",
     "test:m7-smoke": "node scripts/m7-smoke.mjs",
     "test:m8-2-db-smoke": "node scripts/m8-2-db-smoke.mjs",
+    "test:maintenance-db": "RUN_DATABASE_TESTS=true vitest run src/lib/server/maintenance.database.test.ts --maxWorkers=1",
     "test:watch": "vitest"
   },
   "devDependencies": {
