@@ -43,7 +43,7 @@ async function createAndLoginUser(admin, username, workstationId) {
   const created = await actionResult(
     await admin.form('/admin/users?/create', {
       username,
-      displayName: `M6 ${username}`,
+      displayName: `Correlation ${username}`,
       role: 'user'
     })
   );
@@ -61,7 +61,7 @@ async function createAndLoginUser(admin, username, workstationId) {
     await user.form('/login', { username, password: created.temporaryPassword })
   );
   assert.equal(result.redirect, '/change-password');
-  const password = `M6-correlation-${username}!`;
+  const password = `Correlation-${username}!`;
   result = await actionResult(
     await user.form('/change-password', {
       currentPassword: created.temporaryPassword,
@@ -163,7 +163,7 @@ try {
   assert.match(html, /4102/);
   assert.doesNotMatch(html, /Conflict/);
 
-  console.log('Milestone 6 correlation states, privacy, filters, and authorization passed.');
+  console.log('Process correlation states, privacy, filters, and authorization passed.');
 } finally {
   if (reservationIds.length > 0) {
     await sql`delete from reservations where id = any(${reservationIds})`;

@@ -48,7 +48,7 @@ async function createReadyUser(admin, username, workstationId) {
   let result = await actionResult(
     await admin.form('/admin/users?/create', {
       username,
-      displayName: `M5 ${username}`,
+      displayName: `Reservation ${username}`,
       role: 'user'
     })
   );
@@ -62,7 +62,7 @@ async function createReadyUser(admin, username, workstationId) {
   const user = new BrowserSession();
   result = await actionResult(await user.form('/login', { username, password: temporaryPassword }));
   assert.equal(result.redirect, '/change-password');
-  const permanentPassword = `M5-reservation-${username}!`;
+  const permanentPassword = `Reservation-${username}!`;
   result = await actionResult(
     await user.form('/change-password', {
       currentPassword: temporaryPassword,
@@ -108,7 +108,7 @@ try {
   result = await actionResult(
     await admin.form('/admin/users?/create', {
       username: disabledUsername,
-      displayName: `M5 ${disabledUsername}`,
+      displayName: `Reservation ${disabledUsername}`,
       role: 'user'
     })
   );
@@ -364,7 +364,7 @@ try {
   assert.equal(auditSummary.assignment_cancellations, 1);
 
   console.log(
-    'Milestone 5 and M8.2 reservation eligibility, targeted revocation cancellation, audit, and current-session retention passed.'
+    'Reservation eligibility, targeted revocation cancellation, audit, and current-session retention passed.'
   );
 } finally {
   if (reservationIds.length > 0) {

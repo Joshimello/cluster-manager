@@ -90,19 +90,19 @@ The smoke tests require the running development stack and an administrator accou
 ```bash
 docker compose -f docker-compose.dev.yml exec \
   -e ADMIN_USERNAME=admin -e ADMIN_PASSWORD='your-admin-password' \
-  platform npm run test:m3-smoke
+  platform npm run test:assignments-smoke
 
 docker compose -f docker-compose.dev.yml exec \
   -e ADMIN_USERNAME=admin -e ADMIN_PASSWORD='your-admin-password' \
-  platform npm run test:m4-smoke
+  platform npm run test:monitoring-smoke
 
 docker compose -f docker-compose.dev.yml exec \
   -e ADMIN_USERNAME=admin -e ADMIN_PASSWORD='your-admin-password' \
-  platform npm run test:m5-smoke
+  platform npm run test:reservations-smoke
 
 docker compose -f docker-compose.dev.yml exec \
   -e ADMIN_USERNAME=admin -e ADMIN_PASSWORD='your-admin-password' \
-  platform npm run test:m6-smoke
+  platform npm run test:process-correlation-smoke
 ```
 
 The stop-request test uses a deterministic conflict scenario:
@@ -112,7 +112,7 @@ NODE_WS01_SIMULATION_SCENARIO=reservation-conflict \
   docker compose -f docker-compose.dev.yml up -d --force-recreate node-ws01
 docker compose -f docker-compose.dev.yml exec \
   -e ADMIN_USERNAME=admin -e ADMIN_PASSWORD='your-admin-password' \
-  platform npm run test:m7-smoke
+  platform npm run test:stop-requests-smoke
 NODE_WS01_SIMULATION_SCENARIO=normal \
   docker compose -f docker-compose.dev.yml up -d --force-recreate node-ws01
 ```

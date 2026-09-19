@@ -68,9 +68,9 @@ try {
   assert.equal(result.redirect, '/dashboard');
 
   const suffix = Date.now().toString(36);
-  const username = `m3-${suffix}`;
-  const displayName = `M3 Smoke ${suffix}`;
-  const permanentPassword = `M3-shared-password-${suffix}!`;
+  const username = `assignment-${suffix}`;
+  const displayName = `Assignment Smoke ${suffix}`;
+  const permanentPassword = `Assignment-shared-password-${suffix}!`;
   result = await actionResult(
     await admin.form('/admin/users?/create', { username, displayName, role: 'user' })
   );
@@ -160,7 +160,7 @@ try {
   assert.equal(stillActive.provisioning_status, 'applied');
 
   console.log(
-    `M8.2 multi-assignment, password synchronization, duplicate rejection, and targeted revocation passed for ${username}.`
+    `Multi-assignment, password synchronization, duplicate rejection, and targeted revocation passed for ${username}.`
   );
 } finally {
   if (userId) {

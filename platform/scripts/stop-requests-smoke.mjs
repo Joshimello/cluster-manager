@@ -54,7 +54,7 @@ async function createAndLoginUser(admin, username, workstationId) {
   const created = await actionResult(
     await admin.form('/admin/users?/create', {
       username,
-      displayName: `M7 ${username}`,
+      displayName: `Stop request ${username}`,
       role: 'user'
     })
   );
@@ -71,7 +71,7 @@ async function createAndLoginUser(admin, username, workstationId) {
     await user.form('/login', { username, password: created.temporaryPassword })
   );
   assert.equal(result.redirect, '/change-password');
-  const password = `M7-intervention-${username}!`;
+  const password = `Intervention-${username}!`;
   result = await actionResult(
     await user.form('/change-password', {
       currentPassword: created.temporaryPassword,
@@ -185,7 +185,7 @@ try {
       ${reservation.id}, ${target.gpu_id}, ${target.workstation_id}, ${alice.id},
       'termination_requested', ${target.pid}, ${target.uid}, ${target.username},
       ${target.command}, ${target.memory_used_bytes}, ${Number(target.process_start_ticks) + 1},
-      'M7 identity mismatch test'
+      'Identity mismatch test'
     ) returning id
   `;
   const [mismatchInstruction] = await sql`
@@ -254,14 +254,14 @@ try {
   const credentialHash = createHash('sha256').update(fakeCredential).digest('hex');
   const [fakeWorkstation] = await sql`
     insert into workstations (name, display_name, credential_hash, enrolled_at)
-    values ('m7-api-node', 'M7 API Node', ${credentialHash}, now()) returning id
+    values ('stop-api-node', 'Stop Request API Node', ${credentialHash}, now()) returning id
   `;
   fakeWorkstationId = fakeWorkstation.id;
   const [fakeGpu] = await sql`
     insert into gpus (
       workstation_id, gpu_uuid, local_index, model, last_observed_at,
       utilization_percent, memory_used_bytes, memory_total_bytes
-    ) values (${fakeWorkstation.id}, 'GPU-m7-api', 0, 'API test GPU', now(), 0, 0, 1)
+    ) values (${fakeWorkstation.id}, 'GPU-stop-api', 0, 'API test GPU', now(), 0, 0, 1)
     returning id
   `;
   const [fakeReservation] = await sql`
@@ -285,7 +285,7 @@ try {
       target_uid, target_process_start_ticks, expires_at
     ) values (
       ${fakeRequest.id}, ${fakeWorkstation.id},
-      (select id from users where username = ${adminUsername}), 'GPU-m7-api',
+      (select id from users where username = ${adminUsername}), 'GPU-stop-api',
       4242, 1002, 12345, now() + interval '60 seconds'
     ) returning id
   `;
@@ -330,7 +330,7 @@ try {
       target_uid, target_process_start_ticks, expires_at
     ) values (
       ${expiredRequest.id}, ${fakeWorkstation.id},
-      (select id from users where username = ${adminUsername}), 'GPU-m7-api',
+      (select id from users where username = ${adminUsername}), 'GPU-stop-api',
       4343, 1002, 54321, now() - interval '1 second'
     ) returning id
   `;
@@ -367,7 +367,7 @@ try {
   );
 
   console.log(
-    'Milestone 7 request lifecycle, authorization, identity safety, replay protection, simulated termination, and auditing passed.'
+    'Stop-request lifecycle, authorization, identity safety, replay protection, simulated termination, and auditing passed.'
   );
 } finally {
   if (userIds.length > 0) {

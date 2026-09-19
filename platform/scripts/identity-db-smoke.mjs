@@ -27,8 +27,8 @@ async function createUser(index) {
     const [user] = await transaction`
       insert into users (username, display_name, posix_uid, posix_gid, password_hash)
       values (
-        ${`m82-${suffix}-${index}`},
-        ${`M8.2 database smoke ${index}`},
+        ${`identity-${suffix}-${index}`},
+        ${`Identity database smoke ${index}`},
         ${identity.posix_id},
         ${identity.posix_id},
         'test-only-hash'
@@ -57,21 +57,21 @@ try {
   await expectDatabaseCode(
     () => sql`
       insert into users (username, display_name, posix_uid, posix_gid, password_hash)
-      values (${`m82-bad-${suffix}`}, 'Bad identity', 19999, 19999, 'test-only-hash')
+      values (${`identity-bad-${suffix}`}, 'Bad identity', 19999, 19999, 'test-only-hash')
     `,
     '23514'
   );
   await expectDatabaseCode(
     () => sql`
       insert into users (username, display_name, posix_uid, posix_gid, password_hash)
-      values (${`m82-mismatch-${suffix}`}, 'Mismatched identity', 59000, 59001, 'test-only-hash')
+      values (${`identity-mismatch-${suffix}`}, 'Mismatched identity', 59000, 59001, 'test-only-hash')
     `,
     '23514'
   );
 
   const workstations = await sql`
     insert into workstations (name, display_name)
-    values (${`m82-a-${suffix}`}, 'M8.2 node A'), (${`m82-b-${suffix}`}, 'M8.2 node B')
+    values (${`identity-a-${suffix}`}, 'Identity node A'), (${`identity-b-${suffix}`}, 'Identity node B')
     returning id
   `;
   workstationIds.push(...workstations.map((workstation) => workstation.id));
@@ -104,7 +104,7 @@ try {
   userIds.push(replacement.id);
   assert.ok(replacement.posix_uid > identities.at(-1));
 
-  console.log('M8.2 database identity and multi-assignment smoke test passed.');
+  console.log('Database identity and multi-assignment smoke test passed.');
 } finally {
   if (userIds.length > 0) await sql`delete from users where id = any(${userIds})`;
   if (workstationIds.length > 0) {

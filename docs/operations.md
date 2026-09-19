@@ -69,10 +69,10 @@ equal UID/private-GID pair and nodes must create that exact identity. Monitor re
 sequence capacity as part of user onboarding; exhaustion rejects creation rather than
 reusing an identity.
 
-Deploy the platform and all nodes from the same M8.2-or-newer release window because
-the v1 desired-state shape now requires UID/GID. Incompatible payloads fail closed and
-leave accounts unchanged. Pre-M8.2 development accounts using host-selected IDs must
-be purged and recreated; there is intentionally no automatic renumbering.
+Deploy platform and node versions that both support platform-assigned POSIX identities,
+because the v1 desired-state shape requires UID/GID. Incompatible payloads fail closed
+and leave accounts unchanged. Development accounts using host-selected IDs must be
+purged and recreated; there is intentionally no automatic renumbering.
 
 Cluster Manager does not configure NFS or shared homes. If the lab supplies a shared
 project export, use `root_squash`, permit only managed client networks, and document
@@ -131,7 +131,7 @@ scripts/restore-database.sh --confirm-replace-database backups/cluster-manager-2
 docker compose up -d --wait
 ```
 
-The explicit confirmation flag prevents accidental replacement. The M8 rehearsal
+The explicit confirmation flag prevents accidental replacement. The production rehearsal
 performs a backup, deletes data, restores it, and verifies the recovered control plane:
 
 ```bash

@@ -96,11 +96,15 @@ try {
   assert.equal(processSummary.analyst_count, 2);
 
   const [existing] = await sql`select id from users where username = 'analyst'`;
-  assert.equal(existing, undefined, 'The M4 smoke test requires the development username analyst');
+  assert.equal(
+    existing,
+    undefined,
+    'The monitoring smoke test requires the development username analyst'
+  );
   result = await actionResult(
     await admin.form('/admin/users?/create', {
       username: 'analyst',
-      displayName: 'M4 Test Analyst',
+      displayName: 'Monitoring Test Analyst',
       role: 'user'
     })
   );
@@ -128,7 +132,7 @@ try {
     await user.form('/login', { username: 'analyst', password: temporaryPassword })
   );
   assert.equal(result.redirect, '/change-password');
-  const permanentPassword = `M4-monitoring-${Date.now()}!`;
+  const permanentPassword = `Monitoring-${Date.now()}!`;
   result = await actionResult(
     await user.form('/change-password', {
       currentPassword: temporaryPassword,
@@ -167,7 +171,7 @@ try {
   });
 
   console.log(
-    'Milestone 4 GPU inventory, changing telemetry, process attribution, visibility, and retention passed.'
+    'GPU inventory, changing telemetry, process attribution, visibility, and retention passed.'
   );
 } finally {
   if (userId) {

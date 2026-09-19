@@ -173,7 +173,7 @@ An existing unowned username, UID, group name, or GID is never adopted or renumb
 The node reports a collision before modifying ownership, credentials, groups, files,
 SSH policy, or subordinate ranges. A provenance-owned account whose UID/GID no longer
 matches reports `managed_identity_mismatch` and requires deliberate purge/recreation.
-Pre-M8.2 development accounts with host-assigned IDs are not migrated.
+Development accounts with host-assigned IDs are not migrated.
 
 Revocation locks the Linux password while preserving the account, home directory, and
 files. Existing processes and SSH sessions are not terminated. If desired state is

@@ -1,9 +1,9 @@
 #!/usr/bin/env sh
 set -eu
 
-project="cluster-manager-m8-$$"
+project="cluster-manager-rehearsal-$$"
 port="${REHEARSAL_PORT:-31080}"
-work="$(mktemp -d "${TMPDIR:-/tmp}/cluster-manager-m8.XXXXXX")"
+work="$(mktemp -d "${TMPDIR:-/tmp}/cluster-manager-rehearsal.XXXXXX")"
 environment="$work/rehearsal.env"
 backup="$work/rehearsal.dump"
 

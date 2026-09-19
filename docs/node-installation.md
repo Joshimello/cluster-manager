@@ -37,8 +37,8 @@ immutable UID and same-valued private primary GID, then creates that exact ident
 every assigned workstation. Do not let local account tooling, LDAP, or other
 provisioners allocate from this range.
 
-M8.2 does not renumber or adopt development accounts previously created with a
-host-selected UID/GID. On a disposable development node, use the destructive uninstall
+Cluster Manager does not renumber or adopt development accounts previously created
+with a host-selected UID/GID. On a disposable development node, use the destructive uninstall
 to purge those provenance-confirmed accounts, then set up the node again. Deleting only
 the ledger is unsafe: retained usernames become unowned collisions.
 
@@ -133,6 +133,6 @@ managed client networks, and use the reserved range above on the NAS and clients
 Consistent numeric IDs make normal NFS `AUTH_SYS` file ownership coherent across
 nodes; they do not protect the server from a privileged malicious client capable of
 presenting another UID. Shared project groups, ACL policy, LDAP/FreeIPA, Kerberos, and
-shared homes remain outside this milestone.
+shared homes are not currently managed by Cluster Manager.
 
 For recovery or development, see the [manual procedure](node-installation-manual.md).
