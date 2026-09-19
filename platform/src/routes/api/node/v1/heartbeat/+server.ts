@@ -52,6 +52,7 @@ export const POST: RequestHandler = async ({ request }) => {
           ? {
               inventoryObservedAt: report.observedAt,
               nodeVersion: report.nodeVersion,
+              nodeCapabilities: report.capabilities,
               hostname: report.hostname,
               bootId: report.bootId,
               uptimeSeconds: Math.floor(report.uptimeSeconds),

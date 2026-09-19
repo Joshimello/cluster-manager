@@ -14,6 +14,7 @@ export function presentWorkstation(workstation: Workstation) {
     lastHeartbeatAt: workstation.lastHeartbeatAt,
     inventoryObservedAt: workstation.inventoryObservedAt,
     nodeVersion: workstation.nodeVersion,
+    nodeCapabilities: workstation.nodeCapabilities,
     hostname: workstation.hostname,
     bootId: workstation.bootId,
     uptimeSeconds: workstation.uptimeSeconds,

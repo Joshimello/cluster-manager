@@ -114,6 +114,28 @@ replaced. Read the release notes before rollback: an older app may not understan
 newer schema. Prefer restoring the pre-upgrade backup with the matching release and
 set `PLATFORM_VERSION` back to that release tag.
 
+### Workstation node updates
+
+Once a node advertises managed-update support, an administrator can install an exact
+newer stable release from that workstation's detail page. Only online, active, enrolled
+nodes are eligible, only one update may be active per node, and the administrator must
+type the workstation name before dispatch. A pending instruction can be cancelled until
+the node claims it.
+
+The node verifies GitHub's release checksum and the candidate version before changing
+the installation. It then saves the current binary and service unit and arms a local
+rollback watchdog. The backup is removed only after the replacement authenticates and
+sends a healthy heartbeat; failure or loss of management-plane connectivity restores the
+previous version automatically. Success requires three consecutive authenticated
+heartbeats. Updates do not alter node configuration, credentials,
+accounts, homes, jobs, or provenance.
+
+Use a canary rollout: update one non-critical node, wait for **Succeeded**, confirm the
+reported version and telemetry, and run `sudo /usr/local/sbin/cluster-node doctor` before
+continuing. A node without the managed-update capability must be upgraded manually once.
+If an update reports **Rolled back** or **Failed**, preserve the node journal and platform
+audit record, investigate the release, and do not retry it across the fleet.
+
 ## Backup and restore
 
 Create and validate a PostgreSQL custom-format backup:
@@ -184,6 +206,10 @@ arguments, or process environments.
   fail before account/SSH mutation and appear on that assignment. Resolve the unrelated
   local identity or deliberately purge/recreate a provenance-owned development account;
   never delete the ledger to bypass the check.
+- **Node update failure:** the node keeps a local copy of the prior binary and unit and
+  restores them unless the replacement authenticates and confirms health before the
+  watchdog deadline. Review `journalctl -u cluster-node` and the update history before
+  trying another release.
 - **Restart:** Compose restarts the app/database unless stopped by an operator; systemd
   restarts a failed node. Reconciliation is idempotent and does not delete homes.
 

@@ -54,6 +54,7 @@ type Inventory struct {
 type Heartbeat struct {
 	ObservedAt    time.Time `json:"observedAt"`
 	NodeVersion   string    `json:"nodeVersion"`
+	Capabilities  []string  `json:"capabilities,omitempty"`
 	Hostname      string    `json:"hostname"`
 	BootID        string    `json:"bootId"`
 	UptimeSeconds uint64    `json:"uptimeSeconds"`
@@ -113,4 +114,21 @@ type TerminationResult struct {
 	Detail        string `json:"detail"`
 	TermSent      bool   `json:"termSent"`
 	KillSent      bool   `json:"killSent"`
+}
+
+type NodeUpdateInstruction struct {
+	APIVersion    string `json:"apiVersion"`
+	InstructionID string `json:"instructionId"`
+	Workstation   struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	} `json:"workstation"`
+	TargetVersion string    `json:"targetVersion"`
+	ExpiresAt     time.Time `json:"expiresAt"`
+}
+
+type NodeUpdateResult struct {
+	InstructionID string `json:"instructionId"`
+	Status        string `json:"status"`
+	Detail        string `json:"detail"`
 }

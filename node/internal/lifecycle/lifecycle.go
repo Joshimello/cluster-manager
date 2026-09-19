@@ -2,6 +2,7 @@ package lifecycle
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -14,6 +15,7 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -32,24 +34,47 @@ const (
 	ManagedStatePath   = "/var/lib/cluster-manager/managed-state.json"
 	defaultReleaseAPI  = "https://api.github.com/repos/" + Repository
 	defaultReleaseBase = "https://github.com/" + Repository + "/releases/download"
+	updateWatchdogUnit = "cluster-node-update-rollback"
 )
 
 type Paths struct {
 	Config, Credential, State, Binary, Unit, OldBinary, OldUnit, SSHPolicy string
+	UpdateState, PreviousBinary, PreviousUnit, CandidateBinary             string
 }
 
 func DefaultPaths() Paths {
 	return Paths{
-		Config:     config.DefaultPath,
-		Credential: "/var/lib/cluster-manager/node-credential",
-		State:      ManagedStatePath,
-		Binary:     "/usr/local/sbin/cluster-node",
-		Unit:       "/etc/systemd/system/cluster-node.service",
-		OldBinary:  "/usr/local/sbin/cluster-manager-node",
-		OldUnit:    "/etc/systemd/system/cluster-manager-node.service",
-		SSHPolicy:  "/etc/ssh/sshd_config.d/60-cluster-manager.conf",
+		Config:          config.DefaultPath,
+		Credential:      "/var/lib/cluster-manager/node-credential",
+		State:           ManagedStatePath,
+		Binary:          "/usr/local/sbin/cluster-node",
+		Unit:            "/etc/systemd/system/cluster-node.service",
+		OldBinary:       "/usr/local/sbin/cluster-manager-node",
+		OldUnit:         "/etc/systemd/system/cluster-manager-node.service",
+		SSHPolicy:       "/etc/ssh/sshd_config.d/60-cluster-manager.conf",
+		UpdateState:     "/var/lib/cluster-manager/update-state.json",
+		PreviousBinary:  "/var/lib/cluster-manager/cluster-node.previous",
+		PreviousUnit:    "/var/lib/cluster-manager/cluster-node.service.previous",
+		CandidateBinary: "/var/lib/cluster-manager/cluster-node.candidate",
 	}
 }
+
+type ManagedUpdateState struct {
+	SchemaVersion     int        `json:"schemaVersion"`
+	InstructionID     string     `json:"instructionId"`
+	PreviousVersion   string     `json:"previousVersion"`
+	TargetVersion     string     `json:"targetVersion"`
+	Phase             string     `json:"phase"`
+	CreatedAt         time.Time  `json:"createdAt"`
+	HealthySince      *time.Time `json:"healthySince,omitempty"`
+	LastHealthyAt     *time.Time `json:"lastHealthyAt,omitempty"`
+	HealthyHeartbeats int        `json:"healthyHeartbeats,omitempty"`
+}
+
+var (
+	stableVersionPattern = regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
+	uuidPattern          = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$`)
+)
 
 type Manager struct {
 	Paths       Paths
@@ -280,27 +305,9 @@ func (m *Manager) Upgrade(ctx context.Context, requestedVersion string) error {
 	if !validVersion(version) {
 		return fmt.Errorf("invalid release version %q", version)
 	}
-	arch, err := releaseArchitecture(runtime.GOARCH)
+	binary, err := m.releaseBinary(ctx, version)
 	if err != nil {
 		return err
-	}
-	asset := "cluster-node-linux-" + arch
-	base := strings.TrimRight(m.ReleaseBase, "/") + "/" + version
-	checksums, err := m.download(ctx, base+"/checksums.txt", 1<<20)
-	if err != nil {
-		return err
-	}
-	expected, err := checksumFor(checksums, asset)
-	if err != nil {
-		return err
-	}
-	binary, err := m.download(ctx, base+"/"+asset, 256<<20)
-	if err != nil {
-		return err
-	}
-	actual := sha256.Sum256(binary)
-	if hex.EncodeToString(actual[:]) != expected {
-		return errors.New("downloaded binary SHA-256 does not match checksums.txt")
 	}
 	if err := atomicWrite(m.Paths.Binary, binary, 0o755); err != nil {
 		return err
@@ -327,6 +334,292 @@ func (m *Manager) Upgrade(ctx context.Context, requestedVersion string) error {
 		return err
 	}
 	fmt.Fprintf(m.Out, "Upgraded cluster-node to %s.\n", version)
+	return nil
+}
+
+func (m *Manager) PrepareManagedUpdate(ctx context.Context, instructionID, targetVersion string) error {
+	if err := requireRoot(); err != nil {
+		return err
+	}
+	if !uuidPattern.MatchString(instructionID) {
+		return errors.New("invalid managed update instruction ID")
+	}
+	if !stableVersionPattern.MatchString(targetVersion) {
+		return fmt.Errorf("invalid stable release version %q", targetVersion)
+	}
+	if _, err := m.LoadManagedUpdateState(); err == nil {
+		return errors.New("another managed update is already pending local confirmation")
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+
+	binary, err := m.releaseBinary(ctx, targetVersion)
+	if err != nil {
+		return err
+	}
+	if err := atomicWrite(m.Paths.CandidateBinary, binary, 0o755); err != nil {
+		return fmt.Errorf("stage update candidate: %w", err)
+	}
+	defer func() { _ = os.Remove(m.Paths.CandidateBinary) }()
+	if err := validateCandidateVersion(ctx, m.Paths.CandidateBinary, targetVersion); err != nil {
+		return err
+	}
+
+	currentBinary, err := os.ReadFile(m.Paths.Binary)
+	if err != nil {
+		return fmt.Errorf("read current node binary: %w", err)
+	}
+	currentUnit, err := os.ReadFile(m.Paths.Unit)
+	if err != nil {
+		return fmt.Errorf("read current service unit: %w", err)
+	}
+	if err := atomicWrite(m.Paths.PreviousBinary, currentBinary, 0o755); err != nil {
+		return fmt.Errorf("save previous node binary: %w", err)
+	}
+	if err := atomicWrite(m.Paths.PreviousUnit, currentUnit, 0o644); err != nil {
+		_ = os.Remove(m.Paths.PreviousBinary)
+		return fmt.Errorf("save previous service unit: %w", err)
+	}
+	state := ManagedUpdateState{
+		SchemaVersion:   1,
+		InstructionID:   instructionID,
+		PreviousVersion: m.Version,
+		TargetVersion:   targetVersion,
+		Phase:           "prepared",
+		CreatedAt:       time.Now().UTC(),
+	}
+	if err := m.writeManagedUpdateState(state); err != nil {
+		_ = m.removeManagedUpdateFiles()
+		return fmt.Errorf("record managed update rollback state: %w", err)
+	}
+	if err := m.armUpdateWatchdog(ctx, instructionID); err != nil {
+		_ = m.removeManagedUpdateFiles()
+		return fmt.Errorf("arm managed update rollback watchdog: %w", err)
+	}
+
+	failAfterArming := func(cause error) error {
+		if restoreErr := m.restorePreparedUpdate(ctx); restoreErr != nil {
+			return fmt.Errorf("%v; automatic immediate restore also failed: %w", cause, restoreErr)
+		}
+		return cause
+	}
+	if err := atomicWrite(m.Paths.Binary, binary, 0o755); err != nil {
+		return failAfterArming(fmt.Errorf("install update candidate: %w", err))
+	}
+	if err := atomicWrite(m.Paths.Unit, []byte(ServiceUnit), 0o644); err != nil {
+		return failAfterArming(fmt.Errorf("install service unit: %w", err))
+	}
+	if err := command(ctx, "systemctl", "daemon-reload"); err != nil {
+		return failAfterArming(err)
+	}
+	if err := command(ctx, "systemctl", "restart", "--no-block", "cluster-node.service"); err != nil {
+		return failAfterArming(fmt.Errorf("restart updated node: %w", err))
+	}
+	return nil
+}
+
+func (m *Manager) LoadManagedUpdateState() (ManagedUpdateState, error) {
+	var state ManagedUpdateState
+	contents, err := os.ReadFile(m.Paths.UpdateState)
+	if err != nil {
+		return state, err
+	}
+	decoder := json.NewDecoder(bytes.NewReader(contents))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&state); err != nil {
+		return state, fmt.Errorf("decode managed update state: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return state, errors.New("managed update state contains trailing data")
+	}
+	healthInvalid := state.HealthyHeartbeats < 0 ||
+		(state.HealthyHeartbeats == 0 && (state.HealthySince != nil || state.LastHealthyAt != nil)) ||
+		(state.HealthyHeartbeats > 0 && (state.HealthySince == nil || state.LastHealthyAt == nil)) ||
+		(state.HealthySince != nil && state.LastHealthyAt != nil && state.LastHealthyAt.Before(*state.HealthySince))
+	if state.SchemaVersion != 1 || !uuidPattern.MatchString(state.InstructionID) || !stableVersionPattern.MatchString(state.TargetVersion) || (state.Phase != "prepared" && state.Phase != "rolled_back") || state.CreatedAt.IsZero() || healthInvalid {
+		return state, errors.New("managed update state is invalid")
+	}
+	return state, nil
+}
+
+func (m *Manager) RollbackManagedUpdate(ctx context.Context, instructionID string) error {
+	if err := requireRoot(); err != nil {
+		return err
+	}
+	state, err := m.LoadManagedUpdateState()
+	if err != nil {
+		return err
+	}
+	if state.InstructionID != instructionID {
+		return errors.New("managed update instruction does not match rollback state")
+	}
+	if state.Phase == "rolled_back" {
+		return nil
+	}
+	previousBinary, err := os.ReadFile(m.Paths.PreviousBinary)
+	if err != nil {
+		return fmt.Errorf("read rollback binary: %w", err)
+	}
+	previousUnit, err := os.ReadFile(m.Paths.PreviousUnit)
+	if err != nil {
+		return fmt.Errorf("read rollback service unit: %w", err)
+	}
+	if err := atomicWrite(m.Paths.Binary, previousBinary, 0o755); err != nil {
+		return fmt.Errorf("restore previous node binary: %w", err)
+	}
+	if err := atomicWrite(m.Paths.Unit, previousUnit, 0o644); err != nil {
+		return fmt.Errorf("restore previous service unit: %w", err)
+	}
+	if err := command(ctx, "systemctl", "daemon-reload"); err != nil {
+		return err
+	}
+	if err := command(ctx, "systemctl", "restart", "--no-block", "cluster-node.service"); err != nil {
+		return err
+	}
+	state.Phase = "rolled_back"
+	return m.writeManagedUpdateState(state)
+}
+
+func (m *Manager) ConfirmManagedUpdate(ctx context.Context, instructionID string) error {
+	state, err := m.LoadManagedUpdateState()
+	if err != nil {
+		return err
+	}
+	if state.InstructionID != instructionID {
+		return errors.New("managed update instruction does not match confirmation state")
+	}
+	if err := m.disarmUpdateWatchdog(ctx); err != nil {
+		return err
+	}
+	return m.removeManagedUpdateFiles()
+}
+
+func (m *Manager) RecordManagedUpdateHeartbeat(instructionID string, now time.Time, maximumGap time.Duration) (ManagedUpdateState, error) {
+	state, err := m.LoadManagedUpdateState()
+	if err != nil {
+		return state, err
+	}
+	if state.InstructionID != instructionID || state.Phase != "prepared" {
+		return state, errors.New("managed update heartbeat does not match prepared state")
+	}
+	now = now.UTC()
+	if state.LastHealthyAt == nil || now.Sub(*state.LastHealthyAt) > maximumGap || now.Before(*state.LastHealthyAt) {
+		state.HealthySince = &now
+		state.HealthyHeartbeats = 1
+	} else {
+		state.HealthyHeartbeats++
+	}
+	state.LastHealthyAt = &now
+	if err := m.writeManagedUpdateState(state); err != nil {
+		return state, err
+	}
+	return state, nil
+}
+
+func (m *Manager) writeManagedUpdateState(state ManagedUpdateState) error {
+	contents, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		return err
+	}
+	return atomicWrite(m.Paths.UpdateState, append(contents, '\n'), 0o600)
+}
+
+func (m *Manager) armUpdateWatchdog(ctx context.Context, instructionID string) error {
+	_ = m.disarmUpdateWatchdog(ctx)
+	return command(
+		ctx,
+		"systemd-run",
+		"--unit="+updateWatchdogUnit,
+		"--on-active=2m",
+		"--timer-property=AccuracySec=1s",
+		"--property=Type=oneshot",
+		"--property=Restart=on-failure",
+		"--property=RestartSec=10s",
+		"--",
+		m.Paths.PreviousBinary,
+		"rollback-update",
+		"--instruction-id",
+		instructionID,
+	)
+}
+
+func (m *Manager) disarmUpdateWatchdog(ctx context.Context) error {
+	_ = exec.CommandContext(ctx, "systemctl", "stop", updateWatchdogUnit+".timer", updateWatchdogUnit+".service").Run()
+	for _, unit := range []string{updateWatchdogUnit + ".timer", updateWatchdogUnit + ".service"} {
+		if exec.CommandContext(ctx, "systemctl", "is-active", "--quiet", unit).Run() == nil {
+			return fmt.Errorf("rollback watchdog unit %s is still active", unit)
+		}
+	}
+	_ = exec.CommandContext(ctx, "systemctl", "reset-failed", updateWatchdogUnit+".service").Run()
+	return nil
+}
+
+func (m *Manager) restorePreparedUpdate(ctx context.Context) error {
+	previousBinary, binaryErr := os.ReadFile(m.Paths.PreviousBinary)
+	previousUnit, unitErr := os.ReadFile(m.Paths.PreviousUnit)
+	if binaryErr != nil || unitErr != nil {
+		return fmt.Errorf("read rollback files: binary=%v unit=%v", binaryErr, unitErr)
+	}
+	if err := atomicWrite(m.Paths.Binary, previousBinary, 0o755); err != nil {
+		return err
+	}
+	if err := atomicWrite(m.Paths.Unit, previousUnit, 0o644); err != nil {
+		return err
+	}
+	if err := command(ctx, "systemctl", "daemon-reload"); err != nil {
+		return err
+	}
+	if err := m.disarmUpdateWatchdog(ctx); err != nil {
+		return err
+	}
+	return m.removeManagedUpdateFiles()
+}
+
+func (m *Manager) removeManagedUpdateFiles() error {
+	for _, path := range []string{m.Paths.UpdateState, m.Paths.PreviousBinary, m.Paths.PreviousUnit, m.Paths.CandidateBinary} {
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("remove managed update file %s: %w", path, err)
+		}
+	}
+	return nil
+}
+
+func (m *Manager) releaseBinary(ctx context.Context, version string) ([]byte, error) {
+	arch, err := releaseArchitecture(runtime.GOARCH)
+	if err != nil {
+		return nil, err
+	}
+	asset := "cluster-node-linux-" + arch
+	base := strings.TrimRight(m.ReleaseBase, "/") + "/" + version
+	checksums, err := m.download(ctx, base+"/checksums.txt", 1<<20)
+	if err != nil {
+		return nil, err
+	}
+	expected, err := checksumFor(checksums, asset)
+	if err != nil {
+		return nil, err
+	}
+	binary, err := m.download(ctx, base+"/"+asset, 256<<20)
+	if err != nil {
+		return nil, err
+	}
+	actual := sha256.Sum256(binary)
+	if hex.EncodeToString(actual[:]) != expected {
+		return nil, errors.New("downloaded binary SHA-256 does not match checksums.txt")
+	}
+	return binary, nil
+}
+
+func validateCandidateVersion(ctx context.Context, path, targetVersion string) error {
+	checkContext, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	output, err := exec.CommandContext(checkContext, path, "--version").CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("validate update candidate: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+	if strings.TrimSpace(string(output)) != "cluster-node "+targetVersion {
+		return fmt.Errorf("update candidate reported unexpected version %q", strings.TrimSpace(string(output)))
+	}
 	return nil
 }
 
@@ -369,6 +662,7 @@ func (m *Manager) Uninstall(ctx context.Context, dryRun, purge bool) error {
 	for _, service := range []string{"cluster-node.service", "cluster-manager-node.service"} {
 		_ = command(ctx, "systemctl", "stop", service)
 	}
+	_ = m.disarmUpdateWatchdog(ctx)
 	if purge {
 		hostname, _ := os.Hostname()
 		input, terminal := m.In.(*os.File)
@@ -415,7 +709,7 @@ func (m *Manager) Uninstall(ctx context.Context, dryRun, purge bool) error {
 	for _, service := range []string{"cluster-node.service", "cluster-manager-node.service"} {
 		_ = command(ctx, "systemctl", "disable", "--now", service)
 	}
-	for _, path := range []string{m.Paths.Config, m.Paths.Credential, m.Paths.Unit, m.Paths.OldUnit, m.Paths.Binary, m.Paths.OldBinary} {
+	for _, path := range []string{m.Paths.Config, m.Paths.Credential, m.Paths.Unit, m.Paths.OldUnit, m.Paths.Binary, m.Paths.OldBinary, m.Paths.UpdateState, m.Paths.PreviousBinary, m.Paths.PreviousUnit, m.Paths.CandidateBinary} {
 		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("remove %s: %w", path, err)
 		}
@@ -698,6 +992,22 @@ func validVersion(value string) bool {
 	return true
 }
 
+func IsNewerStableVersion(current, target string) bool {
+	currentParts := stableVersionPattern.FindStringSubmatch(current)
+	targetParts := stableVersionPattern.FindStringSubmatch(target)
+	if currentParts == nil || targetParts == nil {
+		return false
+	}
+	for index := 1; index <= 3; index++ {
+		left, _ := strconv.Atoi(currentParts[index])
+		right, _ := strconv.Atoi(targetParts[index])
+		if left != right {
+			return right > left
+		}
+	}
+	return false
+}
+
 func validateHost(ctx context.Context) error {
 	if runtime.GOOS != "linux" || (runtime.GOARCH != "amd64" && runtime.GOARCH != "arm64") {
 		return fmt.Errorf("cluster-node setup supports Debian and Ubuntu Linux on amd64 and arm64")
@@ -756,10 +1066,26 @@ func atomicWrite(path string, contents []byte, mode os.FileMode) error {
 		return err
 	}
 	temporary := path + ".new"
-	if err := os.WriteFile(temporary, contents, mode); err != nil {
+	file, err := os.OpenFile(temporary, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode)
+	if err != nil {
 		return err
 	}
-	if err := os.Chmod(temporary, mode); err != nil {
+	if _, err := file.Write(contents); err != nil {
+		_ = file.Close()
+		_ = os.Remove(temporary)
+		return err
+	}
+	if err := file.Chmod(mode); err != nil {
+		_ = file.Close()
+		_ = os.Remove(temporary)
+		return err
+	}
+	if err := file.Sync(); err != nil {
+		_ = file.Close()
+		_ = os.Remove(temporary)
+		return err
+	}
+	if err := file.Close(); err != nil {
 		_ = os.Remove(temporary)
 		return err
 	}
@@ -767,7 +1093,12 @@ func atomicWrite(path string, contents []byte, mode os.FileMode) error {
 		_ = os.Remove(temporary)
 		return err
 	}
-	return nil
+	directory, err := os.Open(filepath.Dir(path))
+	if err != nil {
+		return err
+	}
+	defer directory.Close()
+	return directory.Sync()
 }
 
 func command(ctx context.Context, name string, args ...string) error {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/Joshimello/cluster-manager/node/internal/controlplane"
 	"github.com/Joshimello/cluster-manager/node/internal/credential"
 	"github.com/Joshimello/cluster-manager/node/internal/inventory"
+	"github.com/Joshimello/cluster-manager/node/internal/lifecycle"
 	"github.com/Joshimello/cluster-manager/node/internal/protocol"
 	"github.com/Joshimello/cluster-manager/node/internal/reconcile"
 	"github.com/Joshimello/cluster-manager/node/internal/termination"
@@ -26,6 +28,7 @@ type Agent struct {
 	collector  inventory.Collector
 	reconciler reconcile.Reconciler
 	terminator termination.Executor
+	updater    *lifecycle.Manager
 }
 
 func New(cfg config.Config, version string, logger *log.Logger) (*Agent, error) {
@@ -41,7 +44,7 @@ func New(cfg config.Config, version string, logger *log.Logger) (*Agent, error) 
 		reconciler = reconcile.NewSimulated(cfg.WorkstationName)
 		terminator = simulated
 	}
-	return &Agent{config: cfg, version: version, logger: logger, client: controlplane.New(cfg.PlatformURL), collector: collector, reconciler: reconciler, terminator: terminator}, nil
+	return &Agent{config: cfg, version: version, logger: logger, client: controlplane.New(cfg.PlatformURL), collector: collector, reconciler: reconciler, terminator: terminator, updater: lifecycle.New(version, os.Stdin, io.Discard, io.Discard)}, nil
 }
 
 func (a *Agent) Run(ctx context.Context) error {
@@ -89,6 +92,7 @@ func (a *Agent) Run(ctx context.Context) error {
 			continue
 		}
 		if err == nil {
+			report.Capabilities = []string{"managed-update-v1"}
 			err = a.client.Heartbeat(ctx, nodeCredential, report)
 		}
 		if err != nil {
@@ -98,6 +102,14 @@ func (a *Agent) Run(ctx context.Context) error {
 			}
 			backoff = min(backoff*2, 30*time.Second)
 			continue
+		}
+		restarting, updateErr := a.handleManagedUpdate(ctx, nodeCredential)
+		if updateErr != nil {
+			a.logger.Printf("managed update unavailable: %v", updateErr)
+		}
+		if restarting {
+			a.logger.Printf("managed update installed; handing control to systemd restart")
+			return nil
 		}
 		instruction, terminationErr := a.client.NextTermination(ctx, nodeCredential)
 		if terminationErr != nil {
@@ -134,6 +146,79 @@ func (a *Agent) Run(ctx context.Context) error {
 			return ctx.Err()
 		}
 	}
+}
+
+func (a *Agent) handleManagedUpdate(ctx context.Context, nodeCredential string) (bool, error) {
+	state, stateErr := a.updater.LoadManagedUpdateState()
+	if stateErr == nil {
+		switch {
+		case state.Phase == "prepared" && a.version == state.TargetVersion:
+			state, err := a.updater.RecordManagedUpdateHeartbeat(state.InstructionID, time.Now(), a.config.HeartbeatInterval*3)
+			if err != nil {
+				return false, fmt.Errorf("record updated-node health: %w", err)
+			}
+			if state.HealthyHeartbeats < 3 {
+				a.logger.Printf("managed update %s passed health heartbeat %d of 3", state.InstructionID, state.HealthyHeartbeats)
+				return false, nil
+			}
+			result := protocol.NodeUpdateResult{InstructionID: state.InstructionID, Status: "succeeded", Detail: "The updated node authenticated and completed three consecutive healthy heartbeats."}
+			if err := a.client.ReportUpdate(ctx, nodeCredential, result); err != nil {
+				return false, fmt.Errorf("report successful update before watchdog deadline: %w", err)
+			}
+			if err := a.updater.ConfirmManagedUpdate(ctx, state.InstructionID); err != nil {
+				return false, fmt.Errorf("confirm successful update: %w", err)
+			}
+			a.logger.Printf("managed update %s confirmed at %s", state.InstructionID, state.TargetVersion)
+			return false, nil
+		case state.Phase == "rolled_back" && a.version == state.PreviousVersion:
+			result := protocol.NodeUpdateResult{InstructionID: state.InstructionID, Status: "rolled_back", Detail: "The replacement did not confirm healthy before the local deadline; the previous binary and service unit were restored."}
+			if err := a.client.ReportUpdate(ctx, nodeCredential, result); err != nil {
+				return false, fmt.Errorf("report rolled-back update: %w", err)
+			}
+			if err := a.updater.ConfirmManagedUpdate(ctx, state.InstructionID); err != nil {
+				return false, fmt.Errorf("clean up rolled-back update: %w", err)
+			}
+			a.logger.Printf("managed update %s rollback reported", state.InstructionID)
+			return false, nil
+		default:
+			return false, nil
+		}
+	}
+	if !errors.Is(stateErr, os.ErrNotExist) {
+		return false, fmt.Errorf("local rollback state is unreadable; refusing another update: %w", stateErr)
+	}
+
+	instruction, err := a.client.NextUpdate(ctx, nodeCredential)
+	if err != nil || instruction == nil {
+		return false, err
+	}
+	result := protocol.NodeUpdateResult{InstructionID: instruction.InstructionID}
+	if instruction.Workstation.Name != a.config.WorkstationName || !time.Now().Before(instruction.ExpiresAt) {
+		result.Status = "failed"
+		result.Detail = "The instruction is expired or belongs to another workstation; no local files were changed."
+		return false, a.client.ReportUpdate(ctx, nodeCredential, result)
+	}
+	if !lifecycle.IsNewerStableVersion(a.version, instruction.TargetVersion) {
+		result.Status = "failed"
+		result.Detail = "The requested target is not a newer stable release; no local files were changed."
+		return false, a.client.ReportUpdate(ctx, nodeCredential, result)
+	}
+	result.Status = "restarting"
+	result.Detail = "The release is being verified and installed with an automatic local rollback deadline."
+	if err := a.client.ReportUpdate(ctx, nodeCredential, result); err != nil {
+		return false, fmt.Errorf("acknowledge update before local changes: %w", err)
+	}
+	if err := a.updater.PrepareManagedUpdate(ctx, instruction.InstructionID, instruction.TargetVersion); err != nil {
+		if _, stateErr := a.updater.LoadManagedUpdateState(); stateErr == nil {
+			return false, fmt.Errorf("prepare update; rollback watchdog remains armed: %w", err)
+		}
+		failure := protocol.NodeUpdateResult{InstructionID: instruction.InstructionID, Status: "failed", Detail: "The release could not be safely staged; the existing installation was retained."}
+		if reportErr := a.client.ReportUpdate(ctx, nodeCredential, failure); reportErr != nil {
+			return false, fmt.Errorf("prepare update: %v; report failure: %w", err, reportErr)
+		}
+		return false, fmt.Errorf("prepare update: %w", err)
+	}
+	return true, nil
 }
 
 func (a *Agent) retry(ctx context.Context, operation string, attempt func() error) error {

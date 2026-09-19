@@ -8,6 +8,7 @@ export type ConnectionState = 'never' | 'online' | 'stale' | 'offline';
 export type HeartbeatReport = {
   observedAt: Date;
   nodeVersion: string;
+  capabilities: string[];
   hostname: string;
   bootId: string;
   uptimeSeconds: number;
@@ -66,6 +67,7 @@ export function parseHeartbeatReport(value: unknown): HeartbeatReport | null {
   const sessions = inventory?.sessions;
   const gpus = inventory?.gpus;
   const gpuProcesses = inventory?.gpuProcesses;
+  const capabilities = root?.capabilities ?? [];
   const observedAtText = text(root?.observedAt, 64);
   const observedAt = observedAtText ? new Date(observedAtText) : null;
 
@@ -112,7 +114,14 @@ export function parseHeartbeatReport(value: unknown): HeartbeatReport | null {
     !Array.isArray(gpus) ||
     gpus.length > 32 ||
     !Array.isArray(gpuProcesses) ||
-    gpuProcesses.length > 4096
+    gpuProcesses.length > 4096 ||
+    !Array.isArray(capabilities) ||
+    capabilities.length > 32 ||
+    capabilities.some(
+      (capability) =>
+        typeof capability !== 'string' || capability.length < 1 || capability.length > 64
+    ) ||
+    new Set(capabilities).size !== capabilities.length
   ) {
     return null;
   }
@@ -211,6 +220,7 @@ export function parseHeartbeatReport(value: unknown): HeartbeatReport | null {
   return {
     observedAt,
     nodeVersion,
+    capabilities,
     hostname,
     bootId,
     uptimeSeconds,

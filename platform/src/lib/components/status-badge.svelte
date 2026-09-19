@@ -10,7 +10,10 @@
       value === 'disabled' ||
       value === 'not enrolled' ||
       value === 'error' ||
-      value === 'revoked'
+      value === 'revoked' ||
+      value === 'failed' ||
+      value === 'rolled_back' ||
+      value === 'expired'
     ) {
       return 'destructive';
     }
@@ -19,7 +22,8 @@
       value === 'active' ||
       value === 'enrolled' ||
       value === 'applied' ||
-      value === 'current'
+      value === 'current' ||
+      value === 'succeeded'
     )
       return 'default';
     return 'secondary';
@@ -28,5 +32,5 @@
 
 <Badge variant={variantFor(status)} class="capitalize">
   <CircleIcon class="size-2 fill-current" aria-hidden="true" />
-  {status}
+  {status.replaceAll('_', ' ')}
 </Badge>

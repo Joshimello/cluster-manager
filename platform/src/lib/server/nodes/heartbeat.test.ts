@@ -5,6 +5,7 @@ import { deriveConnectionState, parseHeartbeatReport } from './heartbeat';
 const report = {
   observedAt: '2026-09-16T00:00:00.000Z',
   nodeVersion: 'dev',
+  capabilities: ['managed-update-v1'],
   hostname: 'ws01',
   bootId: 'simulation-boot',
   uptimeSeconds: 120,
@@ -42,7 +43,17 @@ const report = {
 
 describe('parseHeartbeatReport', () => {
   it('accepts a complete bounded report', () => {
-    expect(parseHeartbeatReport(report)).toMatchObject({ hostname: 'ws01', uptimeSeconds: 120 });
+    expect(parseHeartbeatReport(report)).toMatchObject({
+      hostname: 'ws01',
+      uptimeSeconds: 120,
+      capabilities: ['managed-update-v1']
+    });
+  });
+
+  it('accepts legacy reports without capabilities and rejects duplicates', () => {
+    const legacy = { ...report, capabilities: undefined };
+    expect(parseHeartbeatReport(legacy)?.capabilities).toEqual([]);
+    expect(parseHeartbeatReport({ ...report, capabilities: ['x', 'x'] })).toBeNull();
   });
 
   it('rejects impossible or incomplete inventory', () => {

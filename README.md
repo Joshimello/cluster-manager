@@ -19,7 +19,8 @@ reconciles those accounts and reports host and NVIDIA telemetry.
 - Per-GPU reservations with conflict detection and privacy-aware user views
 - User stop requests and narrowly scoped, administrator-approved process termination
 - Audited privileged actions, node enrollment, credential rotation, and revocation
-- Release-backed `cluster-node` installation, diagnostics, upgrades, and safe uninstall
+- Release-backed `cluster-node` installation, diagnostics, safe uninstall, and
+  rollback-protected updates from the admin UI
 - Docker Compose development environment with two simulated GPU workstations
 
 ## Architecture

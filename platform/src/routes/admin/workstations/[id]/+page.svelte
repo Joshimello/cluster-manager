@@ -3,16 +3,27 @@
   import CpuIcon from '@lucide/svelte/icons/cpu';
   import DatabaseIcon from '@lucide/svelte/icons/database';
   import MemoryStickIcon from '@lucide/svelte/icons/memory-stick';
+  import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
+  import ShieldCheckIcon from '@lucide/svelte/icons/shield-check';
+  import { onMount } from 'svelte';
+  import { invalidateAll } from '$app/navigation';
   import { resolve } from '$app/paths';
+  import FeedbackAlert from '$lib/components/feedback-alert.svelte';
   import GpuMonitor from '$lib/components/gpu-monitor.svelte';
   import PageHeader from '$lib/components/page-header.svelte';
   import StatusBadge from '$lib/components/status-badge.svelte';
   import { Button } from '$lib/components/ui/button/index.js';
   import * as Card from '$lib/components/ui/card/index.js';
+  import { Input } from '$lib/components/ui/input/index.js';
+  import { Label } from '$lib/components/ui/label/index.js';
   import * as Table from '$lib/components/ui/table/index.js';
 
-  let { data } = $props();
+  let { data, form } = $props();
   let ws = $derived(data.workstation);
+  let supportsManagedUpdate = $derived(ws.nodeCapabilities.includes(data.managedUpdateCapability));
+  let activeUpdate = $derived(
+    data.updates.find((update) => ['pending', 'dispatched', 'restarting'].includes(update.status))
+  );
   let dateTime = $derived(
     new Intl.DateTimeFormat(undefined, {
       dateStyle: 'medium',
@@ -26,6 +37,13 @@
     maximumFractionDigits: 1
   });
   const gigabytes = (value = 0) => bytes.format(value / 1_000_000_000);
+
+  onMount(() => {
+    const timer = window.setInterval(() => {
+      if (activeUpdate) void invalidateAll();
+    }, 5_000);
+    return () => window.clearInterval(timer);
+  });
 </script>
 
 <svelte:head><title>{ws.name} · Workstations · Cluster Manager</title></svelte:head>
@@ -43,6 +61,10 @@
       <StatusBadge status={ws.status} />
     </div>
   </div>
+
+  {#if form?.message}
+    <FeedbackAlert message={form.message} success={form.success} />
+  {/if}
 
   <Card.Root>
     <Card.Header>
@@ -71,6 +93,142 @@
             : `${ws.uptimeSeconds.toLocaleString()} seconds`}</strong
         >
       </div>
+    </Card.Content>
+  </Card.Root>
+
+  <Card.Root>
+    <Card.Header>
+      <Card.Title class="flex items-center gap-2">
+        <RefreshCwIcon class="size-5" aria-hidden="true" />
+        Node software update
+      </Card.Title>
+      <Card.Description>
+        Install a verified GitHub release. The node keeps its current binary and service definition
+        until the replacement authenticates and sends a healthy heartbeat.
+      </Card.Description>
+    </Card.Header>
+    <Card.Content class="grid gap-5">
+      <div class="bg-muted/50 grid gap-3 rounded-lg border p-4 sm:grid-cols-3">
+        <div class="grid gap-1">
+          <span class="text-muted-foreground text-sm">Managed updates</span>
+          <strong>{supportsManagedUpdate ? 'Supported' : 'Manual upgrade required'}</strong>
+        </div>
+        <div class="grid gap-1">
+          <span class="text-muted-foreground text-sm">Current version</span>
+          <strong>{ws.nodeVersion ?? 'Unknown'}</strong>
+        </div>
+        <div class="grid gap-1">
+          <span class="text-muted-foreground text-sm">Update state</span>
+          {#if activeUpdate}
+            <StatusBadge status={activeUpdate.status} />
+          {:else}
+            <strong>Idle</strong>
+          {/if}
+        </div>
+      </div>
+
+      {#if activeUpdate}
+        <div class="grid gap-3 rounded-lg border p-4 sm:grid-cols-[1fr_auto] sm:items-center">
+          <div class="grid gap-1">
+            <strong>{activeUpdate.sourceVersion} → {activeUpdate.targetVersion}</strong>
+            <p class="text-muted-foreground text-sm">
+              {activeUpdate.detail ?? 'Waiting for the node to report progress.'}
+            </p>
+            <p class="text-muted-foreground text-xs">
+              Requested {dateTime.format(activeUpdate.createdAt)} · expires {dateTime.format(
+                activeUpdate.expiresAt
+              )}
+            </p>
+          </div>
+          {#if activeUpdate.status === 'pending'}
+            <form method="POST" action="?/cancelUpdate">
+              <input type="hidden" name="updateId" value={activeUpdate.id} />
+              <Button type="submit" variant="outline">Cancel</Button>
+            </form>
+          {/if}
+        </div>
+      {:else if supportsManagedUpdate}
+        <form
+          method="POST"
+          action="?/queueUpdate"
+          class="grid items-end gap-4 lg:grid-cols-[1fr_1fr_auto]"
+        >
+          <div class="grid gap-2">
+            <Label for="node-target-version">Exact stable release</Label>
+            <Input
+              id="node-target-version"
+              name="targetVersion"
+              required
+              placeholder="v0.3.0"
+              pattern="v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
+              value={form?.action === 'queueUpdate' ? (form.values?.targetVersion ?? '') : ''}
+            />
+          </div>
+          <div class="grid gap-2">
+            <Label for="node-update-confirmation">Type {ws.name} to confirm</Label>
+            <Input
+              id="node-update-confirmation"
+              name="confirmation"
+              required
+              autocomplete="off"
+              value={form?.action === 'queueUpdate' ? (form.values?.confirmation ?? '') : ''}
+            />
+          </div>
+          <Button
+            type="submit"
+            disabled={ws.connectionState !== 'online' || ws.status !== 'active'}
+          >
+            Install release
+          </Button>
+        </form>
+      {:else}
+        <p class="text-muted-foreground text-sm">
+          Install the first compatible release with
+          <code>sudo /usr/local/sbin/cluster-node upgrade</code>. After that, future updates can be
+          safely requested here.
+        </p>
+      {/if}
+
+      <div class="flex gap-3 rounded-lg border p-4">
+        <ShieldCheckIcon class="text-muted-foreground mt-0.5 size-5 shrink-0" aria-hidden="true" />
+        <p class="text-muted-foreground text-sm">
+          Only the node binary and systemd service are updated. Configuration, credentials, Linux
+          users, homes, and running jobs are left alone. If the new node cannot authenticate and
+          complete three healthy heartbeats, the local watchdog restores the previous version
+          automatically.
+        </p>
+      </div>
+
+      {#if data.updates.length > 0}
+        <div class="grid gap-3">
+          <h3 class="font-medium">Recent update history</h3>
+          <div class="overflow-hidden rounded-lg border">
+            <Table.Root>
+              <Table.Header>
+                <Table.Row>
+                  <Table.Head class="pl-4">Release</Table.Head>
+                  <Table.Head>Status</Table.Head>
+                  <Table.Head>Detail</Table.Head>
+                  <Table.Head class="pr-4">Requested</Table.Head>
+                </Table.Row>
+              </Table.Header>
+              <Table.Body>
+                {#each data.updates as update (update.id)}
+                  <Table.Row>
+                    <Table.Cell class="pl-4 font-medium"
+                      >{update.sourceVersion} → {update.targetVersion}</Table.Cell
+                    >
+                    <Table.Cell><StatusBadge status={update.status} /></Table.Cell>
+                    <Table.Cell class="max-w-md text-sm">{update.detail ?? '—'}</Table.Cell>
+                    <Table.Cell class="pr-4 text-sm">{dateTime.format(update.createdAt)}</Table.Cell
+                    >
+                  </Table.Row>
+                {/each}
+              </Table.Body>
+            </Table.Root>
+          </div>
+        </div>
+      {/if}
     </Card.Content>
   </Card.Root>
 

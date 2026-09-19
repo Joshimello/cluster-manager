@@ -85,6 +85,31 @@ verifies SHA-256 before atomically replacing the executable and restarting the s
 An exact older tag is allowed for rollback. `re-enroll` retains the current credential
 unless the platform accepts its replacement.
 
+## Updates from the admin UI
+
+Nodes that advertise managed-update support can be updated from **Administration →
+Workstations → Node software update**. Enter an exact newer stable release and type the
+workstation name to confirm. The node downloads the GitHub release itself, verifies the
+published SHA-256 checksum and the candidate's reported version, and reports progress
+back to the platform.
+
+Before replacing anything, the node saves its current binary and systemd unit and arms
+a local two-minute rollback watchdog. The replacement is accepted only after it starts,
+authenticates to the platform, and completes three consecutive healthy heartbeats. If it crashes, cannot
+authenticate, or loses platform connectivity during confirmation, the watchdog restores
+the prior binary and unit and restarts the service. Configuration, credentials, Linux
+users, homes, and workloads are never part of an update.
+
+Existing nodes need one manual upgrade to a release that supports managed updates:
+
+```bash
+sudo /usr/local/sbin/cluster-node upgrade
+```
+
+After its next heartbeat, the admin page will show **Managed updates: Supported**.
+Roll out a new release to one non-critical node first and verify its heartbeat, version,
+GPU telemetry, and `cluster-node doctor` result before updating the remaining nodes.
+
 Useful troubleshooting commands are:
 
 ```bash

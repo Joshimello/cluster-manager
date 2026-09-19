@@ -79,6 +79,13 @@ func Run(ctx context.Context, args []string, version string, in io.Reader, out, 
 			return err
 		}
 		return manager.Upgrade(ctx, *target)
+	case "rollback-update":
+		flags := newFlags("rollback-update", errOut)
+		instructionID := flags.String("instruction-id", "", "managed update instruction ID")
+		if err := parse(flags, args[1:]); err != nil {
+			return err
+		}
+		return manager.RollbackManagedUpdate(ctx, *instructionID)
 	case "uninstall":
 		flags := newFlags("uninstall", errOut)
 		dryRun := flags.Bool("dry-run", false, "show actions without changing the host")

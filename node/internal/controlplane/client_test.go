@@ -55,11 +55,15 @@ func TestHeartbeatUsesBearerCredential(t *testing.T) {
 		if request.Header.Get("Authorization") != "Bearer cmnode_secret" {
 			t.Errorf("missing bearer credential")
 		}
+		var report protocol.Heartbeat
+		if err := json.NewDecoder(request.Body).Decode(&report); err != nil || len(report.Capabilities) != 1 || report.Capabilities[0] != "managed-update-v1" {
+			t.Errorf("unexpected heartbeat capabilities: %#v, %v", report.Capabilities, err)
+		}
 		response.Header().Set("Content-Type", "application/json")
 		_, _ = response.Write([]byte(`{"accepted":true}`))
 	}))
 	defer server.Close()
-	err := New(server.URL).Heartbeat(context.Background(), "cmnode_secret", protocol.Heartbeat{ObservedAt: time.Now()})
+	err := New(server.URL).Heartbeat(context.Background(), "cmnode_secret", protocol.Heartbeat{ObservedAt: time.Now(), Capabilities: []string{"managed-update-v1"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,6 +138,54 @@ func TestNoTerminationInstructionUsesNoContent(t *testing.T) {
 	}))
 	defer server.Close()
 	instruction, err := New(server.URL).NextTermination(context.Background(), "cmnode_secret")
+	if err != nil || instruction != nil {
+		t.Fatalf("expected no instruction: %#v, %v", instruction, err)
+	}
+}
+
+func TestManagedUpdateInstructionAndResultUseScopedBearerAPI(t *testing.T) {
+	credential := "cmnode_secret"
+	reported := false
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.Header.Get("Authorization") != "Bearer "+credential {
+			t.Errorf("missing bearer credential")
+		}
+		response.Header().Set("Content-Type", "application/json")
+		switch request.URL.Path {
+		case "/api/node/v1/update/next":
+			_, _ = response.Write([]byte(`{"apiVersion":"v1","instructionId":"11111111-1111-4111-8111-111111111111","workstation":{"id":"22222222-2222-4222-8222-222222222222","name":"ws01"},"targetVersion":"v0.3.0","expiresAt":"2099-01-01T00:00:00Z"}`))
+		case "/api/node/v1/update/result":
+			var result protocol.NodeUpdateResult
+			if err := json.NewDecoder(request.Body).Decode(&result); err != nil || result.Status != "restarting" || result.InstructionID == "" {
+				t.Errorf("unexpected update result: %#v, %v", result, err)
+			}
+			reported = true
+			_, _ = response.Write([]byte(`{"accepted":true}`))
+		default:
+			http.NotFound(response, request)
+		}
+	}))
+	defer server.Close()
+
+	client := New(server.URL)
+	instruction, err := client.NextUpdate(context.Background(), credential)
+	if err != nil || instruction == nil || instruction.TargetVersion != "v0.3.0" || instruction.Workstation.Name != "ws01" {
+		t.Fatalf("unexpected instruction: %#v, %v", instruction, err)
+	}
+	if err := client.ReportUpdate(context.Background(), credential, protocol.NodeUpdateResult{InstructionID: instruction.InstructionID, Status: "restarting", Detail: "staged"}); err != nil {
+		t.Fatal(err)
+	}
+	if !reported {
+		t.Fatal("update result was not reported")
+	}
+}
+
+func TestNoManagedUpdateInstructionUsesNoContent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
+		response.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	instruction, err := New(server.URL).NextUpdate(context.Background(), "cmnode_secret")
 	if err != nil || instruction != nil {
 		t.Fatalf("expected no instruction: %#v, %v", instruction, err)
 	}

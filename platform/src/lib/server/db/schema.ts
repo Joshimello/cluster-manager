@@ -37,6 +37,16 @@ export const terminationInstructionStatus = pgEnum('termination_instruction_stat
   'completed',
   'expired'
 ]);
+export const nodeUpdateStatus = pgEnum('node_update_status', [
+  'pending',
+  'dispatched',
+  'restarting',
+  'succeeded',
+  'failed',
+  'rolled_back',
+  'cancelled',
+  'expired'
+]);
 
 export const posixIdentityMinimum = 20_000;
 export const posixIdentityMaximum = 59_999;
@@ -145,6 +155,7 @@ export const workstations = pgTable(
     lastHeartbeatAt: timestamp('last_heartbeat_at', { withTimezone: true }),
     inventoryObservedAt: timestamp('inventory_observed_at', { withTimezone: true }),
     nodeVersion: varchar('node_version', { length: 64 }),
+    nodeCapabilities: jsonb('node_capabilities').$type<string[]>().notNull().default([]),
     hostname: varchar('hostname', { length: 255 }),
     bootId: varchar('boot_id', { length: 128 }),
     uptimeSeconds: bigint('uptime_seconds', { mode: 'number' }),
@@ -376,6 +387,35 @@ export const terminationInstructions = pgTable(
   ]
 );
 
+export const nodeUpdates = pgTable(
+  'node_updates',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    workstationId: uuid('workstation_id')
+      .notNull()
+      .references(() => workstations.id, { onDelete: 'restrict' }),
+    requestedByUserId: uuid('requested_by_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    sourceVersion: varchar('source_version', { length: 64 }).notNull(),
+    targetVersion: varchar('target_version', { length: 64 }).notNull(),
+    status: nodeUpdateStatus('status').notNull().default('pending'),
+    detail: text('detail'),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    dispatchedAt: timestamp('dispatched_at', { withTimezone: true }),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => [
+    uniqueIndex('node_updates_workstation_active_unique')
+      .on(table.workstationId)
+      .where(sql`${table.status} in ('pending', 'dispatched', 'restarting')`),
+    index('node_updates_workstation_created_index').on(table.workstationId, table.createdAt),
+    index('node_updates_expires_at_index').on(table.expiresAt)
+  ]
+);
+
 export const auditEvents = pgTable(
   'audit_events',
   {
@@ -402,14 +442,16 @@ export const usersRelations = relations(users, ({ many }) => ({
   cancelledReservations: many(reservations, { relationName: 'reservationCanceller' }),
   stopRequests: many(stopRequests, { relationName: 'stopRequester' }),
   decidedStopRequests: many(stopRequests, { relationName: 'stopDecider' }),
-  requestedTerminations: many(terminationInstructions)
+  requestedTerminations: many(terminationInstructions),
+  requestedNodeUpdates: many(nodeUpdates)
 }));
 
 export const workstationsRelations = relations(workstations, ({ many }) => ({
   assignments: many(workstationAssignments),
   gpus: many(gpus),
   stopRequests: many(stopRequests),
-  terminationInstructions: many(terminationInstructions)
+  terminationInstructions: many(terminationInstructions),
+  nodeUpdates: many(nodeUpdates)
 }));
 
 export const gpusRelations = relations(gpus, ({ one, many }) => ({
@@ -475,6 +517,17 @@ export const terminationInstructionsRelations = relations(terminationInstruction
   })
 }));
 
+export const nodeUpdatesRelations = relations(nodeUpdates, ({ one }) => ({
+  workstation: one(workstations, {
+    fields: [nodeUpdates.workstationId],
+    references: [workstations.id]
+  }),
+  requestedBy: one(users, {
+    fields: [nodeUpdates.requestedByUserId],
+    references: [users.id]
+  })
+}));
+
 export const gpuObservationsRelations = relations(gpuObservations, ({ one, many }) => ({
   gpu: one(gpus, { fields: [gpuObservations.gpuId], references: [gpus.id] }),
   processes: many(gpuProcessObservations)
@@ -525,3 +578,5 @@ export type ReservationStatus = Reservation['status'];
 export type StopRequest = typeof stopRequests.$inferSelect;
 export type StopRequestStatus = StopRequest['status'];
 export type TerminationInstruction = typeof terminationInstructions.$inferSelect;
+export type NodeUpdate = typeof nodeUpdates.$inferSelect;
+export type NodeUpdateStatus = NodeUpdate['status'];

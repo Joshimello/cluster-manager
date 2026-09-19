@@ -11,8 +11,10 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestArchitectureSelection(t *testing.T) {
@@ -202,5 +204,120 @@ func TestAtomicWriteLeavesNoTemporaryFile(t *testing.T) {
 	}
 	if _, err := os.Stat(path + ".new"); !os.IsNotExist(err) {
 		t.Fatalf("temporary file remains: %v", err)
+	}
+}
+
+func TestStableUpgradeOrdering(t *testing.T) {
+	for _, test := range []struct {
+		current string
+		target  string
+		want    bool
+	}{
+		{"v0.2.2", "v0.3.0", true},
+		{"v1.9.9", "v2.0.0", true},
+		{"v1.2.3", "v1.2.3", false},
+		{"v2.0.0", "v1.9.9", false},
+		{"development", "v1.0.0", false},
+		{"v1.0.0", "v1.1.0-rc1", false},
+	} {
+		if got := IsNewerStableVersion(test.current, test.target); got != test.want {
+			t.Fatalf("IsNewerStableVersion(%q, %q) = %v, want %v", test.current, test.target, got, test.want)
+		}
+	}
+}
+
+func TestManagedUpdateStateIsStrictAndPrivate(t *testing.T) {
+	directory := t.TempDir()
+	manager := New("v0.2.2", strings.NewReader(""), io.Discard, io.Discard)
+	manager.Paths.UpdateState = filepath.Join(directory, "update-state.json")
+	state := ManagedUpdateState{
+		SchemaVersion:   1,
+		InstructionID:   "11111111-1111-4111-8111-111111111111",
+		PreviousVersion: "v0.2.2",
+		TargetVersion:   "v0.3.0",
+		Phase:           "prepared",
+		CreatedAt:       time.Now().UTC(),
+	}
+	if err := manager.writeManagedUpdateState(state); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := manager.LoadManagedUpdateState()
+	if err != nil || loaded.InstructionID != state.InstructionID || loaded.TargetVersion != state.TargetVersion {
+		t.Fatalf("unexpected state: %#v, %v", loaded, err)
+	}
+	info, err := os.Stat(manager.Paths.UpdateState)
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("update state must be private: %#v, %v", info, err)
+	}
+	if err := os.WriteFile(manager.Paths.UpdateState, []byte(`{"schemaVersion":1,"instructionId":"11111111-1111-4111-8111-111111111111","targetVersion":"v0.3.0","phase":"prepared","createdAt":"2026-01-01T00:00:00Z","unknown":true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.LoadManagedUpdateState(); err == nil {
+		t.Fatal("expected unknown update state fields to fail closed")
+	}
+}
+
+func TestCandidateMustReportExactTargetVersion(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "candidate")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\necho 'cluster-node v0.3.0'\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateCandidateVersion(context.Background(), path, "v0.3.0"); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateCandidateVersion(context.Background(), path, "v0.3.1"); err == nil {
+		t.Fatal("candidate with the wrong embedded version must be rejected")
+	}
+}
+
+func TestManagedUpdateRequiresConsecutiveHealthyHeartbeats(t *testing.T) {
+	directory := t.TempDir()
+	manager := New("v0.3.0", strings.NewReader(""), io.Discard, io.Discard)
+	manager.Paths.UpdateState = filepath.Join(directory, "update-state.json")
+	state := ManagedUpdateState{
+		SchemaVersion:   1,
+		InstructionID:   "11111111-1111-4111-8111-111111111111",
+		PreviousVersion: "v0.2.2",
+		TargetVersion:   "v0.3.0",
+		Phase:           "prepared",
+		CreatedAt:       time.Now().UTC(),
+	}
+	if err := manager.writeManagedUpdateState(state); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Date(2026, 9, 19, 0, 0, 0, 0, time.UTC)
+	for index := 1; index <= 3; index++ {
+		updated, err := manager.RecordManagedUpdateHeartbeat(state.InstructionID, start.Add(time.Duration(index-1)*15*time.Second), 45*time.Second)
+		if err != nil || updated.HealthyHeartbeats != index {
+			t.Fatalf("heartbeat %d: %#v, %v", index, updated, err)
+		}
+	}
+	reset, err := manager.RecordManagedUpdateHeartbeat(state.InstructionID, start.Add(2*time.Minute), 45*time.Second)
+	if err != nil || reset.HealthyHeartbeats != 1 {
+		t.Fatalf("health sequence should reset after a long gap: %#v, %v", reset, err)
+	}
+}
+
+func TestReleaseBinaryRejectsChecksumMismatch(t *testing.T) {
+	architecture, err := releaseArchitecture(runtime.GOARCH)
+	if err != nil {
+		t.Fatal(err)
+	}
+	asset := "cluster-node-linux-" + architecture
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/v0.3.0/checksums.txt":
+			_, _ = response.Write([]byte(strings.Repeat("0", 64) + "  " + asset + "\n"))
+		case "/v0.3.0/" + asset:
+			_, _ = response.Write([]byte("tampered"))
+		default:
+			http.NotFound(response, request)
+		}
+	}))
+	defer server.Close()
+	manager := New("v0.2.2", strings.NewReader(""), io.Discard, io.Discard)
+	manager.ReleaseBase = server.URL
+	if _, err := manager.releaseBinary(context.Background(), "v0.3.0"); err == nil || !strings.Contains(err.Error(), "SHA-256") {
+		t.Fatalf("expected checksum mismatch, got %v", err)
 	}
 }
