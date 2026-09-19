@@ -43,11 +43,13 @@ describe.skipIf(!runDatabaseTests)('maintenance database integration', () => {
 
       const expiredTokenHash = createHash('sha256').update(`expired-${suffix}`).digest('hex');
       const currentTokenHash = createHash('sha256').update(`current-${suffix}`).digest('hex');
+      const expiredSessionAt = new Date(now.getTime() - 60_000).toISOString();
+      const currentSessionAt = new Date(now.getTime() + 60_000).toISOString();
       const sessions = await client`
         insert into sessions (token_hash, user_id, expires_at)
         values
-          (${expiredTokenHash}, ${createdUserId}, ${new Date(now.getTime() - 60_000)}),
-          (${currentTokenHash}, ${createdUserId}, ${new Date(now.getTime() + 60_000)})
+          (${expiredTokenHash}, ${createdUserId}, ${expiredSessionAt}::timestamptz),
+          (${currentTokenHash}, ${createdUserId}, ${currentSessionAt}::timestamptz)
         returning id, token_hash
       `;
 
@@ -64,18 +66,20 @@ describe.skipIf(!runDatabaseTests)('maintenance database integration', () => {
           utilization_percent, memory_used_bytes, memory_total_bytes
         )
         values (
-          ${createdWorkstationId}, ${`GPU-${suffix}`}, 0, 'Test GPU', ${now},
+          ${createdWorkstationId}, ${`GPU-${suffix}`}, 0, 'Test GPU', ${now.toISOString()}::timestamptz,
           0, 0, 1
         )
         returning id
       `;
+      const expiredObservationAt = new Date(now.getTime() - 25 * 60 * 60_000).toISOString();
+      const currentObservationAt = new Date(now.getTime() - 23 * 60 * 60_000).toISOString();
       const observations = await client`
         insert into gpu_observations (
           gpu_id, observed_at, utilization_percent, memory_used_bytes, memory_total_bytes
         )
         values
-          (${gpu.id}, ${new Date(now.getTime() - 25 * 60 * 60_000)}, 0, 0, 1),
-          (${gpu.id}, ${new Date(now.getTime() - 23 * 60 * 60_000)}, 0, 0, 1)
+          (${gpu.id}, ${expiredObservationAt}::timestamptz, 0, 0, 1),
+          (${gpu.id}, ${currentObservationAt}::timestamptz, 0, 0, 1)
         returning id, observed_at
       `;
 
