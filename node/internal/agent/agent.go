@@ -153,6 +153,9 @@ func (a *Agent) handleManagedUpdate(ctx context.Context, nodeCredential string) 
 	if stateErr == nil {
 		switch {
 		case state.Phase == "prepared" && a.version == state.TargetVersion:
+			if !time.Now().Before(state.CreatedAt.Add(lifecycle.ManagedUpdateConfirmationWindow)) {
+				return false, errors.New("managed update confirmation window elapsed; waiting for local rollback")
+			}
 			state, err := a.updater.RecordManagedUpdateHeartbeat(state.InstructionID, time.Now(), a.config.HeartbeatInterval*3)
 			if err != nil {
 				return false, fmt.Errorf("record updated-node health: %w", err)

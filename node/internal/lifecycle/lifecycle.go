@@ -30,11 +30,12 @@ import (
 )
 
 const (
-	Repository         = "Joshimello/cluster-manager"
-	ManagedStatePath   = "/var/lib/cluster-manager/managed-state.json"
-	defaultReleaseAPI  = "https://api.github.com/repos/" + Repository
-	defaultReleaseBase = "https://github.com/" + Repository + "/releases/download"
-	updateWatchdogUnit = "cluster-node-update-rollback"
+	Repository                      = "Joshimello/cluster-manager"
+	ManagedStatePath                = "/var/lib/cluster-manager/managed-state.json"
+	ManagedUpdateConfirmationWindow = 90 * time.Second
+	defaultReleaseAPI               = "https://api.github.com/repos/" + Repository
+	defaultReleaseBase              = "https://github.com/" + Repository + "/releases/download"
+	updateWatchdogUnit              = "cluster-node-update-rollback"
 )
 
 type Paths struct {
