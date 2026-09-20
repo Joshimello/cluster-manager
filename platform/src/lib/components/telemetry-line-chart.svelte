@@ -74,14 +74,13 @@
   const hasValues = $derived(data.some((point) => point.value !== null));
   const yDomain = $derived(maximum === undefined ? undefined : [0, maximum]);
   const firstObservedAt = $derived(points.length > 0 ? new Date(points[0].observedAt) : null);
-  const xDomain = $derived(
-    firstObservedAt && points.length > 0
-      ? [
-          new Date(firstObservedAt.getTime() - 5 * 60 * 1000),
-          new Date(points[points.length - 1].observedAt)
-        ]
-      : undefined
-  );
+  const xDomain = $derived.by(() => {
+    if (!firstObservedAt || points.length === 0) return undefined;
+    const lastObservedAt = new Date(points[points.length - 1].observedAt);
+    const observedSpan = lastObservedAt.getTime() - firstObservedAt.getTime();
+    const leadingPadding = Math.max(bucketSeconds * 1000, observedSpan * 0.05);
+    return [new Date(firstObservedAt.getTime() - leadingPadding), lastObservedAt];
+  });
 </script>
 
 {#if hasValues}
