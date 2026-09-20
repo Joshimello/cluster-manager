@@ -16,23 +16,26 @@ function iso(value: Date | string): string {
 export async function loadMonitoringHistory(
   workstationIds: string[],
   range: MonitoringRange,
-  now = new Date()
+  now = new Date(),
+  window?: { from: Date; to: Date; bucketSeconds: number }
 ): Promise<MonitoringHistoryResponse> {
   const config = monitoringRangeConfig[range];
-  const from = new Date(now.getTime() - config.durationMilliseconds);
+  const to = window?.to ?? now;
+  const from = window?.from ?? new Date(to.getTime() - config.durationMilliseconds);
 
   if (workstationIds.length === 0) {
     return {
       range,
       from: from.toISOString(),
-      to: now.toISOString(),
+      to: to.toISOString(),
       generatedAt: new Date().toISOString(),
-      bucketSeconds: config.bucketSeconds,
+      bucketSeconds: window?.bucketSeconds ?? config.bucketSeconds,
       workstations: []
     };
   }
 
-  const bucketSeconds = sql.raw(String(config.bucketSeconds));
+  const selectedBucketSeconds = window?.bucketSeconds ?? config.bucketSeconds;
+  const bucketSeconds = sql.raw(String(selectedBucketSeconds));
   const workstationBucket = sql<Date>`to_timestamp(floor(extract(epoch from ${workstationObservations.observedAt}) / ${bucketSeconds}) * ${bucketSeconds})`;
   const gpuBucket = sql<Date>`to_timestamp(floor(extract(epoch from ${gpuObservations.observedAt}) / ${bucketSeconds}) * ${bucketSeconds})`;
 
@@ -53,7 +56,7 @@ export async function loadMonitoringHistory(
         and(
           inArray(workstationObservations.workstationId, workstationIds),
           gte(workstationObservations.observedAt, from),
-          lte(workstationObservations.observedAt, now)
+          lte(workstationObservations.observedAt, to)
         )
       )
       .groupBy(workstationObservations.workstationId, workstationBucket)
@@ -66,7 +69,8 @@ export async function loadMonitoringHistory(
         utilizationPercent: sql<number>`avg(${gpuObservations.utilizationPercent})::double precision`,
         memoryUsedBytes: sql<number>`avg(${gpuObservations.memoryUsedBytes})::double precision`,
         memoryTotalBytes: sql<number>`avg(${gpuObservations.memoryTotalBytes})::double precision`,
-        temperatureC: sql<number | null>`avg(${gpuObservations.temperatureC})::double precision`
+        temperatureC: sql<number | null>`avg(${gpuObservations.temperatureC})::double precision`,
+        powerWatts: sql<number | null>`avg(${gpuObservations.powerWatts})::double precision`
       })
       .from(gpuObservations)
       .innerJoin(gpus, eq(gpuObservations.gpuId, gpus.id))
@@ -75,7 +79,7 @@ export async function loadMonitoringHistory(
           inArray(gpus.workstationId, workstationIds),
           eq(gpus.active, true),
           gte(gpuObservations.observedAt, from),
-          lte(gpuObservations.observedAt, now)
+          lte(gpuObservations.observedAt, to)
         )
       )
       .groupBy(gpus.workstationId, gpus.id, gpuBucket)
@@ -112,16 +116,17 @@ export async function loadMonitoringHistory(
       utilizationPercent: row.utilizationPercent,
       memoryUsedBytes: row.memoryUsedBytes,
       memoryTotalBytes: row.memoryTotalBytes,
-      temperatureC: row.temperatureC
+      temperatureC: row.temperatureC,
+      powerWatts: row.powerWatts
     });
   }
 
   return {
     range,
     from: from.toISOString(),
-    to: now.toISOString(),
+    to: to.toISOString(),
     generatedAt: new Date().toISOString(),
-    bucketSeconds: config.bucketSeconds,
+    bucketSeconds: selectedBucketSeconds,
     workstations: [...byWorkstation.values()]
   };
 }

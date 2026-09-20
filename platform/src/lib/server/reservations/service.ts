@@ -1,10 +1,11 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, gt, inArray, lt, or } from 'drizzle-orm';
 
 import { recordAudit } from '$lib/server/audit';
 import type { AuthUser } from '$lib/server/auth/session';
 import { getDatabase } from '$lib/server/db';
 import {
   gpus,
+  gpuDiagnosticRuns,
   reservations,
   users,
   workstationAssignments,
@@ -98,6 +99,35 @@ export async function createReservation(input: {
 
   try {
     const reservationId = await getDatabase().transaction(async (transaction) => {
+      await transaction
+        .select({ id: gpus.id })
+        .from(gpus)
+        .where(eq(gpus.id, eligible.gpuId))
+        .for('update');
+      const [diagnostic] = await transaction
+        .select({ id: gpuDiagnosticRuns.id })
+        .from(gpuDiagnosticRuns)
+        .where(
+          and(
+            eq(gpuDiagnosticRuns.workstationId, eligible.workstationId),
+            inArray(gpuDiagnosticRuns.status, [
+              'pending',
+              'dispatched',
+              'running',
+              'cancel_requested'
+            ]),
+            or(
+              eq(gpuDiagnosticRuns.scope, 'all'),
+              eq(gpuDiagnosticRuns.targetGpuId, eligible.gpuId)
+            ),
+            lt(gpuDiagnosticRuns.createdAt, input.endAt),
+            gt(gpuDiagnosticRuns.reservedUntil, input.startAt)
+          )
+        )
+        .limit(1);
+      if (diagnostic) {
+        throw new DiagnosticConflictError();
+      }
       const [created] = await transaction
         .insert(reservations)
         .values({
@@ -131,6 +161,13 @@ export async function createReservation(input: {
     });
     return { ok: true, reservationId };
   } catch (error) {
+    if (error instanceof DiagnosticConflictError) {
+      return {
+        ok: false,
+        status: 409,
+        message: 'That GPU has a pending or running diagnostic during the requested time.'
+      };
+    }
     if (exclusionViolation(error)) {
       return {
         ok: false,
@@ -141,6 +178,8 @@ export async function createReservation(input: {
     throw error;
   }
 }
+
+class DiagnosticConflictError extends Error {}
 
 export async function cancelReservation(input: {
   actor: AuthUser;

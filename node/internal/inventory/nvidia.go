@@ -34,7 +34,7 @@ func CollectGPUProcesses(ctx context.Context) ([]protocol.GPUProcess, error) {
 
 func collectNVIDIAWithRunner(ctx context.Context, run commandRunner) (string, []protocol.GPU, []protocol.GPUProcess) {
 	output, err := run(ctx, "nvidia-smi",
-		"--query-gpu=uuid,index,name,utilization.gpu,memory.used,memory.total,temperature.gpu",
+		"--query-gpu=uuid,index,name,utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw",
 		"--format=csv,noheader,nounits")
 	if err != nil {
 		return "unavailable", []protocol.GPU{}, []protocol.GPUProcess{}
@@ -86,7 +86,7 @@ func parseGPUCSV(output []byte) ([]protocol.GPU, error) {
 	result := make([]protocol.GPU, 0, len(records))
 	seen := map[string]struct{}{}
 	for _, record := range records {
-		if len(record) != 7 {
+		if len(record) != 8 {
 			return nil, fmt.Errorf("unexpected NVIDIA GPU field count")
 		}
 		index, err := strconv.Atoi(record[1])
@@ -120,7 +120,15 @@ func parseGPUCSV(output []byte) ([]protocol.GPU, error) {
 			}
 			temperature = &parsed
 		}
-		result = append(result, protocol.GPU{UUID: record[0], Index: index, Model: record[2], UtilizationPercent: utilization, MemoryUsedBytes: usedMiB * mebibyte, MemoryTotalBytes: totalMiB * mebibyte, TemperatureC: temperature})
+		var power *float64
+		if record[7] != "" && record[7] != "N/A" && record[7] != "[Not Supported]" {
+			parsed, err := strconv.ParseFloat(record[7], 64)
+			if err != nil || parsed < 0 || parsed > 100000 {
+				return nil, fmt.Errorf("invalid NVIDIA GPU power draw")
+			}
+			power = &parsed
+		}
+		result = append(result, protocol.GPU{UUID: record[0], Index: index, Model: record[2], UtilizationPercent: utilization, MemoryUsedBytes: usedMiB * mebibyte, MemoryTotalBytes: totalMiB * mebibyte, TemperatureC: temperature, PowerWatts: power})
 	}
 	return result, nil
 }

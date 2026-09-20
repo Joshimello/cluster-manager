@@ -25,6 +25,7 @@ import (
 	"github.com/Joshimello/cluster-manager/node/internal/config"
 	"github.com/Joshimello/cluster-manager/node/internal/controlplane"
 	"github.com/Joshimello/cluster-manager/node/internal/credential"
+	"github.com/Joshimello/cluster-manager/node/internal/diagnostics"
 	"github.com/Joshimello/cluster-manager/node/internal/reconcile"
 	"golang.org/x/term"
 )
@@ -39,37 +40,42 @@ const (
 )
 
 type Paths struct {
-	Config, Credential, State, Binary, Unit, OldBinary, OldUnit, SSHPolicy string
-	UpdateState, PreviousBinary, PreviousUnit, CandidateBinary             string
+	Config, Credential, State, Binary, Unit, OldBinary, OldUnit, SSHPolicy         string
+	UpdateState, PreviousBinary, PreviousUnit, CandidateBinary                     string
+	DiagnosticsManifest, PreviousDiagnosticsManifest, CandidateDiagnosticsManifest string
 }
 
 func DefaultPaths() Paths {
 	return Paths{
-		Config:          config.DefaultPath,
-		Credential:      "/var/lib/cluster-manager/node-credential",
-		State:           ManagedStatePath,
-		Binary:          "/usr/local/sbin/cluster-node",
-		Unit:            "/etc/systemd/system/cluster-node.service",
-		OldBinary:       "/usr/local/sbin/cluster-manager-node",
-		OldUnit:         "/etc/systemd/system/cluster-manager-node.service",
-		SSHPolicy:       "/etc/ssh/sshd_config.d/60-cluster-manager.conf",
-		UpdateState:     "/var/lib/cluster-manager/update-state.json",
-		PreviousBinary:  "/var/lib/cluster-manager/cluster-node.previous",
-		PreviousUnit:    "/var/lib/cluster-manager/cluster-node.service.previous",
-		CandidateBinary: "/var/lib/cluster-manager/cluster-node.candidate",
+		Config:                       config.DefaultPath,
+		Credential:                   "/var/lib/cluster-manager/node-credential",
+		State:                        ManagedStatePath,
+		Binary:                       "/usr/local/sbin/cluster-node",
+		Unit:                         "/etc/systemd/system/cluster-node.service",
+		OldBinary:                    "/usr/local/sbin/cluster-manager-node",
+		OldUnit:                      "/etc/systemd/system/cluster-manager-node.service",
+		SSHPolicy:                    "/etc/ssh/sshd_config.d/60-cluster-manager.conf",
+		UpdateState:                  "/var/lib/cluster-manager/update-state.json",
+		PreviousBinary:               "/var/lib/cluster-manager/cluster-node.previous",
+		PreviousUnit:                 "/var/lib/cluster-manager/cluster-node.service.previous",
+		CandidateBinary:              "/var/lib/cluster-manager/cluster-node.candidate",
+		DiagnosticsManifest:          diagnostics.DefaultManifestPath,
+		PreviousDiagnosticsManifest:  "/var/lib/cluster-manager/diagnostics-manifest.previous.json",
+		CandidateDiagnosticsManifest: "/var/lib/cluster-manager/diagnostics-manifest.candidate.json",
 	}
 }
 
 type ManagedUpdateState struct {
-	SchemaVersion     int        `json:"schemaVersion"`
-	InstructionID     string     `json:"instructionId"`
-	PreviousVersion   string     `json:"previousVersion"`
-	TargetVersion     string     `json:"targetVersion"`
-	Phase             string     `json:"phase"`
-	CreatedAt         time.Time  `json:"createdAt"`
-	HealthySince      *time.Time `json:"healthySince,omitempty"`
-	LastHealthyAt     *time.Time `json:"lastHealthyAt,omitempty"`
-	HealthyHeartbeats int        `json:"healthyHeartbeats,omitempty"`
+	SchemaVersion                  int        `json:"schemaVersion"`
+	InstructionID                  string     `json:"instructionId"`
+	PreviousVersion                string     `json:"previousVersion"`
+	TargetVersion                  string     `json:"targetVersion"`
+	Phase                          string     `json:"phase"`
+	CreatedAt                      time.Time  `json:"createdAt"`
+	HealthySince                   *time.Time `json:"healthySince,omitempty"`
+	LastHealthyAt                  *time.Time `json:"lastHealthyAt,omitempty"`
+	HealthyHeartbeats              int        `json:"healthyHeartbeats,omitempty"`
+	HadPreviousDiagnosticsManifest bool       `json:"hadPreviousDiagnosticsManifest,omitempty"`
 }
 
 var (
@@ -125,6 +131,19 @@ func (m *Manager) Setup(ctx context.Context, options SetupOptions) error {
 	}
 	if err := command(ctx, "nvidia-smi"); err != nil {
 		return fmt.Errorf("NVIDIA validation failed (drivers remain operator-managed): %w", err)
+	}
+	if _, manifestErr := os.Stat(m.Paths.DiagnosticsManifest); manifestErr == nil {
+		answer, promptErr := m.value(ctx, "", "Enable optional GPU diagnostics with Podman and NVIDIA CDI? [y/N]")
+		if promptErr != nil {
+			return promptErr
+		}
+		if strings.EqualFold(answer, "y") {
+			if err := m.setupDiagnostics(ctx, false); err != nil {
+				return err
+			}
+		}
+	} else if !errors.Is(manifestErr, os.ErrNotExist) {
+		return manifestErr
 	}
 	token, err := m.readToken(ctx, options.EnrollmentTokenFile)
 	if err != nil {
@@ -197,6 +216,9 @@ func (m *Manager) Status(ctx context.Context) error {
 			fmt.Fprintf(m.Out, "%s: %s (missing)\n", item.label, item.path)
 		}
 	}
+	if info, statErr := os.Stat(m.Paths.DiagnosticsManifest); statErr == nil {
+		fmt.Fprintf(m.Out, "Diagnostics manifest: %s (%04o)\n", m.Paths.DiagnosticsManifest, info.Mode().Perm())
+	}
 	return nil
 }
 
@@ -239,6 +261,11 @@ func (m *Manager) Doctor(ctx context.Context) error {
 	if _, statErr := os.Stat(m.Paths.State); statErr == nil {
 		permissionPaths = append(permissionPaths, m.Paths.State)
 	}
+	for _, path := range []string{m.Paths.DiagnosticsManifest, diagnostics.DefaultStatePath} {
+		if _, statErr := os.Stat(path); statErr == nil {
+			permissionPaths = append(permissionPaths, path)
+		}
+	}
 	for _, path := range permissionPaths {
 		info, err := os.Stat(path)
 		if err != nil || info.Mode().Perm() != 0o600 {
@@ -251,6 +278,78 @@ func (m *Manager) Doctor(ctx context.Context) error {
 		fmt.Fprintln(m.Out, "OK: managed SSH policy")
 	}
 	fmt.Fprintln(m.Out, "OK: state permissions")
+	if _, err := os.Stat(m.Paths.DiagnosticsManifest); err == nil {
+		_, podmanErr := exec.LookPath("podman")
+		_, toolkitErr := exec.LookPath("nvidia-ctk")
+		if podmanErr == nil && toolkitErr == nil {
+			if err := m.checkDiagnostics(ctx); err != nil {
+				return fmt.Errorf("GPU diagnostics check failed: %w", err)
+			}
+			fmt.Fprintln(m.Out, "OK: GPU diagnostics (Podman, NVIDIA CDI, pinned image)")
+		} else {
+			fmt.Fprintln(m.Out, "Optional: GPU diagnostics prerequisites are not installed")
+		}
+	} else {
+		fmt.Fprintln(m.Out, "Optional: GPU diagnostics are not configured")
+	}
+	return nil
+}
+
+func (m *Manager) SetupDiagnostics(ctx context.Context) error {
+	if err := requireRoot(); err != nil {
+		return err
+	}
+	return m.setupDiagnostics(ctx, true)
+}
+
+func (m *Manager) setupDiagnostics(ctx context.Context, confirm bool) error {
+	manifest, err := diagnostics.LoadManifest(m.Paths.DiagnosticsManifest)
+	if err != nil {
+		return fmt.Errorf("verified diagnostics manifest is required: %w", err)
+	}
+	fmt.Fprintln(m.Out, "GPU diagnostics require Podman and NVIDIA Container Toolkit/CDI.")
+	if confirm {
+		answer, err := m.value(ctx, "", "Install or repair these packages and pull the pinned image? [y/N]")
+		if err != nil || !strings.EqualFold(answer, "y") {
+			return errors.New("GPU diagnostics setup declined")
+		}
+	}
+	if err := m.ensureDiagnosticPackages(ctx); err != nil {
+		return err
+	}
+	if err := os.MkdirAll("/etc/cdi", 0o755); err != nil {
+		return err
+	}
+	if err := command(ctx, "nvidia-ctk", "cdi", "generate", "--output=/etc/cdi/nvidia.yaml"); err != nil {
+		return fmt.Errorf("generate NVIDIA CDI specification: %w", err)
+	}
+	image := manifest.Image + "@" + manifest.Digest
+	if err := command(ctx, "podman", "pull", image); err != nil {
+		return fmt.Errorf("pull pinned gpu-burn image: %w", err)
+	}
+	if err := m.checkDiagnostics(ctx); err != nil {
+		return err
+	}
+	fmt.Fprintln(m.Out, "GPU diagnostics are ready; the capability will appear after the next heartbeat.")
+	return nil
+}
+
+func (m *Manager) checkDiagnostics(ctx context.Context) error {
+	manifest, err := diagnostics.LoadManifest(m.Paths.DiagnosticsManifest)
+	if err != nil {
+		return err
+	}
+	if err := command(ctx, "podman", "--version"); err != nil {
+		return err
+	}
+	output, err := exec.CommandContext(ctx, "nvidia-ctk", "cdi", "list").CombinedOutput()
+	if err != nil || !bytes.Contains(output, []byte("nvidia.com/gpu=")) {
+		return errors.New("NVIDIA CDI does not expose a GPU")
+	}
+	output, err = exec.CommandContext(ctx, "podman", "image", "exists", manifest.Image+"@"+manifest.Digest).CombinedOutput()
+	if err != nil {
+		return errors.New("pinned gpu-burn image is missing or has the wrong digest")
+	}
 	return nil
 }
 
@@ -310,8 +409,30 @@ func (m *Manager) Upgrade(ctx context.Context, requestedVersion string) error {
 	if err != nil {
 		return err
 	}
+	manifest, hasManifest, err := m.releaseOptionalAsset(ctx, version, "diagnostics-manifest.json", 1<<20)
+	if err != nil {
+		return err
+	}
+	if hasManifest {
+		parsedManifest, err := diagnostics.LoadManifestBytes(manifest)
+		if err != nil {
+			return err
+		}
+		if m.checkDiagnostics(ctx) == nil {
+			if err := command(ctx, "podman", "pull", parsedManifest.Image+"@"+parsedManifest.Digest); err != nil {
+				return fmt.Errorf("stage updated diagnostic image: %w", err)
+			}
+		}
+	}
 	if err := atomicWrite(m.Paths.Binary, binary, 0o755); err != nil {
 		return err
+	}
+	if hasManifest {
+		if err := atomicWrite(m.Paths.DiagnosticsManifest, manifest, 0o600); err != nil {
+			return err
+		}
+	} else {
+		_ = os.Remove(m.Paths.DiagnosticsManifest)
 	}
 	if err := atomicWrite(m.Paths.Unit, []byte(ServiceUnit), 0o644); err != nil {
 		return err
@@ -361,7 +482,26 @@ func (m *Manager) PrepareManagedUpdate(ctx context.Context, instructionID, targe
 	if err := atomicWrite(m.Paths.CandidateBinary, binary, 0o755); err != nil {
 		return fmt.Errorf("stage update candidate: %w", err)
 	}
-	defer func() { _ = os.Remove(m.Paths.CandidateBinary) }()
+	defer func() {
+		_ = os.Remove(m.Paths.CandidateBinary)
+		_ = os.Remove(m.Paths.CandidateDiagnosticsManifest)
+	}()
+	manifest, err := m.releaseAsset(ctx, targetVersion, "diagnostics-manifest.json", 1<<20)
+	if err != nil {
+		return err
+	}
+	parsedManifest, err := diagnostics.LoadManifestBytes(manifest)
+	if err != nil {
+		return err
+	}
+	if m.checkDiagnostics(ctx) == nil {
+		if err := command(ctx, "podman", "pull", parsedManifest.Image+"@"+parsedManifest.Digest); err != nil {
+			return fmt.Errorf("stage updated diagnostic image: %w", err)
+		}
+	}
+	if err := atomicWrite(m.Paths.CandidateDiagnosticsManifest, manifest, 0o600); err != nil {
+		return err
+	}
 	if err := validateCandidateVersion(ctx, m.Paths.CandidateBinary, targetVersion); err != nil {
 		return err
 	}
@@ -374,6 +514,11 @@ func (m *Manager) PrepareManagedUpdate(ctx context.Context, instructionID, targe
 	if err != nil {
 		return fmt.Errorf("read current service unit: %w", err)
 	}
+	currentManifest, manifestErr := os.ReadFile(m.Paths.DiagnosticsManifest)
+	hadCurrentManifest := manifestErr == nil
+	if manifestErr != nil && !errors.Is(manifestErr, os.ErrNotExist) {
+		return manifestErr
+	}
 	if err := atomicWrite(m.Paths.PreviousBinary, currentBinary, 0o755); err != nil {
 		return fmt.Errorf("save previous node binary: %w", err)
 	}
@@ -381,13 +526,20 @@ func (m *Manager) PrepareManagedUpdate(ctx context.Context, instructionID, targe
 		_ = os.Remove(m.Paths.PreviousBinary)
 		return fmt.Errorf("save previous service unit: %w", err)
 	}
+	if hadCurrentManifest {
+		if err := atomicWrite(m.Paths.PreviousDiagnosticsManifest, currentManifest, 0o600); err != nil {
+			_ = m.removeManagedUpdateFiles()
+			return err
+		}
+	}
 	state := ManagedUpdateState{
-		SchemaVersion:   1,
-		InstructionID:   instructionID,
-		PreviousVersion: m.Version,
-		TargetVersion:   targetVersion,
-		Phase:           "prepared",
-		CreatedAt:       time.Now().UTC(),
+		SchemaVersion:                  1,
+		InstructionID:                  instructionID,
+		PreviousVersion:                m.Version,
+		TargetVersion:                  targetVersion,
+		Phase:                          "prepared",
+		CreatedAt:                      time.Now().UTC(),
+		HadPreviousDiagnosticsManifest: hadCurrentManifest,
 	}
 	if err := m.writeManagedUpdateState(state); err != nil {
 		_ = m.removeManagedUpdateFiles()
@@ -406,6 +558,9 @@ func (m *Manager) PrepareManagedUpdate(ctx context.Context, instructionID, targe
 	}
 	if err := atomicWrite(m.Paths.Binary, binary, 0o755); err != nil {
 		return failAfterArming(fmt.Errorf("install update candidate: %w", err))
+	}
+	if err := atomicWrite(m.Paths.DiagnosticsManifest, manifest, 0o600); err != nil {
+		return failAfterArming(fmt.Errorf("install diagnostics manifest: %w", err))
 	}
 	if err := atomicWrite(m.Paths.Unit, []byte(ServiceUnit), 0o644); err != nil {
 		return failAfterArming(fmt.Errorf("install service unit: %w", err))
@@ -465,11 +620,25 @@ func (m *Manager) RollbackManagedUpdate(ctx context.Context, instructionID strin
 	if err != nil {
 		return fmt.Errorf("read rollback service unit: %w", err)
 	}
+	var previousManifest []byte
+	if state.HadPreviousDiagnosticsManifest {
+		previousManifest, err = os.ReadFile(m.Paths.PreviousDiagnosticsManifest)
+		if err != nil {
+			return fmt.Errorf("read rollback diagnostics manifest: %w", err)
+		}
+	}
 	if err := atomicWrite(m.Paths.Binary, previousBinary, 0o755); err != nil {
 		return fmt.Errorf("restore previous node binary: %w", err)
 	}
 	if err := atomicWrite(m.Paths.Unit, previousUnit, 0o644); err != nil {
 		return fmt.Errorf("restore previous service unit: %w", err)
+	}
+	if state.HadPreviousDiagnosticsManifest {
+		if err := atomicWrite(m.Paths.DiagnosticsManifest, previousManifest, 0o600); err != nil {
+			return err
+		}
+	} else {
+		_ = os.Remove(m.Paths.DiagnosticsManifest)
 	}
 	if err := command(ctx, "systemctl", "daemon-reload"); err != nil {
 		return err
@@ -556,16 +725,28 @@ func (m *Manager) disarmUpdateWatchdog(ctx context.Context) error {
 }
 
 func (m *Manager) restorePreparedUpdate(ctx context.Context) error {
+	state, stateErr := m.LoadManagedUpdateState()
 	previousBinary, binaryErr := os.ReadFile(m.Paths.PreviousBinary)
 	previousUnit, unitErr := os.ReadFile(m.Paths.PreviousUnit)
-	if binaryErr != nil || unitErr != nil {
-		return fmt.Errorf("read rollback files: binary=%v unit=%v", binaryErr, unitErr)
+	if stateErr != nil || binaryErr != nil || unitErr != nil {
+		return fmt.Errorf("read rollback files: state=%v binary=%v unit=%v", stateErr, binaryErr, unitErr)
 	}
 	if err := atomicWrite(m.Paths.Binary, previousBinary, 0o755); err != nil {
 		return err
 	}
 	if err := atomicWrite(m.Paths.Unit, previousUnit, 0o644); err != nil {
 		return err
+	}
+	if state.HadPreviousDiagnosticsManifest {
+		previousManifest, err := os.ReadFile(m.Paths.PreviousDiagnosticsManifest)
+		if err != nil {
+			return err
+		}
+		if err := atomicWrite(m.Paths.DiagnosticsManifest, previousManifest, 0o600); err != nil {
+			return err
+		}
+	} else {
+		_ = os.Remove(m.Paths.DiagnosticsManifest)
 	}
 	if err := command(ctx, "systemctl", "daemon-reload"); err != nil {
 		return err
@@ -577,7 +758,7 @@ func (m *Manager) restorePreparedUpdate(ctx context.Context) error {
 }
 
 func (m *Manager) removeManagedUpdateFiles() error {
-	for _, path := range []string{m.Paths.UpdateState, m.Paths.PreviousBinary, m.Paths.PreviousUnit, m.Paths.CandidateBinary} {
+	for _, path := range []string{m.Paths.UpdateState, m.Paths.PreviousBinary, m.Paths.PreviousUnit, m.Paths.CandidateBinary, m.Paths.PreviousDiagnosticsManifest, m.Paths.CandidateDiagnosticsManifest} {
 		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("remove managed update file %s: %w", path, err)
 		}
@@ -591,6 +772,10 @@ func (m *Manager) releaseBinary(ctx context.Context, version string) ([]byte, er
 		return nil, err
 	}
 	asset := "cluster-node-linux-" + arch
+	return m.releaseAsset(ctx, version, asset, 256<<20)
+}
+
+func (m *Manager) releaseAsset(ctx context.Context, version, asset string, limit int64) ([]byte, error) {
 	base := strings.TrimRight(m.ReleaseBase, "/") + "/" + version
 	checksums, err := m.download(ctx, base+"/checksums.txt", 1<<20)
 	if err != nil {
@@ -600,7 +785,7 @@ func (m *Manager) releaseBinary(ctx context.Context, version string) ([]byte, er
 	if err != nil {
 		return nil, err
 	}
-	binary, err := m.download(ctx, base+"/"+asset, 256<<20)
+	binary, err := m.download(ctx, base+"/"+asset, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -609,6 +794,27 @@ func (m *Manager) releaseBinary(ctx context.Context, version string) ([]byte, er
 		return nil, errors.New("downloaded binary SHA-256 does not match checksums.txt")
 	}
 	return binary, nil
+}
+
+func (m *Manager) releaseOptionalAsset(ctx context.Context, version, asset string, limit int64) ([]byte, bool, error) {
+	base := strings.TrimRight(m.ReleaseBase, "/") + "/" + version
+	checksums, err := m.download(ctx, base+"/checksums.txt", 1<<20)
+	if err != nil {
+		return nil, false, err
+	}
+	expected, err := checksumFor(checksums, asset)
+	if err != nil {
+		return nil, false, nil
+	}
+	contents, err := m.download(ctx, base+"/"+asset, limit)
+	if err != nil {
+		return nil, false, err
+	}
+	actual := sha256.Sum256(contents)
+	if hex.EncodeToString(actual[:]) != expected {
+		return nil, false, errors.New("downloaded " + asset + " SHA-256 does not match checksums.txt")
+	}
+	return contents, true, nil
 }
 
 func validateCandidateVersion(ctx context.Context, path, targetVersion string) error {
@@ -710,7 +916,7 @@ func (m *Manager) Uninstall(ctx context.Context, dryRun, purge bool) error {
 	for _, service := range []string{"cluster-node.service", "cluster-manager-node.service"} {
 		_ = command(ctx, "systemctl", "disable", "--now", service)
 	}
-	for _, path := range []string{m.Paths.Config, m.Paths.Credential, m.Paths.Unit, m.Paths.OldUnit, m.Paths.Binary, m.Paths.OldBinary, m.Paths.UpdateState, m.Paths.PreviousBinary, m.Paths.PreviousUnit, m.Paths.CandidateBinary} {
+	for _, path := range []string{m.Paths.Config, m.Paths.Credential, m.Paths.Unit, m.Paths.OldUnit, m.Paths.Binary, m.Paths.OldBinary, m.Paths.UpdateState, m.Paths.PreviousBinary, m.Paths.PreviousUnit, m.Paths.CandidateBinary, m.Paths.DiagnosticsManifest, m.Paths.PreviousDiagnosticsManifest, m.Paths.CandidateDiagnosticsManifest, diagnostics.DefaultStatePath} {
 		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("remove %s: %w", path, err)
 		}
@@ -835,6 +1041,40 @@ func (m *Manager) ensurePackages(ctx context.Context) error {
 		return err
 	}
 	return command(ctx, "apt-get", append([]string{"install", "-y"}, missing...)...)
+}
+
+func (m *Manager) ensureDiagnosticPackages(ctx context.Context) error {
+	if err := command(ctx, "apt-get", "update"); err != nil {
+		return err
+	}
+	if err := command(ctx, "apt-get", "install", "-y", "podman", "curl", "ca-certificates", "gnupg"); err != nil {
+		return err
+	}
+	if _, err := exec.LookPath("nvidia-ctk"); err == nil {
+		return nil
+	}
+	key, err := m.download(ctx, "https://nvidia.github.io/libnvidia-container/gpgkey", 1<<20)
+	if err != nil {
+		return fmt.Errorf("download NVIDIA repository key: %w", err)
+	}
+	keyring := "/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg"
+	keyCommand := exec.CommandContext(ctx, "gpg", "--dearmor", "--yes", "--output", keyring)
+	keyCommand.Stdin = bytes.NewReader(key)
+	if output, err := keyCommand.CombinedOutput(); err != nil {
+		return fmt.Errorf("install NVIDIA repository key: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+	list, err := m.download(ctx, "https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list", 1<<20)
+	if err != nil {
+		return fmt.Errorf("download NVIDIA repository definition: %w", err)
+	}
+	configured := strings.ReplaceAll(string(list), "deb https://", "deb [signed-by="+keyring+"] https://")
+	if err := atomicWrite("/etc/apt/sources.list.d/nvidia-container-toolkit.list", []byte(configured), 0o644); err != nil {
+		return err
+	}
+	if err := command(ctx, "apt-get", "update"); err != nil {
+		return err
+	}
+	return command(ctx, "apt-get", "install", "-y", "nvidia-container-toolkit")
 }
 
 type inputResult struct {

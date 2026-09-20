@@ -47,6 +47,26 @@ export const nodeUpdateStatus = pgEnum('node_update_status', [
   'cancelled',
   'expired'
 ]);
+export const gpuDiagnosticStatus = pgEnum('gpu_diagnostic_status', [
+  'pending',
+  'dispatched',
+  'running',
+  'cancel_requested',
+  'passed',
+  'faulty',
+  'failed',
+  'refused',
+  'cancelled',
+  'expired'
+]);
+export const gpuDiagnosticScope = pgEnum('gpu_diagnostic_scope', ['all', 'gpu']);
+export const gpuDiagnosticWorkload = pgEnum('gpu_diagnostic_workload', ['fp32', 'fp64', 'tensor']);
+export const gpuDiagnosticOutcome = pgEnum('gpu_diagnostic_outcome', [
+  'passed',
+  'faulty',
+  'failed',
+  'cancelled'
+]);
 
 export const posixIdentityMinimum = 20_000;
 export const posixIdentityMaximum = 59_999;
@@ -156,6 +176,7 @@ export const workstations = pgTable(
     inventoryObservedAt: timestamp('inventory_observed_at', { withTimezone: true }),
     nodeVersion: varchar('node_version', { length: 64 }),
     nodeCapabilities: jsonb('node_capabilities').$type<string[]>().notNull().default([]),
+    diagnosticsImageDigest: varchar('diagnostics_image_digest', { length: 255 }),
     hostname: varchar('hostname', { length: 255 }),
     bootId: varchar('boot_id', { length: 128 }),
     uptimeSeconds: bigint('uptime_seconds', { mode: 'number' }),
@@ -242,6 +263,7 @@ export const gpus = pgTable(
     memoryUsedBytes: bigint('memory_used_bytes', { mode: 'number' }).notNull(),
     memoryTotalBytes: bigint('memory_total_bytes', { mode: 'number' }).notNull(),
     temperatureC: doublePrecision('temperature_c'),
+    powerWatts: doublePrecision('power_watts'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
   },
@@ -264,6 +286,7 @@ export const gpuObservations = pgTable(
     memoryUsedBytes: bigint('memory_used_bytes', { mode: 'number' }).notNull(),
     memoryTotalBytes: bigint('memory_total_bytes', { mode: 'number' }).notNull(),
     temperatureC: doublePrecision('temperature_c'),
+    powerWatts: doublePrecision('power_watts'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
   },
   (table) => [
@@ -441,6 +464,82 @@ export const nodeUpdates = pgTable(
   ]
 );
 
+export const gpuDiagnosticRuns = pgTable(
+  'gpu_diagnostic_runs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    workstationId: uuid('workstation_id')
+      .notNull()
+      .references(() => workstations.id, { onDelete: 'restrict' }),
+    requestedByUserId: uuid('requested_by_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    targetGpuId: uuid('target_gpu_id').references(() => gpus.id, { onDelete: 'restrict' }),
+    targetGpuUuids: jsonb('target_gpu_uuids').$type<string[]>().notNull(),
+    scope: gpuDiagnosticScope('scope').notNull(),
+    workload: gpuDiagnosticWorkload('workload').notNull().default('fp32'),
+    status: gpuDiagnosticStatus('status').notNull().default('pending'),
+    durationSeconds: integer('duration_seconds').notNull(),
+    memoryPercent: integer('memory_percent').notNull(),
+    temperatureCutoffC: integer('temperature_cutoff_c').notNull(),
+    imageDigest: varchar('image_digest', { length: 255 }).notNull(),
+    detail: text('detail'),
+    outputLog: text('output_log'),
+    reservedUntil: timestamp('reserved_until', { withTimezone: true }).notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    dispatchedAt: timestamp('dispatched_at', { withTimezone: true }),
+    startedAt: timestamp('started_at', { withTimezone: true }),
+    cancelRequestedAt: timestamp('cancel_requested_at', { withTimezone: true }),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => [
+    check('gpu_diagnostic_runs_duration_range', sql`${table.durationSeconds} between 10 and 1800`),
+    check('gpu_diagnostic_runs_memory_range', sql`${table.memoryPercent} between 50 and 90`),
+    check(
+      'gpu_diagnostic_runs_temperature_range',
+      sql`${table.temperatureCutoffC} between 70 and 90`
+    ),
+    check(
+      'gpu_diagnostic_runs_target_matches_scope',
+      sql`(${table.scope} = 'all' and ${table.targetGpuId} is null) or (${table.scope} = 'gpu' and ${table.targetGpuId} is not null)`
+    ),
+    uniqueIndex('gpu_diagnostic_runs_workstation_active_unique')
+      .on(table.workstationId)
+      .where(sql`${table.status} in ('pending', 'dispatched', 'running', 'cancel_requested')`),
+    index('gpu_diagnostic_runs_workstation_created_index').on(table.workstationId, table.createdAt),
+    index('gpu_diagnostic_runs_expires_at_index').on(table.expiresAt)
+  ]
+);
+
+export const gpuDiagnosticResults = pgTable(
+  'gpu_diagnostic_results',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    runId: uuid('run_id')
+      .notNull()
+      .references(() => gpuDiagnosticRuns.id, { onDelete: 'cascade' }),
+    gpuId: uuid('gpu_id').references(() => gpus.id, { onDelete: 'set null' }),
+    gpuUuid: varchar('gpu_uuid', { length: 128 }).notNull(),
+    localIndex: integer('local_index').notNull(),
+    model: varchar('model', { length: 255 }).notNull(),
+    outcome: gpuDiagnosticOutcome('outcome').notNull(),
+    maxTemperatureC: doublePrecision('max_temperature_c'),
+    peakUtilizationPercent: doublePrecision('peak_utilization_percent'),
+    peakMemoryBytes: bigint('peak_memory_bytes', { mode: 'number' }),
+    averageGflops: doublePrecision('average_gflops'),
+    maximumGflops: doublePrecision('maximum_gflops'),
+    errorCount: integer('error_count').notNull().default(0),
+    detail: text('detail'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => [
+    uniqueIndex('gpu_diagnostic_results_run_uuid_unique').on(table.runId, table.gpuUuid),
+    index('gpu_diagnostic_results_run_index').on(table.runId)
+  ]
+);
+
 export const auditEvents = pgTable(
   'audit_events',
   {
@@ -468,7 +567,8 @@ export const usersRelations = relations(users, ({ many }) => ({
   stopRequests: many(stopRequests, { relationName: 'stopRequester' }),
   decidedStopRequests: many(stopRequests, { relationName: 'stopDecider' }),
   requestedTerminations: many(terminationInstructions),
-  requestedNodeUpdates: many(nodeUpdates)
+  requestedNodeUpdates: many(nodeUpdates),
+  requestedGpuDiagnostics: many(gpuDiagnosticRuns)
 }));
 
 export const workstationsRelations = relations(workstations, ({ many }) => ({
@@ -477,7 +577,8 @@ export const workstationsRelations = relations(workstations, ({ many }) => ({
   gpus: many(gpus),
   stopRequests: many(stopRequests),
   terminationInstructions: many(terminationInstructions),
-  nodeUpdates: many(nodeUpdates)
+  nodeUpdates: many(nodeUpdates),
+  gpuDiagnosticRuns: many(gpuDiagnosticRuns)
 }));
 
 export const workstationObservationsRelations = relations(workstationObservations, ({ one }) => ({
@@ -491,7 +592,9 @@ export const gpusRelations = relations(gpus, ({ one, many }) => ({
   workstation: one(workstations, { fields: [gpus.workstationId], references: [workstations.id] }),
   observations: many(gpuObservations),
   reservations: many(reservations),
-  stopRequests: many(stopRequests)
+  stopRequests: many(stopRequests),
+  diagnosticRuns: many(gpuDiagnosticRuns),
+  diagnosticResults: many(gpuDiagnosticResults)
 }));
 
 export const reservationsRelations = relations(reservations, ({ one }) => ({
@@ -561,6 +664,30 @@ export const nodeUpdatesRelations = relations(nodeUpdates, ({ one }) => ({
   })
 }));
 
+export const gpuDiagnosticRunsRelations = relations(gpuDiagnosticRuns, ({ one, many }) => ({
+  workstation: one(workstations, {
+    fields: [gpuDiagnosticRuns.workstationId],
+    references: [workstations.id]
+  }),
+  requestedBy: one(users, {
+    fields: [gpuDiagnosticRuns.requestedByUserId],
+    references: [users.id]
+  }),
+  targetGpu: one(gpus, {
+    fields: [gpuDiagnosticRuns.targetGpuId],
+    references: [gpus.id]
+  }),
+  results: many(gpuDiagnosticResults)
+}));
+
+export const gpuDiagnosticResultsRelations = relations(gpuDiagnosticResults, ({ one }) => ({
+  run: one(gpuDiagnosticRuns, {
+    fields: [gpuDiagnosticResults.runId],
+    references: [gpuDiagnosticRuns.id]
+  }),
+  gpu: one(gpus, { fields: [gpuDiagnosticResults.gpuId], references: [gpus.id] })
+}));
+
 export const gpuObservationsRelations = relations(gpuObservations, ({ one, many }) => ({
   gpu: one(gpus, { fields: [gpuObservations.gpuId], references: [gpus.id] }),
   processes: many(gpuProcessObservations)
@@ -614,3 +741,6 @@ export type StopRequestStatus = StopRequest['status'];
 export type TerminationInstruction = typeof terminationInstructions.$inferSelect;
 export type NodeUpdate = typeof nodeUpdates.$inferSelect;
 export type NodeUpdateStatus = NodeUpdate['status'];
+export type GpuDiagnosticRun = typeof gpuDiagnosticRuns.$inferSelect;
+export type GpuDiagnosticStatus = GpuDiagnosticRun['status'];
+export type GpuDiagnosticResult = typeof gpuDiagnosticResults.$inferSelect;

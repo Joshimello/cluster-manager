@@ -2,6 +2,7 @@
   import ActivityIcon from '@lucide/svelte/icons/activity';
   import MemoryStickIcon from '@lucide/svelte/icons/memory-stick';
   import ThermometerIcon from '@lucide/svelte/icons/thermometer';
+  import ZapIcon from '@lucide/svelte/icons/zap';
   import { onMount } from 'svelte';
   import { invalidateAll } from '$app/navigation';
   import CoordinationBadge from '$lib/components/coordination-badge.svelte';
@@ -14,7 +15,7 @@
   import * as Table from '$lib/components/ui/table/index.js';
   import type { CoordinationState } from '$lib/server/reservations/correlation';
 
-  type Metric = 'utilization' | 'memory' | 'temperature';
+  type Metric = 'utilization' | 'memory' | 'temperature' | 'power';
 
   type GPU = {
     id: string;
@@ -27,6 +28,7 @@
     memoryUsedBytes: number;
     memoryTotalBytes: number;
     temperatureC: number | null;
+    powerWatts: number | null;
     coordinationState: CoordinationState;
     processCount: number;
     ownerProcessCount: number;
@@ -83,6 +85,7 @@
   const numeric = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
   const percent = (value: number) => `${numeric.format(value)}%`;
   const celsius = (value: number) => `${numeric.format(value)} °C`;
+  const watts = (value: number) => `${numeric.format(value)} W`;
   const selectedMetric = (gpuId: string): Metric => selectedMetrics[gpuId] ?? 'utilization';
   const historyFor = (gpuId: string) =>
     historyContext?.response?.workstations
@@ -93,11 +96,14 @@
       ? 'GPU utilization'
       : metric === 'memory'
         ? 'VRAM used'
-        : 'Temperature';
+        : metric === 'temperature'
+          ? 'Temperature'
+          : 'Power draw';
   const currentValue = (gpu: GPU, metric: Metric) => {
     if (metric === 'utilization') return percent(gpu.utilizationPercent);
     if (metric === 'temperature')
       return gpu.temperatureC === null ? 'N/A' : celsius(gpu.temperatureC);
+    if (metric === 'power') return gpu.powerWatts === null ? 'N/A' : watts(gpu.powerWatts);
     const usage =
       gpu.memoryTotalBytes === 0 ? 0 : (gpu.memoryUsedBytes / gpu.memoryTotalBytes) * 100;
     return `${gigabytes(gpu.memoryUsedBytes)} of ${gigabytes(gpu.memoryTotalBytes)} · ${percent(usage)}`;
@@ -118,6 +124,13 @@
           detail: point.temperatureC === null ? 'N/A' : celsius(point.temperatureC)
         };
       }
+      if (metric === 'power') {
+        return {
+          observedAt: point.observedAt,
+          value: point.powerWatts,
+          detail: point.powerWatts === null ? 'N/A' : watts(point.powerWatts)
+        };
+      }
       const usage =
         point.memoryTotalBytes === 0 ? 0 : (point.memoryUsedBytes / point.memoryTotalBytes) * 100;
       return {
@@ -129,6 +142,12 @@
   const maximum = (gpu: GPU, metric: Metric) => {
     if (metric === 'utilization') return 100;
     if (metric === 'memory') return gpu.memoryTotalBytes / 1_000_000_000;
+    if (metric === 'power') {
+      const observed = historyFor(gpu.id)
+        .map((point) => point.powerWatts ?? 0)
+        .concat(gpu.powerWatts ?? 0);
+      return Math.max(100, Math.ceil(Math.max(...observed) / 50) * 50);
+    }
     const observed = historyFor(gpu.id)
       .map((point) => point.temperatureC ?? 0)
       .concat(gpu.temperatureC ?? 0);
@@ -139,7 +158,9 @@
       ? percent
       : metric === 'temperature'
         ? celsius
-        : (value: number) => bytes.format(value);
+        : metric === 'power'
+          ? watts
+          : (value: number) => bytes.format(value);
   const coordinationDescription = (gpu: GPU) => {
     if (gpu.coordinationState === 'unknown') return 'Fresh telemetry is required to determine use.';
     if (gpu.coordinationState === 'available') return 'No current reservation or observed process.';
@@ -228,6 +249,14 @@
                   aria-pressed={metric === 'temperature'}
                   onclick={() => (selectedMetrics[gpu.id] = 'temperature')}
                   ><ThermometerIcon aria-hidden="true" />Temperature</Button
+                >
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={metric === 'power' ? 'default' : 'outline'}
+                  aria-pressed={metric === 'power'}
+                  onclick={() => (selectedMetrics[gpu.id] = 'power')}
+                  ><ZapIcon aria-hidden="true" />Power</Button
                 >
               </div>
             </div>

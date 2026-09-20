@@ -20,6 +20,7 @@ const Usage = `Usage:
   cluster-node run
   cluster-node status
   cluster-node doctor
+  cluster-node diagnostics setup
   cluster-node re-enroll [--enrollment-token-file PATH]
   cluster-node upgrade [--version vX.Y.Z]
   cluster-node uninstall [--dry-run] [--purge-created-users]
@@ -65,6 +66,11 @@ func Run(ctx context.Context, args []string, version string, in io.Reader, out, 
 			return errors.New("doctor takes no arguments")
 		}
 		return manager.Doctor(ctx)
+	case "diagnostics":
+		if len(args) != 2 || args[1] != "setup" {
+			return errors.New("diagnostics requires the setup subcommand")
+		}
+		return manager.SetupDiagnostics(ctx)
 	case "re-enroll":
 		flags := newFlags("re-enroll", errOut)
 		tokenFile := flags.String("enrollment-token-file", "", "root-only token file")

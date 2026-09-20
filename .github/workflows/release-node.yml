@@ -121,8 +121,38 @@ jobs:
           cache-from: type=gha,scope=platform-image
           cache-to: type=gha,mode=max,scope=platform-image
 
+  gpu-diagnostics-image:
+    needs: test
+    runs-on: ubuntu-24.04
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and publish pinned gpu-burn image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: diagnostics/gpu-burn
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/joshimello/cluster-manager/gpu-burn:${{ github.ref_name }}
+            ghcr.io/joshimello/cluster-manager/gpu-burn:latest
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.version=${{ github.ref_name }}
+          cache-from: type=gha,scope=gpu-diagnostics-image
+          cache-to: type=gha,mode=max,scope=gpu-diagnostics-image
+
   release:
-    needs: [build, platform-image]
+    needs: [build, platform-image, gpu-diagnostics-image]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -132,10 +162,13 @@ jobs:
           merge-multiple: true
           path: release
       - name: Prepare verified release assets
+        env:
+          GPU_BURN_DIGEST: ${{ needs.gpu-diagnostics-image.outputs.digest }}
         run: |
           cp install-node.sh release/install-node.sh
+          printf '{\n  "schemaVersion": 1,\n  "image": "ghcr.io/joshimello/cluster-manager/gpu-burn",\n  "digest": "%s",\n  "upstreamCommit": "3ead140434da9473582b68452f7115967a7a0581"\n}\n' "$GPU_BURN_DIGEST" > release/diagnostics-manifest.json
           cd release
-          sha256sum cluster-node-linux-amd64 cluster-node-linux-arm64 install-node.sh > checksums.txt
+          sha256sum cluster-node-linux-amd64 cluster-node-linux-arm64 install-node.sh diagnostics-manifest.json > checksums.txt
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}

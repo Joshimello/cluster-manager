@@ -28,6 +28,11 @@ Rootless Podman is recommended for researchers and may be installed now or later
 sudo apt install podman
 ```
 
+Admin-triggered GPU diagnostics additionally require NVIDIA Container Toolkit/CDI and
+the checksummed `diagnostics-manifest.json` from the same node release. The supported
+installation path configures these with `sudo cluster-node diagnostics setup`; do not
+invent an image tag or copy a manifest from a different release.
+
 ## Install the binary and configuration
 
 Build a versioned Linux/amd64 node binary from a trusted checkout or use the matching

@@ -9,6 +9,7 @@ export type HeartbeatReport = {
   observedAt: Date;
   nodeVersion: string;
   capabilities: string[];
+  diagnosticsImageDigest: string | null;
   hostname: string;
   bootId: string;
   uptimeSeconds: number;
@@ -21,6 +22,7 @@ export type HeartbeatReport = {
     memoryUsedBytes: number;
     memoryTotalBytes: number;
     temperatureC: number | null;
+    powerWatts: number | null;
   }>;
   gpuProcesses: Array<{
     gpuUuid: string;
@@ -68,6 +70,11 @@ export function parseHeartbeatReport(value: unknown): HeartbeatReport | null {
   const gpus = inventory?.gpus;
   const gpuProcesses = inventory?.gpuProcesses;
   const capabilities = root?.capabilities ?? [];
+  const diagnosticsDigestValue = root?.diagnosticsImageDigest;
+  const diagnosticsImageDigest =
+    diagnosticsDigestValue === undefined || diagnosticsDigestValue === null
+      ? null
+      : text(diagnosticsDigestValue, 255);
   const observedAtText = text(root?.observedAt, 64);
   const observedAt = observedAtText ? new Date(observedAtText) : null;
 
@@ -121,7 +128,10 @@ export function parseHeartbeatReport(value: unknown): HeartbeatReport | null {
       (capability) =>
         typeof capability !== 'string' || capability.length < 1 || capability.length > 64
     ) ||
-    new Set(capabilities).size !== capabilities.length
+    new Set(capabilities).size !== capabilities.length ||
+    (diagnosticsDigestValue !== undefined &&
+      diagnosticsDigestValue !== null &&
+      (!diagnosticsImageDigest || !/^sha256:[0-9a-f]{64}$/.test(diagnosticsImageDigest)))
   ) {
     return null;
   }
@@ -152,6 +162,9 @@ export function parseHeartbeatReport(value: unknown): HeartbeatReport | null {
       temperatureValue === undefined || temperatureValue === null
         ? null
         : number(temperatureValue, -100, 250);
+    const powerValue = gpu?.powerWatts;
+    const powerWatts =
+      powerValue === undefined || powerValue === null ? null : number(powerValue, 0, 100_000);
     if (
       !uuid ||
       gpuUuids.has(uuid) ||
@@ -163,7 +176,8 @@ export function parseHeartbeatReport(value: unknown): HeartbeatReport | null {
       memoryTotalBytes === null ||
       memoryTotalBytes === 0 ||
       memoryUsedBytes > memoryTotalBytes ||
-      (temperatureValue !== undefined && temperatureValue !== null && temperatureC === null)
+      (temperatureValue !== undefined && temperatureValue !== null && temperatureC === null) ||
+      (powerValue !== undefined && powerValue !== null && powerWatts === null)
     ) {
       return null;
     }
@@ -175,7 +189,8 @@ export function parseHeartbeatReport(value: unknown): HeartbeatReport | null {
       utilizationPercent,
       memoryUsedBytes,
       memoryTotalBytes,
-      temperatureC
+      temperatureC,
+      powerWatts
     });
   }
   if (gpuStatus === 'unavailable' && parsedGpus.length > 0) return null;
@@ -221,6 +236,7 @@ export function parseHeartbeatReport(value: unknown): HeartbeatReport | null {
     observedAt,
     nodeVersion,
     capabilities,
+    diagnosticsImageDigest,
     hostname,
     bootId,
     uptimeSeconds,

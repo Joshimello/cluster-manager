@@ -13,6 +13,7 @@ import (
 	"github.com/Joshimello/cluster-manager/node/internal/config"
 	"github.com/Joshimello/cluster-manager/node/internal/controlplane"
 	"github.com/Joshimello/cluster-manager/node/internal/credential"
+	"github.com/Joshimello/cluster-manager/node/internal/diagnostics"
 	"github.com/Joshimello/cluster-manager/node/internal/inventory"
 	"github.com/Joshimello/cluster-manager/node/internal/lifecycle"
 	"github.com/Joshimello/cluster-manager/node/internal/protocol"
@@ -21,14 +22,15 @@ import (
 )
 
 type Agent struct {
-	config     config.Config
-	version    string
-	logger     *log.Logger
-	client     *controlplane.Client
-	collector  inventory.Collector
-	reconciler reconcile.Reconciler
-	terminator termination.Executor
-	updater    *lifecycle.Manager
+	config      config.Config
+	version     string
+	logger      *log.Logger
+	client      *controlplane.Client
+	collector   inventory.Collector
+	reconciler  reconcile.Reconciler
+	terminator  termination.Executor
+	updater     *lifecycle.Manager
+	diagnostics *diagnostics.Manager
 }
 
 func New(cfg config.Config, version string, logger *log.Logger) (*Agent, error) {
@@ -44,10 +46,15 @@ func New(cfg config.Config, version string, logger *log.Logger) (*Agent, error) 
 		reconciler = reconcile.NewSimulated(cfg.WorkstationName)
 		terminator = simulated
 	}
-	return &Agent{config: cfg, version: version, logger: logger, client: controlplane.New(cfg.PlatformURL), collector: collector, reconciler: reconciler, terminator: terminator, updater: lifecycle.New(version, os.Stdin, io.Discard, io.Discard)}, nil
+	diagnosticManager := diagnostics.New(logger)
+	if cfg.Simulate {
+		diagnosticManager = diagnostics.NewSimulated(logger)
+	}
+	return &Agent{config: cfg, version: version, logger: logger, client: controlplane.New(cfg.PlatformURL), collector: collector, reconciler: reconciler, terminator: terminator, updater: lifecycle.New(version, os.Stdin, io.Discard, io.Discard), diagnostics: diagnosticManager}, nil
 }
 
 func (a *Agent) Run(ctx context.Context) error {
+	defer a.diagnostics.Shutdown()
 	nodeCredential, created, err := loadOrCreateCredential(a.config.CredentialFile, a.config.EnrollmentToken != "")
 	if err != nil {
 		return err
@@ -93,6 +100,10 @@ func (a *Agent) Run(ctx context.Context) error {
 		}
 		if err == nil {
 			report.Capabilities = []string{"managed-update-v1"}
+			if digest, available := a.diagnostics.Available(ctx); available {
+				report.Capabilities = append(report.Capabilities, diagnostics.Capability)
+				report.DiagnosticsImageDigest = digest
+			}
 			err = a.client.Heartbeat(ctx, nodeCredential, report)
 		}
 		if err != nil {
@@ -110,6 +121,14 @@ func (a *Agent) Run(ctx context.Context) error {
 		if restarting {
 			a.logger.Printf("managed update installed; handing control to systemd restart")
 			return nil
+		}
+		diagnosticInstruction, diagnosticErr := a.client.NextDiagnostic(ctx, nodeCredential)
+		if diagnosticErr != nil {
+			a.logger.Printf("diagnostic instruction unavailable: %v", diagnosticErr)
+		} else if diagnosticInstruction != nil {
+			a.diagnostics.Handle(ctx, diagnosticInstruction, a.config.WorkstationName, func(reportContext context.Context, result protocol.DiagnosticResult) error {
+				return a.client.ReportDiagnostic(reportContext, nodeCredential, result)
+			})
 		}
 		instruction, terminationErr := a.client.NextTermination(ctx, nodeCredential)
 		if terminationErr != nil {

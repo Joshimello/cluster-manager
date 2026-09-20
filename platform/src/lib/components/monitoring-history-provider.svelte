@@ -8,8 +8,16 @@
   let {
     workstationIds,
     range,
+    from,
+    to,
     children
-  }: { workstationIds: string[]; range: MonitoringRange; children: Snippet } = $props();
+  }: {
+    workstationIds: string[];
+    range: MonitoringRange;
+    from?: string;
+    to?: string;
+    children: Snippet;
+  } = $props();
 
   let response = $state<MonitoringHistoryResponse | null>(null);
   let loading = $state(true);
@@ -36,7 +44,12 @@
     return result;
   }
 
-  async function refresh(requestedIds = workstationIds, requestedRange = range) {
+  async function refresh(
+    requestedIds = workstationIds,
+    requestedRange = range,
+    requestedFrom = from,
+    requestedTo = to
+  ) {
     const ids = [...new Set(requestedIds)];
     if (ids.length === 0) {
       response = null;
@@ -54,6 +67,10 @@
       const batches = await Promise.all(
         chunks(ids, 100).map(async (batch) => {
           const parameters = new SvelteURLSearchParams({ range: requestedRange });
+          if (requestedFrom && requestedTo) {
+            parameters.set('from', requestedFrom);
+            parameters.set('to', requestedTo);
+          }
           for (const workstationId of batch) parameters.append('workstationId', workstationId);
           const fetched = await fetch(`/api/monitoring/history?${parameters}`, {
             signal: controller.signal,
@@ -83,7 +100,9 @@
   $effect(() => {
     const requestedIds = workstationIds;
     const requestedRange = range;
-    untrack(() => void refresh(requestedIds, requestedRange));
+    const requestedFrom = from;
+    const requestedTo = to;
+    untrack(() => void refresh(requestedIds, requestedRange, requestedFrom, requestedTo));
     return () => activeController?.abort();
   });
 

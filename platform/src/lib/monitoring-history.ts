@@ -32,6 +32,7 @@ export type GpuHistoryPoint = {
   memoryUsedBytes: number;
   memoryTotalBytes: number;
   temperatureC: number | null;
+  powerWatts: number | null;
 };
 
 export type MonitoringHistoryResponse = {

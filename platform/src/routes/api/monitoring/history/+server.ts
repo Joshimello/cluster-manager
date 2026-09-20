@@ -18,6 +18,25 @@ export const GET: RequestHandler = async ({ locals, url }) => {
     return json({ message: 'Change your password before viewing telemetry.' }, { status: 403 });
   }
 
+  const fromText = url.searchParams.get('from');
+  const toText = url.searchParams.get('to');
+  let window: { from: Date; to: Date; bucketSeconds: number } | undefined;
+  if (fromText || toText) {
+    if (actor.role !== 'admin' || !fromText || !toText) {
+      return json(
+        { message: 'A diagnostic telemetry window requires administrator access.' },
+        { status: 403 }
+      );
+    }
+    const from = new Date(fromText);
+    const to = new Date(toText);
+    const duration = to.getTime() - from.getTime();
+    if (!Number.isFinite(duration) || duration <= 0 || duration > 35 * 60_000) {
+      return json({ message: 'Invalid diagnostic telemetry window.' }, { status: 400 });
+    }
+    window = { from, to, bucketSeconds: Math.max(2, Math.ceil(duration / 300_000) * 2) };
+  }
+
   const requested = [
     ...new Set(url.searchParams.getAll('workstationId').filter((value) => value.length > 0))
   ];
@@ -59,6 +78,11 @@ export const GET: RequestHandler = async ({ locals, url }) => {
   }
 
   return json(
-    await loadMonitoringHistory(workstationIds, parseMonitoringRange(url.searchParams.get('range')))
+    await loadMonitoringHistory(
+      workstationIds,
+      parseMonitoringRange(url.searchParams.get('range')),
+      new Date(),
+      window
+    )
   );
 };

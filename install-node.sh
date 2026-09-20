@@ -39,7 +39,7 @@ curl_options=(
   --speed-time 30
 )
 
-echo "[1/4] Resolving the latest stable cluster-node release..."
+echo "[1/5] Resolving the latest stable cluster-node release..."
 latest_url="$(curl "${curl_options[@]}" --silent --head -o /dev/null -w '%{url_effective}' "https://github.com/${repository}/releases/latest")"
 version="${latest_url##*/}"
 if [[ ! ${version} =~ ^v[0-9A-Za-z.+-]+$ ]]; then
@@ -49,12 +49,21 @@ fi
 
 asset="cluster-node-linux-${architecture}"
 base="https://github.com/${repository}/releases/download/${version}"
-echo "[2/4] Downloading checksums for ${version}..."
+echo "[2/5] Downloading checksums for ${version}..."
 curl "${curl_options[@]}" --progress-bar "${base}/checksums.txt" -o "${temporary_directory}/checksums.txt"
-echo "[3/4] Downloading ${asset} (${version})..."
+echo "[3/5] Downloading ${asset} (${version})..."
 curl "${curl_options[@]}" --progress-bar "${base}/${asset}" -o "${temporary_directory}/${asset}"
+echo "[4/5] Checking for a GPU diagnostics trust manifest..."
+manifest_expected="$(awk '$2 == "diagnostics-manifest.json" || $2 == "*diagnostics-manifest.json" { print $1; exit }' "${temporary_directory}/checksums.txt")"
+manifest_available=false
+if [[ ${manifest_expected} =~ ^[0-9a-fA-F]{64}$ ]]; then
+  curl "${curl_options[@]}" --progress-bar "${base}/diagnostics-manifest.json" -o "${temporary_directory}/diagnostics-manifest.json"
+  manifest_available=true
+else
+  echo "This older release predates optional GPU diagnostics; installing the core node only."
+fi
 
-echo "[4/4] Verifying the downloaded binary..."
+echo "[5/5] Verifying release assets..."
 expected="$(awk -v asset="${asset}" '$2 == asset || $2 == "*" asset { print $1; exit }' "${temporary_directory}/checksums.txt")"
 if [[ ! ${expected} =~ ^[0-9a-fA-F]{64}$ ]]; then
   echo "checksums.txt does not contain a valid SHA-256 for ${asset}." >&2
@@ -65,9 +74,21 @@ if [[ ${actual,,} != "${expected,,}" ]]; then
   echo "SHA-256 verification failed for ${asset}." >&2
   exit 1
 fi
+if [[ ${manifest_available} == true ]]; then
+  manifest_actual="$(sha256sum "${temporary_directory}/diagnostics-manifest.json" | awk '{print $1}')"
+  if [[ ${manifest_actual,,} != "${manifest_expected,,}" ]]; then
+    echo "SHA-256 verification failed for diagnostics-manifest.json." >&2
+    exit 1
+  fi
+fi
 
 install -m 0755 "${temporary_directory}/${asset}" "${install_path}.new"
 mv -f "${install_path}.new" "${install_path}"
+if [[ ${manifest_available} == true ]]; then
+  install -d -m 0700 /var/lib/cluster-manager
+  install -m 0600 "${temporary_directory}/diagnostics-manifest.json" /var/lib/cluster-manager/diagnostics-manifest.json.new
+  mv -f /var/lib/cluster-manager/diagnostics-manifest.json.new /var/lib/cluster-manager/diagnostics-manifest.json
+fi
 
 echo "Verified and installed cluster-node ${version} at ${install_path}."
 echo "Run interactive setup next:"

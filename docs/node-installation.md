@@ -29,6 +29,15 @@ missing OS packages. Have the platform URL, workstation name, and a fresh one-ti
 enrollment token ready. The token is read without echo and is not saved in the active
 configuration.
 
+Setup also offers optional GPU diagnostics. If accepted, it installs Podman and NVIDIA
+Container Toolkit from NVIDIA's signed repository, generates the CDI specification,
+and pulls the exact release-pinned `gpu-burn` image. Declining does not affect normal
+account reconciliation or monitoring. Enable or repair it later with:
+
+```bash
+sudo /usr/local/sbin/cluster-node diagnostics setup
+```
+
 ## Reserve the managed POSIX range
 
 Before setup, reserve UID/GID range `20000–59999` for Cluster Manager on every node
@@ -53,8 +62,9 @@ sudo /usr/local/sbin/cluster-node setup
 ```
 
 The installer detects the CPU architecture, shows progress while downloading the
-matching release binary, retries transient or stalled transfers, verifies it against
-`checksums.txt`, and installs it to `/usr/local/sbin/cluster-node`. Setup is a separate
+matching release binary and, on supporting releases, its diagnostic trust manifest,
+retries transient or stalled transfers, verifies every downloaded asset against
+`checksums.txt`, and installs them root-only. Setup is a separate
 explicit command. Rerunning the installer may replace an unconfigured CLI when setup
 has not completed. Configured installations are upgraded with
 `sudo /usr/local/sbin/cluster-node upgrade` instead.
@@ -70,6 +80,7 @@ cluster-node setup [--platform-url URL] [--name NAME] [--enrollment-token-file P
 cluster-node run
 cluster-node status
 cluster-node doctor
+cluster-node diagnostics setup
 cluster-node re-enroll [--enrollment-token-file PATH]
 cluster-node upgrade [--version vX.Y.Z]
 cluster-node uninstall [--dry-run] [--purge-created-users]
@@ -81,7 +92,8 @@ Token files must be root-only. Tokens are unavailable as normal command-line arg
 because process listings and shell history can expose arguments.
 
 `upgrade` selects the latest non-prerelease by default, or installs an exact tag. It
-verifies SHA-256 before atomically replacing the executable and restarting the service.
+verifies SHA-256 before atomically replacing the executable and diagnostic manifest,
+then restarts the service.
 An exact older tag is allowed for rollback. `re-enroll` retains the current credential
 unless the platform accepts its replacement.
 
@@ -118,6 +130,23 @@ sudo cluster-node doctor
 sudo systemctl status cluster-node
 sudo journalctl -u cluster-node -n 100 --no-pager
 ```
+
+## GPU diagnostics
+
+An enabled node advertises `gpu-diagnostics-v1` only after Podman, NVIDIA CDI, the
+root-only trust manifest, and the exact image digest all validate. Administrators start
+a whole-system or single-GPU test from the workstation page. The platform requires
+fresh idle telemetry and a reservation-free safety window; the node repeats process,
+identity, digest, and temperature checks immediately before launch.
+
+The workload runs in a dedicated transient systemd service with no network. The node
+keeps sending telemetry, stops locally at the selected thermal limit or the absolute
+90°C ceiling, and enforces its deadline even if the platform disconnects. Diagnostic
+recovery state is stored at `/var/lib/cluster-manager/diagnostics-state.json` so a node
+restart monitors only the exact unit it created.
+
+The result is a stress-test signal, not a hardware-health guarantee. A failed or
+thermally stopped test should be investigated before the workstation returns to use.
 
 ## Uninstall safely
 

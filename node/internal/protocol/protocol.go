@@ -31,6 +31,7 @@ type GPU struct {
 	MemoryUsedBytes    uint64   `json:"memoryUsedBytes"`
 	MemoryTotalBytes   uint64   `json:"memoryTotalBytes"`
 	TemperatureC       *float64 `json:"temperatureC,omitempty"`
+	PowerWatts         *float64 `json:"powerWatts,omitempty"`
 }
 type GPUProcess struct {
 	GPUUUID           string `json:"gpuUuid"`
@@ -52,13 +53,14 @@ type Inventory struct {
 	GPUProcesses    []GPUProcess `json:"gpuProcesses"`
 }
 type Heartbeat struct {
-	ObservedAt    time.Time `json:"observedAt"`
-	NodeVersion   string    `json:"nodeVersion"`
-	Capabilities  []string  `json:"capabilities,omitempty"`
-	Hostname      string    `json:"hostname"`
-	BootID        string    `json:"bootId"`
-	UptimeSeconds uint64    `json:"uptimeSeconds"`
-	Inventory     Inventory `json:"inventory"`
+	ObservedAt             time.Time `json:"observedAt"`
+	NodeVersion            string    `json:"nodeVersion"`
+	Capabilities           []string  `json:"capabilities,omitempty"`
+	DiagnosticsImageDigest string    `json:"diagnosticsImageDigest,omitempty"`
+	Hostname               string    `json:"hostname"`
+	BootID                 string    `json:"bootId"`
+	UptimeSeconds          uint64    `json:"uptimeSeconds"`
+	Inventory              Inventory `json:"inventory"`
 }
 
 type DesiredUser struct {
@@ -131,4 +133,43 @@ type NodeUpdateResult struct {
 	InstructionID string `json:"instructionId"`
 	Status        string `json:"status"`
 	Detail        string `json:"detail"`
+}
+
+type DiagnosticInstruction struct {
+	APIVersion  string `json:"apiVersion"`
+	RunID       string `json:"runId"`
+	Workstation struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	} `json:"workstation"`
+	TargetGPUUUIDs     []string  `json:"targetGpuUuids"`
+	DurationSeconds    int       `json:"durationSeconds"`
+	MemoryPercent      int       `json:"memoryPercent"`
+	Workload           string    `json:"workload"`
+	TemperatureCutoffC int       `json:"temperatureCutoffC"`
+	ImageDigest        string    `json:"imageDigest"`
+	ExpiresAt          time.Time `json:"expiresAt"`
+	CancelRequested    bool      `json:"cancelRequested"`
+}
+
+type DiagnosticGPUResult struct {
+	GPUUUID                string   `json:"gpuUuid"`
+	LocalIndex             int      `json:"localIndex"`
+	Model                  string   `json:"model"`
+	Outcome                string   `json:"outcome"`
+	MaxTemperatureC        *float64 `json:"maxTemperatureC"`
+	PeakUtilizationPercent *float64 `json:"peakUtilizationPercent"`
+	PeakMemoryBytes        *uint64  `json:"peakMemoryBytes"`
+	AverageGFLOPS          *float64 `json:"averageGflops"`
+	MaximumGFLOPS          *float64 `json:"maximumGflops"`
+	ErrorCount             int      `json:"errorCount"`
+	Detail                 string   `json:"detail,omitempty"`
+}
+
+type DiagnosticResult struct {
+	RunID     string                `json:"runId"`
+	Status    string                `json:"status"`
+	Detail    string                `json:"detail"`
+	OutputLog string                `json:"outputLog"`
+	Results   []DiagnosticGPUResult `json:"results"`
 }

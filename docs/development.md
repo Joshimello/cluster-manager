@@ -83,6 +83,11 @@ make test-debian-deploy      # the same deployment checks on Debian 13
 make test-shared-posix       # two-client shared-volume ownership behavior
 ```
 
+CI also builds the pinned multi-architecture `diagnostics/gpu-burn` image. Ordinary CI
+validates the build without a GPU; release tags publish it to GHCR and place its manifest
+digest in the checksummed node release assets. Hardware execution belongs in a disposable
+NVIDIA acceptance environment and should never run on a developer laptop by accident.
+
 ## Workflow smoke tests
 
 The smoke tests require the running development stack and an administrator account:

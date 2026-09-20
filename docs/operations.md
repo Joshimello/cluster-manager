@@ -136,6 +136,24 @@ continuing. A node without the managed-update capability must be upgraded manual
 If an update reports **Rolled back** or **Failed**, preserve the node journal and platform
 audit record, investigate the release, and do not retry it across the fleet.
 
+### GPU stress diagnostics
+
+GPU diagnostics are deliberately admin-only. Confirm that the workstation is online,
+the intended GPUs are idle, and no reservation overlaps the displayed safety window.
+Choose the shortest useful duration and retain the default 85°C cutoff unless the
+hardware owner has approved another value. The node always enforces a 90°C ceiling.
+
+While a run is pending or active, the platform blocks overlapping reservations and node
+updates. It never cancels an existing reservation to make room for a test. Use the
+diagnostic detail page for live utilization, VRAM, temperature, power, bounded logs, and
+per-GPU results. Cancellation is best effort through the platform, while duration and
+thermal termination remain local safety controls.
+
+If diagnostics are unavailable, run `sudo /usr/local/sbin/cluster-node doctor`, then
+`sudo /usr/local/sbin/cluster-node diagnostics setup`. Do not replace the image tag or
+edit the trust manifest manually; upgrades distribute a checksummed manifest containing
+the exact permitted GHCR digest.
+
 ## Backup and restore
 
 Create and validate a PostgreSQL custom-format backup:

@@ -12,6 +12,8 @@
       value === 'error' ||
       value === 'revoked' ||
       value === 'failed' ||
+      value === 'faulty' ||
+      value === 'refused' ||
       value === 'rolled_back' ||
       value === 'expired'
     ) {
@@ -23,7 +25,8 @@
       value === 'enrolled' ||
       value === 'applied' ||
       value === 'current' ||
-      value === 'succeeded'
+      value === 'succeeded' ||
+      value === 'passed'
     )
       return 'default';
     return 'secondary';

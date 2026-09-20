@@ -107,3 +107,19 @@ jobs:
           labels: org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
           cache-from: type=gha,scope=platform-image
           cache-to: type=gha,mode=max,scope=platform-image
+
+  gpu-diagnostics-image:
+    needs: [platform-test, test]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - name: Validate the multi-architecture gpu-burn image
+        uses: docker/build-push-action@v6
+        with:
+          context: diagnostics/gpu-burn
+          platforms: linux/amd64,linux/arm64
+          push: false
+          cache-from: type=gha,scope=gpu-diagnostics-image
+          cache-to: type=gha,mode=max,scope=gpu-diagnostics-image

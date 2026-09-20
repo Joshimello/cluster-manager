@@ -59,6 +59,7 @@ export const POST: RequestHandler = async ({ request }) => {
               inventoryObservedAt: report.observedAt,
               nodeVersion: report.nodeVersion,
               nodeCapabilities: report.capabilities,
+              diagnosticsImageDigest: report.diagnosticsImageDigest,
               hostname: report.hostname,
               bootId: report.bootId,
               uptimeSeconds: Math.floor(report.uptimeSeconds),
@@ -104,6 +105,7 @@ export const POST: RequestHandler = async ({ request }) => {
             memoryUsedBytes: gpu.memoryUsedBytes,
             memoryTotalBytes: gpu.memoryTotalBytes,
             temperatureC: gpu.temperatureC,
+            powerWatts: gpu.powerWatts,
             updatedAt: receivedAt
           })
           .onConflictDoUpdate({
@@ -117,6 +119,7 @@ export const POST: RequestHandler = async ({ request }) => {
               memoryUsedBytes: gpu.memoryUsedBytes,
               memoryTotalBytes: gpu.memoryTotalBytes,
               temperatureC: gpu.temperatureC,
+              powerWatts: gpu.powerWatts,
               updatedAt: receivedAt
             }
           })
@@ -130,7 +133,8 @@ export const POST: RequestHandler = async ({ request }) => {
             utilizationPercent: gpu.utilizationPercent,
             memoryUsedBytes: gpu.memoryUsedBytes,
             memoryTotalBytes: gpu.memoryTotalBytes,
-            temperatureC: gpu.temperatureC
+            temperatureC: gpu.temperatureC,
+            powerWatts: gpu.powerWatts
           })
           .onConflictDoNothing()
           .returning({ id: gpuObservations.id });

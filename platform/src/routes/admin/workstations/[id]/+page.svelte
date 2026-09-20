@@ -2,6 +2,7 @@
   import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
   import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
   import ShieldCheckIcon from '@lucide/svelte/icons/shield-check';
+  import FlameIcon from '@lucide/svelte/icons/flame';
   import { onMount } from 'svelte';
   import { invalidateAll } from '$app/navigation';
   import { resolve } from '$app/paths';
@@ -21,8 +22,16 @@
   let { data, form } = $props();
   let ws = $derived(data.workstation);
   let supportsManagedUpdate = $derived(ws.nodeCapabilities.includes(data.managedUpdateCapability));
+  let supportsGpuDiagnostics = $derived(
+    ws.nodeCapabilities.includes(data.gpuDiagnosticsCapability)
+  );
   let activeUpdate = $derived(
     data.updates.find((update) => ['pending', 'dispatched', 'restarting'].includes(update.status))
+  );
+  let activeDiagnostic = $derived(
+    data.diagnostics.find((run) =>
+      ['pending', 'dispatched', 'running', 'cancel_requested'].includes(run.status)
+    )
   );
   let dateTime = $derived(
     new Intl.DateTimeFormat(undefined, {
@@ -33,7 +42,7 @@
   );
   onMount(() => {
     const timer = window.setInterval(() => {
-      if (activeUpdate) void invalidateAll();
+      if (activeUpdate || activeDiagnostic) void invalidateAll();
     }, 5_000);
     return () => window.clearInterval(timer);
   });
@@ -156,7 +165,11 @@
                 required
                 placeholder="v0.3.0"
                 pattern="v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
-                value={form?.action === 'queueUpdate' ? (form.values?.targetVersion ?? '') : ''}
+                value={form?.action === 'queueUpdate' &&
+                form.values &&
+                'targetVersion' in form.values
+                  ? (form.values.targetVersion ?? '')
+                  : ''}
               />
             </div>
             <div class="grid gap-2">
@@ -220,6 +233,200 @@
                       <Table.Cell class="max-w-md text-sm">{update.detail ?? '—'}</Table.Cell>
                       <Table.Cell class="pr-4 text-sm"
                         >{dateTime.format(update.createdAt)}</Table.Cell
+                      >
+                    </Table.Row>
+                  {/each}
+                </Table.Body>
+              </Table.Root>
+            </div>
+          </div>
+        {/if}
+      </Card.Content>
+    </Card.Root>
+
+    <Card.Root>
+      <Card.Header>
+        <Card.Title class="flex items-center gap-2">
+          <FlameIcon class="size-5" aria-hidden="true" />
+          GPU diagnostics
+        </Card.Title>
+        <Card.Description>
+          Run a guarded gpu-burn stress test. The node refuses to start when a target has a process,
+          reservation, stale identity, untrusted image, or unsafe temperature.
+        </Card.Description>
+      </Card.Header>
+      <Card.Content class="grid gap-5">
+        <div class="bg-muted/50 grid gap-3 rounded-lg border p-4 sm:grid-cols-3">
+          <div class="grid gap-1">
+            <span class="text-muted-foreground text-sm">Diagnostics</span>
+            <strong>{supportsGpuDiagnostics ? 'Ready' : 'Not configured'}</strong>
+          </div>
+          <div class="grid gap-1">
+            <span class="text-muted-foreground text-sm">Target availability</span>
+            <strong
+              >{data.gpus.filter((gpu) => gpu.processCount === 0).length} of {data.gpus.length} idle</strong
+            >
+          </div>
+          <div class="grid gap-1">
+            <span class="text-muted-foreground text-sm">Test state</span>
+            {#if activeDiagnostic}
+              <StatusBadge status={activeDiagnostic.status} />
+            {:else}
+              <strong>Idle</strong>
+            {/if}
+          </div>
+        </div>
+
+        {#if activeDiagnostic}
+          <div class="grid gap-3 rounded-lg border p-4 sm:grid-cols-[1fr_auto] sm:items-center">
+            <div class="grid gap-1">
+              <strong>
+                {activeDiagnostic.scope === 'all' ? 'All GPUs' : 'Single GPU'} ·
+                {activeDiagnostic.durationSeconds}s · {activeDiagnostic.memoryPercent}% VRAM
+              </strong>
+              <p class="text-muted-foreground text-sm">
+                {activeDiagnostic.detail ?? 'Waiting for the node to report progress.'}
+              </p>
+              <Button
+                variant="link"
+                class="h-auto w-fit p-0"
+                href={resolve(`/admin/workstations/${ws.id}/diagnostics/${activeDiagnostic.id}`)}
+                >View live diagnostic</Button
+              >
+            </div>
+            <form method="POST" action="?/cancelDiagnostic">
+              <input type="hidden" name="runId" value={activeDiagnostic.id} />
+              <Button type="submit" variant="destructive">Cancel test</Button>
+            </form>
+          </div>
+        {:else if supportsGpuDiagnostics && data.gpus.length > 0}
+          <form method="POST" action="?/queueDiagnostic" class="grid gap-4">
+            <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+              <div class="grid gap-2">
+                <Label for="diagnostic-target">GPU target</Label>
+                <select
+                  id="diagnostic-target"
+                  name="target"
+                  class="border-input bg-background h-9 rounded-md border px-3 text-sm shadow-xs"
+                  required
+                >
+                  <option value="all">All GPUs</option>
+                  {#each data.gpus as gpu (gpu.id)}
+                    <option value={gpu.id}>GPU {gpu.index} · {gpu.model}</option>
+                  {/each}
+                </select>
+              </div>
+              <div class="grid gap-2">
+                <Label for="diagnostic-duration">Duration (seconds)</Label>
+                <Input
+                  id="diagnostic-duration"
+                  name="durationSeconds"
+                  type="number"
+                  min="10"
+                  max="1800"
+                  value="60"
+                  required
+                />
+              </div>
+              <div class="grid gap-2">
+                <Label for="diagnostic-memory">VRAM (%)</Label>
+                <Input
+                  id="diagnostic-memory"
+                  name="memoryPercent"
+                  type="number"
+                  min="50"
+                  max="90"
+                  value="90"
+                  required
+                />
+              </div>
+              <div class="grid gap-2">
+                <Label for="diagnostic-workload">Workload</Label>
+                <select
+                  id="diagnostic-workload"
+                  name="workload"
+                  class="border-input bg-background h-9 rounded-md border px-3 text-sm shadow-xs"
+                  required
+                >
+                  <option value="fp32">FP32</option>
+                  <option value="fp64">FP64</option>
+                  <option value="tensor">Tensor Core</option>
+                </select>
+              </div>
+              <div class="grid gap-2">
+                <Label for="diagnostic-temperature">Stop at (°C)</Label>
+                <Input
+                  id="diagnostic-temperature"
+                  name="temperatureCutoffC"
+                  type="number"
+                  min="70"
+                  max="90"
+                  value="85"
+                  required
+                />
+              </div>
+            </div>
+            <div class="grid items-end gap-4 sm:grid-cols-[1fr_auto]">
+              <div class="grid gap-2">
+                <Label for="diagnostic-confirmation"
+                  >Type {ws.name} to confirm this intensive test</Label
+                >
+                <Input
+                  id="diagnostic-confirmation"
+                  name="confirmation"
+                  required
+                  autocomplete="off"
+                />
+              </div>
+              <Button
+                type="submit"
+                variant="destructive"
+                disabled={ws.connectionState !== 'online'}
+              >
+                Start stress test
+              </Button>
+            </div>
+          </form>
+        {:else}
+          <p class="text-muted-foreground text-sm">
+            {supportsGpuDiagnostics
+              ? 'No active NVIDIA GPU is available.'
+              : 'Run sudo /usr/local/sbin/cluster-node diagnostics setup on the workstation, then re-run node doctor.'}
+          </p>
+        {/if}
+
+        {#if data.diagnostics.length > 0}
+          <div class="grid gap-3">
+            <h3 class="font-medium">Recent diagnostic history</h3>
+            <div class="overflow-hidden rounded-lg border">
+              <Table.Root>
+                <Table.Header>
+                  <Table.Row>
+                    <Table.Head class="pl-4">Target</Table.Head>
+                    <Table.Head>Status</Table.Head>
+                    <Table.Head>Settings</Table.Head>
+                    <Table.Head class="pr-4">Requested</Table.Head>
+                  </Table.Row>
+                </Table.Header>
+                <Table.Body>
+                  {#each data.diagnostics as diagnostic (diagnostic.id)}
+                    <Table.Row>
+                      <Table.Cell class="pl-4 font-medium">
+                        <a
+                          class="hover:underline"
+                          href={resolve(
+                            `/admin/workstations/${ws.id}/diagnostics/${diagnostic.id}`
+                          )}
+                        >
+                          {diagnostic.scope === 'all' ? 'All GPUs' : 'Single GPU'}
+                        </a>
+                      </Table.Cell>
+                      <Table.Cell><StatusBadge status={diagnostic.status} /></Table.Cell>
+                      <Table.Cell class="text-sm"
+                        >{diagnostic.durationSeconds}s · {diagnostic.memoryPercent}% · {diagnostic.workload.toUpperCase()}</Table.Cell
+                      >
+                      <Table.Cell class="pr-4 text-sm"
+                        >{dateTime.format(diagnostic.createdAt)}</Table.Cell
                       >
                     </Table.Row>
                   {/each}

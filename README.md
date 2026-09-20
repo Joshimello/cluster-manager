@@ -16,6 +16,7 @@ reconciles those accounts and reports host and NVIDIA telemetry.
 - Consistent platform-assigned UID/GID values for optional shared NFS storage
 - Collision-safe Linux account, private-group, home, SSH, and rootless Podman setup
 - Live and historical CPU, memory, storage, GPU, and process monitoring
+- Admin-triggered, thermal-guarded whole-system or per-GPU `gpu-burn` diagnostics
 - Per-GPU reservations with conflict detection and privacy-aware user views
 - User stop requests and narrowly scoped, administrator-approved process termination
 - Audited privileged actions, node enrollment, credential rotation, and revocation
@@ -37,6 +38,9 @@ flowchart LR
     N1 --> G1[NVIDIA GPUs]
     N2 --> L2[Linux accounts, SSH, Podman]
     N2 --> G2[NVIDIA GPUs]
+
+    P -->|Bounded diagnostic instruction| N1
+    N1 -->|Pinned Podman + NVIDIA CDI workload| G1
 
     L1 -. Optional shared project files .-> NAS[(NAS / NFS)]
     L2 -. Optional shared project files .-> NAS

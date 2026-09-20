@@ -37,6 +37,7 @@ export type GpuMonitoringView = {
   memoryUsedBytes: number;
   memoryTotalBytes: number;
   temperatureC: number | null;
+  powerWatts: number | null;
   coordinationState: CoordinationState;
   processCount: number;
   ownerProcessCount: number;
@@ -70,6 +71,7 @@ export async function loadWorkstationGpus(
       memoryUsedBytes: gpus.memoryUsedBytes,
       memoryTotalBytes: gpus.memoryTotalBytes,
       temperatureC: gpus.temperatureC,
+      powerWatts: gpus.powerWatts,
       processId: gpuProcessObservations.id,
       pid: gpuProcessObservations.pid,
       uid: gpuProcessObservations.uid,
@@ -116,6 +118,7 @@ export async function loadWorkstationGpus(
       memoryUsedBytes: number;
       memoryTotalBytes: number;
       temperatureC: number | null;
+      powerWatts: number | null;
       reservation: CurrentReservation | null;
       processes: GpuProcessView[];
     }
@@ -135,6 +138,7 @@ export async function loadWorkstationGpus(
         memoryUsedBytes: row.memoryUsedBytes,
         memoryTotalBytes: row.memoryTotalBytes,
         temperatureC: row.temperatureC,
+        powerWatts: row.powerWatts,
         reservation:
           row.reservationId &&
           row.reservationUserId &&

@@ -7,11 +7,11 @@ import (
 )
 
 func TestParseGPUCSV(t *testing.T) {
-	gpus, err := parseGPUCSV([]byte("GPU-a, 0, NVIDIA RTX PRO 6000, 72, 1024, 98304, 67\nGPU-b, 1, NVIDIA RTX PRO 6000, 0, 0, 98304, N/A\n"))
+	gpus, err := parseGPUCSV([]byte("GPU-a, 0, NVIDIA RTX PRO 6000, 72, 1024, 98304, 67, 312.5\nGPU-b, 1, NVIDIA RTX PRO 6000, 0, 0, 98304, N/A, N/A\n"))
 	if err != nil || len(gpus) != 2 {
 		t.Fatalf("unexpected GPUs: %#v, %v", gpus, err)
 	}
-	if gpus[0].MemoryUsedBytes != 1024*mebibyte || gpus[0].TemperatureC == nil || gpus[1].TemperatureC != nil {
+	if gpus[0].MemoryUsedBytes != 1024*mebibyte || gpus[0].TemperatureC == nil || gpus[0].PowerWatts == nil || *gpus[0].PowerWatts != 312.5 || gpus[1].TemperatureC != nil || gpus[1].PowerWatts != nil {
 		t.Fatalf("unexpected GPU telemetry: %#v", gpus)
 	}
 }
