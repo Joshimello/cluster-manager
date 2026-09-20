@@ -82,6 +82,16 @@ describe.skipIf(!runDatabaseTests)('maintenance database integration', () => {
           (${gpu.id}, ${currentObservationAt}::timestamptz, 0, 0, 1)
         returning id, observed_at
       `;
+      const workstationObservations = await client`
+        insert into workstation_observations (
+          workstation_id, observed_at, cpu_utilization_percent,
+          memory_used_bytes, memory_total_bytes, storage_path,
+          storage_used_bytes, storage_total_bytes
+        ) values
+          (${createdWorkstationId}, ${expiredObservationAt}::timestamptz, 0, 0, 1, '/', 0, 1),
+          (${createdWorkstationId}, ${currentObservationAt}::timestamptz, 0, 0, 1, '/', 0, 1)
+        returning id, observed_at
+      `;
 
       await runMaintenance(now, database);
 
@@ -96,6 +106,14 @@ describe.skipIf(!runDatabaseTests)('maintenance database integration', () => {
       `;
       expect(retainedObservations.map((observation) => observation.id)).toEqual([
         observations[1].id
+      ]);
+
+      const retainedWorkstationObservations = await client`
+        select id from workstation_observations
+        where id = any(${workstationObservations.map((observation) => observation.id)})
+      `;
+      expect(retainedWorkstationObservations.map((observation) => observation.id)).toEqual([
+        workstationObservations[1].id
       ]);
     } finally {
       if (userId) await client`delete from users where id = ${userId}`;

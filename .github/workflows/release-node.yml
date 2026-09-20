@@ -52,7 +52,7 @@ jobs:
       - working-directory: platform
         run: npm run test:identity-db-smoke
       - working-directory: platform
-        run: npm run test:maintenance-db
+        run: npm run test:database
       - working-directory: node
         run: go test ./...
       - working-directory: node

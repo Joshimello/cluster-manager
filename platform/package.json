@@ -32,6 +32,7 @@
     "test:process-correlation-smoke": "node scripts/process-correlation-smoke.mjs",
     "test:stop-requests-smoke": "node scripts/stop-requests-smoke.mjs",
     "test:identity-db-smoke": "node scripts/identity-db-smoke.mjs",
+    "test:database": "RUN_DATABASE_TESTS=true vitest run src/lib/server/maintenance.database.test.ts src/lib/server/monitoring/history.database.test.ts src/routes/api/monitoring/history/server.database.test.ts --maxWorkers=1",
     "test:maintenance-db": "RUN_DATABASE_TESTS=true vitest run src/lib/server/maintenance.database.test.ts --maxWorkers=1",
     "test:watch": "vitest"
   },
@@ -53,6 +54,7 @@
     "eslint-config-prettier": "10.1.8",
     "eslint-plugin-svelte": "3.23.0",
     "globals": "17.12.0",
+    "layerchart": "2.5.0",
     "prettier": "3.9.6",
     "prettier-plugin-svelte": "4.1.1",
     "shadcn-svelte": "^1.6.1",

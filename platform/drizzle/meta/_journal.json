@@ -85,6 +85,13 @@
       "when": 1789811163972,
       "tag": "0011_brief_eddie_brock",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1789867355222,
+      "tag": "0012_supreme_hellion",
+      "breakpoints": true
     }
   ]
 }

@@ -1,9 +1,11 @@
 import { asc } from 'drizzle-orm';
 
+import { parseMonitoringRange } from '$lib/monitoring-history';
 import { requireAdmin } from '$lib/server/auth/guards';
 import { getDatabase } from '$lib/server/db';
 import { workstations } from '$lib/server/db/schema';
 import { loadWorkstationGpus } from '$lib/server/nodes/gpu-monitoring';
+import { deriveConnectionState } from '$lib/server/nodes/heartbeat';
 import { coordinationStates, type CoordinationState } from '$lib/server/reservations/correlation';
 
 import type { PageServerLoad } from './$types';
@@ -24,6 +26,8 @@ export const load: PageServerLoad = async ({ locals, url }) => {
       id: workstations.id,
       name: workstations.name,
       displayName: workstations.displayName,
+      lastHeartbeatAt: workstations.lastHeartbeatAt,
+      inventoryObservedAt: workstations.inventoryObservedAt,
       inventory: workstations.inventory
     })
     .from(workstations)
@@ -45,11 +49,13 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 
   return {
     filter,
+    range: parseMonitoringRange(url.searchParams.get('range')),
     total: allGpus.length,
     summaries,
     workstations: complete
       .map((workstation) => ({
         ...workstation,
+        connectionState: deriveConnectionState(workstation.lastHeartbeatAt),
         gpus:
           filter === 'all'
             ? workstation.gpus

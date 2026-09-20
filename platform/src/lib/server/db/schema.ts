@@ -171,6 +171,31 @@ export const workstations = pgTable(
   ]
 );
 
+export const workstationObservations = pgTable(
+  'workstation_observations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    workstationId: uuid('workstation_id')
+      .notNull()
+      .references(() => workstations.id, { onDelete: 'cascade' }),
+    observedAt: timestamp('observed_at', { withTimezone: true }).notNull(),
+    cpuUtilizationPercent: doublePrecision('cpu_utilization_percent').notNull(),
+    memoryUsedBytes: bigint('memory_used_bytes', { mode: 'number' }).notNull(),
+    memoryTotalBytes: bigint('memory_total_bytes', { mode: 'number' }).notNull(),
+    storagePath: varchar('storage_path', { length: 512 }).notNull(),
+    storageUsedBytes: bigint('storage_used_bytes', { mode: 'number' }).notNull(),
+    storageTotalBytes: bigint('storage_total_bytes', { mode: 'number' }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => [
+    uniqueIndex('workstation_observations_workstation_time_unique').on(
+      table.workstationId,
+      table.observedAt
+    ),
+    index('workstation_observations_observed_at_index').on(table.observedAt)
+  ]
+);
+
 export const workstationAssignments = pgTable(
   'workstation_assignments',
   {
@@ -448,10 +473,18 @@ export const usersRelations = relations(users, ({ many }) => ({
 
 export const workstationsRelations = relations(workstations, ({ many }) => ({
   assignments: many(workstationAssignments),
+  observations: many(workstationObservations),
   gpus: many(gpus),
   stopRequests: many(stopRequests),
   terminationInstructions: many(terminationInstructions),
   nodeUpdates: many(nodeUpdates)
+}));
+
+export const workstationObservationsRelations = relations(workstationObservations, ({ one }) => ({
+  workstation: one(workstations, {
+    fields: [workstationObservations.workstationId],
+    references: [workstations.id]
+  })
 }));
 
 export const gpusRelations = relations(gpus, ({ one, many }) => ({
@@ -567,6 +600,7 @@ export type UserRole = User['role'];
 export type UserStatus = User['status'];
 export type Workstation = typeof workstations.$inferSelect;
 export type WorkstationStatus = Workstation['status'];
+export type WorkstationObservation = typeof workstationObservations.$inferSelect;
 export type WorkstationAssignment = typeof workstationAssignments.$inferSelect;
 export type AssignmentStatus = WorkstationAssignment['status'];
 export type ProvisioningStatus = WorkstationAssignment['provisioningStatus'];

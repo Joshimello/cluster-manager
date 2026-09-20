@@ -1,6 +1,7 @@
 import { and, desc, eq } from 'drizzle-orm';
 import { error, fail } from '@sveltejs/kit';
 
+import { parseMonitoringRange } from '$lib/monitoring-history';
 import { recordAudit } from '$lib/server/audit';
 import { requireAdmin } from '$lib/server/auth/guards';
 import { getDatabase } from '$lib/server/db';
@@ -27,7 +28,7 @@ function uniqueViolation(cause: unknown): boolean {
   return typeof cause === 'object' && cause !== null && 'code' in cause && cause.code === '23505';
 }
 
-export const load: PageServerLoad = async ({ locals, params }) => {
+export const load: PageServerLoad = async ({ locals, params, url }) => {
   requireAdmin(locals);
   if (!isWorkstationId(params.id)) error(404, 'Workstation not found');
   await expireNodeUpdates();
@@ -53,6 +54,7 @@ export const load: PageServerLoad = async ({ locals, params }) => {
     },
     gpus: gpuState,
     updates,
+    range: parseMonitoringRange(url.searchParams.get('range')),
     managedUpdateCapability
   };
 };

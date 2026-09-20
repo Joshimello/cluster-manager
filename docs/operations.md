@@ -180,10 +180,13 @@ the new credential is written.
 
 ## Retention and logs
 
-Expired sessions are deleted in batches. GPU observations and their process rows are
-kept for `TELEMETRY_RETENTION_HOURS` (24 by default, allowed range 1–720) and removed in
-bounded batches. Current GPU state remains on the GPU record. Audit events, users,
-assignments, reservations, and stop requests are not automatically deleted.
+Expired sessions are deleted in batches. Workstation and GPU observations, including
+GPU process rows, are kept for `TELEMETRY_RETENTION_HOURS` (24 by default, allowed range
+1–720) and removed in bounded batches. The monitoring UI offers 15-minute, 1-hour,
+6-hour, and 24-hour graphs; if retention is shorter than the selected window, it shows
+only the available portion. Current workstation and GPU state remains available after
+historical rows expire. Audit events, users, assignments, reservations, and stop requests
+are not automatically deleted.
 
 Platform and node logs are newline-delimited JSON. Container logs rotate locally at
 10 MiB × 5 files. Use `docker compose logs --since=1h platform postgres`; use

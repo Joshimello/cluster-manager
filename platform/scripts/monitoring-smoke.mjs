@@ -72,6 +72,16 @@ try {
   const ws01 = workstations.find((workstation) => workstation.name === 'ws01');
   const ws02 = workstations.find((workstation) => workstation.name === 'ws02');
 
+  await waitUntil('workstation telemetry history', async () => {
+    const [row] = await sql`
+      select count(*)::int as observations
+      from workstation_observations
+      where workstation_id in (${ws01.id}, ${ws02.id})
+        and observed_at > now() - interval '2 minutes'
+    `;
+    return row.observations >= 4;
+  });
+
   await waitUntil('changing ws01 telemetry', async () => {
     const [row] = await sql`
       select count(distinct o.utilization_percent)::int as states
@@ -146,10 +156,20 @@ try {
   assert.equal(dashboard.status, 200);
   const dashboardHTML = await dashboard.text();
   assert.match(dashboardHTML, /Your GPU processes/);
-  assert.match(dashboardHTML, /Storage availability/);
+  assert.match(dashboardHTML, /System resources/);
   assert.match(dashboardHTML, /5210/);
   assert.match(dashboardHTML, /5277/);
   assert.doesNotMatch(dashboardHTML, /4102/);
+
+  const userHistoryResponse = await user.request(
+    `/api/monitoring/history?range=15m&workstationId=${ws02.id}`
+  );
+  assert.equal(userHistoryResponse.status, 200);
+  const userHistory = await userHistoryResponse.json();
+  assert.equal(userHistory.range, '15m');
+  assert.equal(userHistory.workstations.length, 1);
+  assert.ok(userHistory.workstations[0].points.length > 0);
+  assert.equal(userHistory.workstations[0].gpus.length, 2);
 
   const adminMonitoring = await admin.request(`/admin/workstations/${ws02.id}`);
   assert.equal(adminMonitoring.status, 200);
@@ -158,21 +178,7 @@ try {
   assert.match(adminHTML, /4102/);
   assert.match(adminHTML, /5210/);
 
-  const [gpu] = await sql`select id from gpus where workstation_id = ${ws02.id} limit 1`;
-  const [oldObservation] = await sql`
-    insert into gpu_observations (
-      gpu_id, observed_at, utilization_percent, memory_used_bytes, memory_total_bytes
-    ) values (${gpu.id}, now() - interval '25 hours', 0, 0, 1)
-    returning id
-  `;
-  await waitUntil('24-hour observation retention', async () => {
-    const [remaining] = await sql`select id from gpu_observations where id = ${oldObservation.id}`;
-    return remaining === undefined;
-  });
-
-  console.log(
-    'GPU inventory, changing telemetry, process attribution, visibility, and retention passed.'
-  );
+  console.log('Host/GPU history, changing telemetry, process attribution, and visibility passed.');
 } finally {
   if (userId) {
     await sql`delete from audit_events where target_type = 'user' and target_id = ${userId}`;

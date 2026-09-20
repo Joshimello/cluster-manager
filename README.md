@@ -15,7 +15,7 @@ reconciles those accounts and reports host and NVIDIA telemetry.
 - Shared platform and Linux password authentication without plaintext storage
 - Consistent platform-assigned UID/GID values for optional shared NFS storage
 - Collision-safe Linux account, private-group, home, SSH, and rootless Podman setup
-- Workstation health, storage, session, GPU, and process monitoring
+- Live and historical CPU, memory, storage, GPU, and process monitoring
 - Per-GPU reservations with conflict detection and privacy-aware user views
 - User stop requests and narrowly scoped, administrator-approved process termination
 - Audited privileged actions, node enrollment, credential rotation, and revocation

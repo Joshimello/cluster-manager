@@ -49,7 +49,7 @@ jobs:
       - working-directory: platform
         run: npm run test:identity-db-smoke
       - working-directory: platform
-        run: npm run test:maintenance-db
+        run: npm run test:database
 
   test:
     runs-on: ubuntu-24.04

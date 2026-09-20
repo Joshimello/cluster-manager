@@ -1,8 +1,14 @@
-import { and, eq, inArray, lt } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { json } from '@sveltejs/kit';
 
 import { getDatabase } from '$lib/server/db';
-import { gpuObservations, gpuProcessObservations, gpus, workstations } from '$lib/server/db/schema';
+import {
+  gpuObservations,
+  gpuProcessObservations,
+  gpus,
+  workstationObservations,
+  workstations
+} from '$lib/server/db/schema';
 import { hashNodeSecret, readBearerCredential } from '$lib/server/nodes/credentials';
 import { parseHeartbeatReport } from '$lib/server/nodes/heartbeat';
 
@@ -63,6 +69,20 @@ export const POST: RequestHandler = async ({ request }) => {
       .where(eq(workstations.id, workstation.id));
 
     if (inventoryAccepted) {
+      await transaction
+        .insert(workstationObservations)
+        .values({
+          workstationId: workstation.id,
+          observedAt: report.observedAt,
+          cpuUtilizationPercent: report.inventory.cpu.utilizationPercent,
+          memoryUsedBytes: report.inventory.memory.usedBytes,
+          memoryTotalBytes: report.inventory.memory.totalBytes,
+          storagePath: report.inventory.storage.path,
+          storageUsedBytes: report.inventory.storage.usedBytes,
+          storageTotalBytes: report.inventory.storage.totalBytes
+        })
+        .onConflictDoNothing();
+
       if (report.inventory.gpuStatus === 'available') {
         await transaction
           .update(gpus)
@@ -130,22 +150,6 @@ export const POST: RequestHandler = async ({ request }) => {
           if (processes.length > 0)
             await transaction.insert(gpuProcessObservations).values(processes);
         }
-      }
-
-      const workstationGpus = await transaction
-        .select({ id: gpus.id })
-        .from(gpus)
-        .where(eq(gpus.workstationId, workstation.id));
-      if (workstationGpus.length > 0) {
-        await transaction.delete(gpuObservations).where(
-          and(
-            inArray(
-              gpuObservations.gpuId,
-              workstationGpus.map((gpu) => gpu.id)
-            ),
-            lt(gpuObservations.observedAt, new Date(receivedAt.getTime() - 24 * 60 * 60_000))
-          )
-        );
       }
     }
 

@@ -1,13 +1,15 @@
 import { and, asc, eq, gt } from 'drizzle-orm';
 
+import { parseMonitoringRange } from '$lib/monitoring-history';
 import { requireReadyUser } from '$lib/server/auth/guards';
 import { getDatabase } from '$lib/server/db';
 import { gpus, reservations, workstationAssignments, workstations } from '$lib/server/db/schema';
 import { loadWorkstationGpus } from '$lib/server/nodes/gpu-monitoring';
+import { deriveConnectionState } from '$lib/server/nodes/heartbeat';
 
 import type { PageServerLoad } from './$types';
 
-export const load: PageServerLoad = async ({ locals }) => {
+export const load: PageServerLoad = async ({ locals, url }) => {
   const user = requireReadyUser(locals);
   const assignments = await getDatabase()
     .select({
@@ -16,6 +18,8 @@ export const load: PageServerLoad = async ({ locals }) => {
       name: workstations.name,
       displayName: workstations.displayName,
       hostname: workstations.hostname,
+      lastHeartbeatAt: workstations.lastHeartbeatAt,
+      inventoryObservedAt: workstations.inventoryObservedAt,
       inventory: workstations.inventory,
       provisioningStatus: workstationAssignments.provisioningStatus,
       provisioningMessage: workstationAssignments.provisioningMessage,
@@ -54,9 +58,11 @@ export const load: PageServerLoad = async ({ locals }) => {
 
   return {
     user,
+    range: parseMonitoringRange(url.searchParams.get('range')),
     assignments: await Promise.all(
       assignments.map(async (assignment) => ({
         ...assignment,
+        connectionState: deriveConnectionState(assignment.lastHeartbeatAt),
         inventory: assignment.inventory
           ? {
               ...assignment.inventory,

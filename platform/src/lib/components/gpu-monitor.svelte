@@ -1,15 +1,20 @@
 <script lang="ts">
   import ActivityIcon from '@lucide/svelte/icons/activity';
+  import MemoryStickIcon from '@lucide/svelte/icons/memory-stick';
   import ThermometerIcon from '@lucide/svelte/icons/thermometer';
   import { onMount } from 'svelte';
   import { invalidateAll } from '$app/navigation';
   import CoordinationBadge from '$lib/components/coordination-badge.svelte';
+  import { getMonitoringHistoryContext } from '$lib/components/monitoring-history-context';
   import StatusBadge from '$lib/components/status-badge.svelte';
+  import TelemetryLineChart from '$lib/components/telemetry-line-chart.svelte';
   import { Badge } from '$lib/components/ui/badge/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
   import * as Card from '$lib/components/ui/card/index.js';
   import * as Table from '$lib/components/ui/table/index.js';
   import type { CoordinationState } from '$lib/server/reservations/correlation';
+
+  type Metric = 'utilization' | 'memory' | 'temperature';
 
   type GPU = {
     id: string;
@@ -46,6 +51,7 @@
   };
 
   let {
+    workstationId,
     gpus,
     gpuStatus = 'available',
     processScope = 'all',
@@ -53,6 +59,7 @@
     allowStopRequests = false,
     timeZone = 'UTC'
   }: {
+    workstationId: string;
     gpus: GPU[];
     gpuStatus?: 'available' | 'unavailable';
     processScope?: 'all' | 'user';
@@ -60,6 +67,9 @@
     allowStopRequests?: boolean;
     timeZone?: string;
   } = $props();
+
+  const historyContext = getMonitoringHistoryContext();
+  let selectedMetrics = $state<Record<string, Metric>>({});
 
   let dateTime = $derived(
     new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'medium', timeZone })
@@ -70,6 +80,66 @@
     maximumFractionDigits: 1
   });
   const gigabytes = (value: number) => bytes.format(value / 1_000_000_000);
+  const numeric = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
+  const percent = (value: number) => `${numeric.format(value)}%`;
+  const celsius = (value: number) => `${numeric.format(value)} °C`;
+  const selectedMetric = (gpuId: string): Metric => selectedMetrics[gpuId] ?? 'utilization';
+  const historyFor = (gpuId: string) =>
+    historyContext?.response?.workstations
+      .find((workstation) => workstation.workstationId === workstationId)
+      ?.gpus.find((gpu) => gpu.gpuId === gpuId)?.points ?? [];
+  const metricLabel = (metric: Metric) =>
+    metric === 'utilization'
+      ? 'GPU utilization'
+      : metric === 'memory'
+        ? 'VRAM used'
+        : 'Temperature';
+  const currentValue = (gpu: GPU, metric: Metric) => {
+    if (metric === 'utilization') return percent(gpu.utilizationPercent);
+    if (metric === 'temperature')
+      return gpu.temperatureC === null ? 'N/A' : celsius(gpu.temperatureC);
+    const usage =
+      gpu.memoryTotalBytes === 0 ? 0 : (gpu.memoryUsedBytes / gpu.memoryTotalBytes) * 100;
+    return `${gigabytes(gpu.memoryUsedBytes)} of ${gigabytes(gpu.memoryTotalBytes)} · ${percent(usage)}`;
+  };
+  const chartPoints = (gpu: GPU, metric: Metric) =>
+    historyFor(gpu.id).map((point) => {
+      if (metric === 'utilization') {
+        return {
+          observedAt: point.observedAt,
+          value: point.utilizationPercent,
+          detail: percent(point.utilizationPercent)
+        };
+      }
+      if (metric === 'temperature') {
+        return {
+          observedAt: point.observedAt,
+          value: point.temperatureC,
+          detail: point.temperatureC === null ? 'N/A' : celsius(point.temperatureC)
+        };
+      }
+      const usage =
+        point.memoryTotalBytes === 0 ? 0 : (point.memoryUsedBytes / point.memoryTotalBytes) * 100;
+      return {
+        observedAt: point.observedAt,
+        value: point.memoryUsedBytes / 1_000_000_000,
+        detail: `${gigabytes(point.memoryUsedBytes)} of ${gigabytes(point.memoryTotalBytes)} · ${percent(usage)}`
+      };
+    });
+  const maximum = (gpu: GPU, metric: Metric) => {
+    if (metric === 'utilization') return 100;
+    if (metric === 'memory') return gpu.memoryTotalBytes / 1_000_000_000;
+    const observed = historyFor(gpu.id)
+      .map((point) => point.temperatureC ?? 0)
+      .concat(gpu.temperatureC ?? 0);
+    return Math.max(100, Math.ceil(Math.max(...observed) / 10) * 10);
+  };
+  const valueFormatter = (metric: Metric) =>
+    metric === 'utilization'
+      ? percent
+      : metric === 'temperature'
+        ? celsius
+        : (value: number) => bytes.format(value);
   const coordinationDescription = (gpu: GPU) => {
     if (gpu.coordinationState === 'unknown') return 'Fresh telemetry is required to determine use.';
     if (gpu.coordinationState === 'available') return 'No current reservation or observed process.';
@@ -109,6 +179,7 @@
   <section class="grid gap-4" aria-label="GPU monitoring">
     <div class="grid gap-4 lg:grid-cols-2">
       {#each gpus as gpu (gpu.id)}
+        {@const metric = selectedMetric(gpu.id)}
         <Card.Root>
           <Card.Header>
             <div class="flex flex-wrap items-start justify-between gap-3">
@@ -123,27 +194,61 @@
             </div>
           </Card.Header>
           <Card.Content class="grid gap-5">
-            <div class="grid grid-cols-2 gap-4 sm:grid-cols-3">
+            <div class="flex flex-wrap items-center justify-between gap-3">
               <div class="grid gap-1">
-                <span class="text-muted-foreground text-xs font-medium uppercase">Utilization</span>
-                <strong class="text-2xl tracking-tight">{gpu.utilizationPercent.toFixed(1)}%</strong
+                <span class="text-muted-foreground text-xs font-medium uppercase"
+                  >{metricLabel(metric)}</span
+                >
+                <strong class="text-2xl tracking-tight tabular-nums"
+                  >{currentValue(gpu, metric)}</strong
                 >
               </div>
-              <div class="grid gap-1">
-                <span class="text-muted-foreground text-xs font-medium uppercase">VRAM</span>
-                <strong>{gigabytes(gpu.memoryUsedBytes)}</strong>
-                <span class="text-muted-foreground text-xs"
-                  >of {gigabytes(gpu.memoryTotalBytes)}</span
+              <div class="flex flex-wrap gap-1" aria-label={`GPU ${gpu.index} metric`}>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={metric === 'utilization' ? 'default' : 'outline'}
+                  aria-pressed={metric === 'utilization'}
+                  onclick={() => (selectedMetrics[gpu.id] = 'utilization')}
+                  ><ActivityIcon aria-hidden="true" />Utilization</Button
                 >
-              </div>
-              <div class="grid gap-1">
-                <span class="text-muted-foreground text-xs font-medium uppercase">Temperature</span>
-                <strong class="flex items-center gap-1 text-lg">
-                  <ThermometerIcon class="size-4" aria-hidden="true" />
-                  {gpu.temperatureC === null ? 'N/A' : `${gpu.temperatureC.toFixed(0)} °C`}
-                </strong>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={metric === 'memory' ? 'default' : 'outline'}
+                  aria-pressed={metric === 'memory'}
+                  onclick={() => (selectedMetrics[gpu.id] = 'memory')}
+                  ><MemoryStickIcon aria-hidden="true" />VRAM</Button
+                >
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={metric === 'temperature' ? 'default' : 'outline'}
+                  aria-pressed={metric === 'temperature'}
+                  onclick={() => (selectedMetrics[gpu.id] = 'temperature')}
+                  ><ThermometerIcon aria-hidden="true" />Temperature</Button
+                >
               </div>
             </div>
+
+            {#if historyContext?.loading && historyFor(gpu.id).length === 0}
+              <div
+                class="bg-muted/30 text-muted-foreground grid h-52 animate-pulse place-items-center rounded-md border text-sm"
+              >
+                Loading GPU history…
+              </div>
+            {:else}
+              <TelemetryLineChart
+                points={chartPoints(gpu, metric)}
+                bucketSeconds={historyContext?.response?.bucketSeconds ?? 30}
+                {timeZone}
+                label={metricLabel(metric)}
+                ariaLabel={`GPU ${gpu.index} ${metricLabel(metric)} history`}
+                valueFormatter={valueFormatter(metric)}
+                axisFormatter={valueFormatter(metric)}
+                maximum={maximum(gpu, metric)}
+              />
+            {/if}
 
             <div class="bg-muted/50 grid gap-1 rounded-md border px-3 py-2 text-sm">
               <div class="flex flex-wrap items-center justify-between gap-2">
@@ -175,31 +280,22 @@
 
             <div class="grid gap-2">
               <div class="flex items-center justify-between gap-3 text-sm">
-                <span class="flex items-center gap-1.5 font-medium"
-                  ><ActivityIcon class="size-4" aria-hidden="true" />GPU load</span
-                >
+                <span class="font-medium">Current activity</span>
                 <Badge variant={gpu.processCount > 0 ? 'default' : 'secondary'}>
                   {gpu.processCount > 0
                     ? `${gpu.processCount} observed process${gpu.processCount === 1 ? '' : 'es'}`
                     : 'No observed processes'}
                 </Badge>
               </div>
-              <div
-                class="bg-muted h-2 overflow-hidden rounded-full"
-                role="meter"
-                aria-label={`GPU ${gpu.index} utilization`}
-                aria-valuemin="0"
-                aria-valuemax="100"
-                aria-valuenow={gpu.utilizationPercent}
-              >
-                <div
-                  class="bg-primary h-full rounded-full transition-all"
-                  style={`width: ${gpu.utilizationPercent}%`}
-                ></div>
+              <div class="flex flex-wrap items-center justify-between gap-2 text-xs">
+                <span class="text-muted-foreground">Observed {dateTime.format(gpu.observedAt)}</span
+                >
+                {#if historyContext?.error}
+                  <span class="text-destructive"
+                    >History refresh failed; showing available data.</span
+                  >
+                {/if}
               </div>
-              <span class="text-muted-foreground text-xs"
-                >Observed {dateTime.format(gpu.observedAt)}</span
-              >
             </div>
           </Card.Content>
         </Card.Root>

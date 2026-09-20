@@ -25,7 +25,7 @@ export async function runMaintenance(now = new Date(), database = getDatabase())
   const cutoff = new Date(now.getTime() - retentionHours * 60 * 60_000);
   const nowTimestamp = now.toISOString();
   const cutoffTimestamp = cutoff.toISOString();
-  const [sessionsResult, observationsResult] = await Promise.all([
+  const [sessionsResult, gpuObservationsResult, workstationObservationsResult] = await Promise.all([
     database.execute(sql`
       with expired as (
         select id from sessions
@@ -43,11 +43,21 @@ export async function runMaintenance(now = new Date(), database = getDatabase())
         limit 50000
       )
       delete from gpu_observations where id in (select id from expired)
+    `),
+    database.execute(sql`
+      with expired as (
+        select id from workstation_observations
+        where observed_at < ${cutoffTimestamp}::timestamptz
+        order by observed_at
+        limit 50000
+      )
+      delete from workstation_observations where id in (select id from expired)
     `)
   ]);
   structuredLog('info', 'maintenance.completed', {
     expiredSessions: sessionsResult.count,
-    expiredTelemetry: observationsResult.count,
+    expiredGpuTelemetry: gpuObservationsResult.count,
+    expiredWorkstationTelemetry: workstationObservationsResult.count,
     telemetryRetentionHours: retentionHours
   });
 }
