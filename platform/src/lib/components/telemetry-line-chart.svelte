@@ -40,6 +40,13 @@
       timeZone
     })
   );
+  const axisTime = $derived(
+    new Intl.DateTimeFormat(undefined, {
+      hour: 'numeric',
+      minute: '2-digit',
+      timeZone
+    })
+  );
 
   const data = $derived.by(() => {
     const result: Array<{
@@ -76,6 +83,7 @@
         x="observedAt"
         y="value"
         {yDomain}
+        padding={{ top: 8, right: 44, bottom: 32, left: 76 }}
         series={[
           {
             key: 'value',
@@ -89,7 +97,7 @@
         ]}
         props={{
           xAxis: {
-            format: (value: Date) => time.format(value),
+            format: (value: Date) => axisTime.format(value),
             ticks: 5,
             tickOcclusion: { priority: 'start-end', padding: 12 }
           },

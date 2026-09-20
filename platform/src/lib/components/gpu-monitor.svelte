@@ -194,16 +194,17 @@
             </div>
           </Card.Header>
           <Card.Content class="grid gap-5">
-            <div class="flex flex-wrap items-center justify-between gap-3">
-              <div class="grid gap-1">
+            <div class="flex min-w-0 flex-wrap items-center justify-between gap-3">
+              <div class="grid min-w-0 flex-1 basis-64 gap-1">
                 <span class="text-muted-foreground text-xs font-medium uppercase"
                   >{metricLabel(metric)}</span
                 >
-                <strong class="text-2xl tracking-tight tabular-nums"
+                <strong
+                  class="max-w-full text-xl leading-tight tracking-tight break-words tabular-nums sm:text-2xl"
                   >{currentValue(gpu, metric)}</strong
                 >
               </div>
-              <div class="flex flex-wrap gap-1" aria-label={`GPU ${gpu.index} metric`}>
+              <div class="flex max-w-full flex-wrap gap-1" aria-label={`GPU ${gpu.index} metric`}>
                 <Button
                   type="button"
                   size="sm"
