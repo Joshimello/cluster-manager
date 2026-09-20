@@ -73,6 +73,15 @@
   });
   const hasValues = $derived(data.some((point) => point.value !== null));
   const yDomain = $derived(maximum === undefined ? undefined : [0, maximum]);
+  const firstObservedAt = $derived(points.length > 0 ? new Date(points[0].observedAt) : null);
+  const xDomain = $derived(
+    firstObservedAt && points.length > 0
+      ? [
+          new Date(firstObservedAt.getTime() - 5 * 60 * 1000),
+          new Date(points[points.length - 1].observedAt)
+        ]
+      : undefined
+  );
 </script>
 
 {#if hasValues}
@@ -82,8 +91,9 @@
         {data}
         x="observedAt"
         y="value"
+        {xDomain}
         {yDomain}
-        padding={{ top: 8, right: 44, bottom: 32, left: 76 }}
+        padding={{ top: 8, right: 44, bottom: 44, left: 76 }}
         series={[
           {
             key: 'value',
@@ -97,11 +107,18 @@
         ]}
         props={{
           xAxis: {
-            format: (value: Date) => axisTime.format(value),
+            format: (value: Date) =>
+              firstObservedAt && value.getTime() < firstObservedAt.getTime()
+                ? ''
+                : axisTime.format(value),
             ticks: 5,
-            tickOcclusion: { priority: 'start-end', padding: 12 }
+            tickOcclusion: { priority: 'start-end', padding: 12 },
+            tickLabelProps: { dy: 14 }
           },
-          yAxis: { format: (value: number) => axisFormatter(value) },
+          yAxis: {
+            format: (value: number) => axisFormatter(value),
+            tickLabelProps: { x: -76, dx: 0, textAnchor: 'start' }
+          },
           grid: { y: true }
         }}
       >
