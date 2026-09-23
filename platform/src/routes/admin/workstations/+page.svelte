@@ -182,10 +182,10 @@
           <Card.Root class="h-full min-w-0">
             <Card.Header class="gap-3">
               <div class="flex flex-wrap items-start justify-between gap-2">
-                <div class="min-w-0 space-y-1">
+                <div class="min-w-0 flex-1 basis-40 space-y-1">
                   <Card.Title>
                     <a
-                      class="underline-offset-4 hover:underline"
+                      class="break-words underline-offset-4 hover:underline"
                       href={resolve('/admin/workstations/[id]', { id: workstation.id })}
                       >{workstation.displayName}</a
                     >
@@ -220,9 +220,9 @@
                 {#each workstation.gpus as gpu (gpu.id)}
                   <div class="bg-muted/30 grid min-w-0 gap-2 rounded-lg border p-3">
                     <div class="flex flex-wrap items-start justify-between gap-2">
-                      <div class="min-w-0">
+                      <div class="min-w-0 flex-1 basis-40">
                         <div class="text-muted-foreground text-xs font-medium">GPU {gpu.index}</div>
-                        <div class="truncate text-sm font-semibold" title={gpu.model}>
+                        <div class="break-words text-sm font-semibold" title={gpu.model}>
                           {gpu.model}
                         </div>
                       </div>
@@ -246,16 +246,6 @@
                 {/each}
               {/if}
             </Card.Content>
-
-            <Card.Footer class="mt-auto border-t pt-4">
-              <Button
-                variant="outline"
-                size="sm"
-                class="w-full"
-                href={resolve('/admin/workstations/[id]', { id: workstation.id })}
-                >View details</Button
-              >
-            </Card.Footer>
           </Card.Root>
         {/each}
       </div>
