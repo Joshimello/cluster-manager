@@ -1,7 +1,11 @@
 <script lang="ts">
   import CalendarDaysIcon from '@lucide/svelte/icons/calendar-days';
+  import ChevronLeftIcon from '@lucide/svelte/icons/chevron-left';
+  import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
   import ClockIcon from '@lucide/svelte/icons/clock';
-  import { onMount } from 'svelte';
+  import ListIcon from '@lucide/svelte/icons/list';
+  import { onMount, tick } from 'svelte';
+  import { reservationSegmentsForDay, weekDays } from '$lib/reservation-week';
   import FeedbackAlert from '$lib/components/feedback-alert.svelte';
   import PageHeader from '$lib/components/page-header.svelte';
   import StatusBadge from '$lib/components/status-badge.svelte';
@@ -18,6 +22,13 @@
       timeZone: data.timeZone,
       dateStyle: 'medium',
       timeStyle: 'short'
+    })
+  );
+  let timeOnly = $derived(
+    new Intl.DateTimeFormat('en-MY', {
+      timeZone: data.timeZone,
+      hour: '2-digit',
+      minute: '2-digit'
     })
   );
   let slots = $derived(data.calendarDays.flatMap((day) => day.slots));
@@ -57,6 +68,17 @@
       : endChoice
   );
   let nowMs = $state(Date.now());
+  let scheduleView = $state<'calendar' | 'table'>('calendar');
+  let weekOffset = $state(0);
+  let scheduleScroller = $state<HTMLDivElement | null>(null);
+  const hourHeight = 56;
+  const hours = Array.from({ length: 24 }, (_, hour) => hour);
+  let week = $derived(
+    weekDays(data.todayKey, weekOffset).map((day) => ({
+      ...day,
+      segments: reservationSegmentsForDay(data.schedule, day.key, data.timeZone)
+    }))
+  );
   let currentDay = $derived(data.calendarDays.find((day) => day.key === selectedDayKey));
   let selectedCount = $derived(
     selectedStart === null || selectedEnd === null ? 0 : selectedEnd - selectedStart + 1
@@ -99,8 +121,28 @@
     endChoice = index;
   }
 
+  function scrollToCurrentHour() {
+    const hour = Number(
+      new Intl.DateTimeFormat('en-GB', {
+        timeZone: data.timeZone,
+        hour: '2-digit',
+        hourCycle: 'h23'
+      })
+        .formatToParts(new Date())
+        .find((part) => part.type === 'hour')?.value
+    );
+    if (scheduleScroller) scheduleScroller.scrollTop = Math.max(0, (hour - 2) * hourHeight);
+  }
+
+  async function showCalendar() {
+    scheduleView = 'calendar';
+    await tick();
+    scrollToCurrentHour();
+  }
+
   onMount(() => {
     const timer = window.setInterval(() => (nowMs = Date.now()), 60_000);
+    scrollToCurrentHour();
     return () => window.clearInterval(timer);
   });
 </script>
@@ -263,16 +305,137 @@
   {/if}
 
   <Card.Root>
-    <Card.Header class="flex-row items-center justify-between gap-4">
+    <Card.Header class="flex flex-wrap items-center justify-between gap-4">
       <div class="space-y-1.5">
         <Card.Title class="flex items-center gap-2"><ClockIcon class="size-5" />Schedule</Card.Title
         >
         <Card.Description>Current and upcoming reservations on your workstations.</Card.Description>
       </div>
-      <Badge variant="secondary">{data.schedule.length} reservations</Badge>
+      <div class="flex flex-wrap items-center gap-3">
+        <Badge variant="secondary">{data.schedule.length} reservations</Badge>
+        <div class="flex gap-1 rounded-lg border p-1" role="group" aria-label="Schedule view">
+          <Button
+            type="button"
+            size="sm"
+            variant={scheduleView === 'calendar' ? 'secondary' : 'ghost'}
+            aria-pressed={scheduleView === 'calendar'}
+            onclick={showCalendar}
+          >
+            <CalendarDaysIcon aria-hidden="true" />Calendar
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant={scheduleView === 'table' ? 'secondary' : 'ghost'}
+            aria-pressed={scheduleView === 'table'}
+            onclick={() => (scheduleView = 'table')}
+          >
+            <ListIcon aria-hidden="true" />Table
+          </Button>
+        </div>
+      </div>
     </Card.Header>
-    <Card.Content class={data.schedule.length > 0 ? 'px-0' : undefined}>
-      {#if data.schedule.length === 0}
+    <Card.Content class={scheduleView === 'table' && data.schedule.length > 0 ? 'px-0' : 'min-w-0'}>
+      {#if scheduleView === 'calendar'}
+        <div class="grid min-w-0 gap-4">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <strong>{week[0].label} – {week[6].label}</strong>
+            <div class="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={weekOffset === 0}
+                onclick={() => (weekOffset -= 1)}
+              >
+                <ChevronLeftIcon aria-hidden="true" />Previous
+              </Button>
+              {#if weekOffset > 0}
+                <Button type="button" variant="outline" size="sm" onclick={() => (weekOffset = 0)}
+                  >This week</Button
+                >
+              {/if}
+              <Button type="button" variant="outline" size="sm" onclick={() => (weekOffset += 1)}>
+                Next<ChevronRightIcon aria-hidden="true" />
+              </Button>
+            </div>
+          </div>
+
+          <div
+            class="max-h-[42rem] min-w-0 overflow-auto rounded-lg border"
+            aria-label="Weekly reservation calendar"
+            bind:this={scheduleScroller}
+          >
+            <div class="min-w-[68rem]">
+              <div
+                class="bg-background sticky top-0 z-20 grid border-b"
+                style="grid-template-columns: 4rem repeat(7, minmax(0, 1fr))"
+              >
+                <div class="border-r p-2 text-xs">{data.timeZone}</div>
+                {#each week as day (day.key)}
+                  <div
+                    class={day.key === data.todayKey
+                      ? 'bg-primary/10 border-r p-2 text-center text-sm font-semibold last:border-r-0'
+                      : 'border-r p-2 text-center text-sm font-semibold last:border-r-0'}
+                  >
+                    {day.label}
+                  </div>
+                {/each}
+              </div>
+              <div class="grid" style="grid-template-columns: 4rem repeat(7, minmax(0, 1fr))">
+                <div>
+                  {#each hours as hour (hour)}
+                    <div
+                      class="text-muted-foreground border-t px-2 pt-1 text-right text-xs"
+                      style={`height: ${hourHeight}px`}
+                    >
+                      {String(hour).padStart(2, '0')}:00
+                    </div>
+                  {/each}
+                </div>
+                {#each week as day (day.key)}
+                  <div
+                    class="relative border-l"
+                    style={`height: ${24 * hourHeight}px`}
+                    aria-label={day.label}
+                  >
+                    {#each hours as hour (hour)}
+                      <div
+                        class="border-border/60 pointer-events-none absolute inset-x-0 border-t"
+                        style={`top: ${hour * hourHeight}px`}
+                      ></div>
+                    {/each}
+                    {#each day.segments as segment (segment.reservation.id)}
+                      <div
+                        class={segment.reservation.mine
+                          ? 'bg-primary/15 border-primary/40 absolute z-10 overflow-hidden rounded-md border px-1.5 py-1 text-xs shadow-sm'
+                          : 'bg-muted border-border absolute z-10 overflow-hidden rounded-md border px-1.5 py-1 text-xs shadow-sm'}
+                        style={`top: ${(segment.startMinute / 60) * hourHeight + 2}px; height: ${Math.max(28, ((segment.endMinute - segment.startMinute) / 60) * hourHeight - 4)}px; left: calc(${(segment.lane / segment.laneCount) * 100}% + 2px); width: calc(${100 / segment.laneCount}% - 4px)`}
+                        title={`${segment.reservation.workstationName} · GPU ${segment.reservation.gpuIndex} · ${segment.reservation.owner} · ${dateTime.format(segment.reservation.startAt)} – ${dateTime.format(segment.reservation.endAt)}`}
+                      >
+                        <div class="truncate font-semibold">
+                          {segment.reservation.workstationName} · GPU {segment.reservation.gpuIndex}
+                        </div>
+                        <div class="truncate">{segment.reservation.owner}</div>
+                        <div class="truncate">
+                          {timeOnly.format(segment.reservation.startAt)}–{timeOnly.format(
+                            segment.reservation.endAt
+                          )}
+                        </div>
+                      </div>
+                    {/each}
+                  </div>
+                {/each}
+              </div>
+            </div>
+          </div>
+          <p class="text-muted-foreground text-sm">
+            {data.schedule.length === 0
+              ? 'No current or upcoming reservations.'
+              : 'Switch to table view to cancel a reservation.'}
+          </p>
+        </div>
+      {:else if data.schedule.length === 0}
         <p class="text-muted-foreground text-sm">No current or upcoming reservations.</p>
       {:else}
         <Table.Root>

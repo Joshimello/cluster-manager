@@ -6,6 +6,7 @@ import { getDatabase } from '$lib/server/db';
 import { gpus, reservations, workstationAssignments, workstations } from '$lib/server/db/schema';
 import { hourlyCalendar, isHourlyWindow } from '$lib/server/reservations/calendar';
 import { cancelReservation, createReservation } from '$lib/server/reservations/service';
+import { localDateKey } from '$lib/reservation-week';
 import { defaultTimeZone } from '$lib/time-zone';
 
 import type { Actions, PageServerLoad } from './$types';
@@ -118,6 +119,7 @@ export const load: PageServerLoad = async ({ locals }) => {
     })),
     history,
     timeZone,
+    todayKey: localDateKey(now, timeZone),
     calendarDays: hourlyCalendar(now, timeZone)
   };
 };
