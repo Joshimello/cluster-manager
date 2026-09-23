@@ -39,7 +39,9 @@
   >
     <a
       class="focus-visible:ring-ring flex items-center gap-2 rounded-md font-semibold tracking-tight outline-none focus-visible:ring-2"
-      href={resolve('/')}
+      href={resolve(
+        data.user ? (data.user.mustChangePassword ? '/change-password' : '/dashboard') : '/login'
+      )}
     >
       <BoxesIcon class="size-5" aria-hidden="true" />
       <span>Cluster Manager</span>

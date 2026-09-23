@@ -218,7 +218,8 @@ docker compose -f docker-compose.dev.yml up -d platform
 - HTTP 200 with `{"status":"ready","version":"…"}` when ready
 - HTTP 503 with `{"status":"not_ready","version":"…"}` when unavailable
 
-The public home page remains renderable during a database outage.
+The root route redirects to login or the authenticated user's destination. The
+login page remains renderable during a database outage.
 
 ## Working on the Go node
 
