@@ -247,44 +247,14 @@
               {/if}
             </Card.Content>
 
-            <Card.Footer class="mt-auto grid grid-cols-2 gap-2 border-t pt-4">
+            <Card.Footer class="mt-auto border-t pt-4">
               <Button
                 variant="outline"
                 size="sm"
                 class="w-full"
                 href={resolve('/admin/workstations/[id]', { id: workstation.id })}
-                >Details &amp; graphs</Button
+                >View details</Button
               >
-              <form method="POST" action="?/issueEnrollment">
-                <input type="hidden" name="workstationId" value={workstation.id} />
-                <Button variant="outline" size="sm" type="submit" class="w-full"
-                  >Rotate / enroll</Button
-                >
-              </form>
-              {#if workstation.enrolled}
-                <form method="POST" action="?/revoke">
-                  <input type="hidden" name="workstationId" value={workstation.id} />
-                  <Button variant="destructive" size="sm" type="submit" class="w-full"
-                    >Revoke</Button
-                  >
-                </form>
-              {/if}
-              <form method="POST" action="?/setStatus" class:col-span-2={!workstation.enrolled}>
-                <input type="hidden" name="workstationId" value={workstation.id} />
-                <input
-                  type="hidden"
-                  name="status"
-                  value={workstation.status === 'active' ? 'disabled' : 'active'}
-                />
-                <Button
-                  variant={workstation.status === 'active' ? 'destructive' : 'outline'}
-                  size="sm"
-                  type="submit"
-                  class="w-full"
-                >
-                  {workstation.status === 'active' ? 'Disable' : 'Enable'}
-                </Button>
-              </form>
             </Card.Footer>
           </Card.Root>
         {/each}
