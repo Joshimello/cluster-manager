@@ -85,6 +85,31 @@ curl -fsSL https://raw.githubusercontent.com/Joshimello/cluster-manager/main/ins
 sudo /usr/local/sbin/cluster-node setup
 ```
 
+## Updates
+
+On the management host, run these from the repository directory. If `.env` pins
+`PLATFORM_VERSION`, set it to the desired release tag first; `latest` follows the
+newest stable release.
+
+```bash
+scripts/backup-database.sh backups/pre-update.dump
+git pull --ff-only
+docker compose pull
+docker compose up -d --wait
+docker compose ps
+```
+
+On each workstation, update the installed node and check its health:
+
+```bash
+sudo /usr/local/sbin/cluster-node upgrade
+sudo /usr/local/sbin/cluster-node doctor
+```
+
+Nodes with managed-update support can also be updated from **Administration →
+Workstations → Node software update**. See [production operations](docs/operations.md)
+and [node installation](docs/node-installation.md) for rollback and troubleshooting.
+
 ## Documentation
 
 - [Development guide](docs/development.md)
