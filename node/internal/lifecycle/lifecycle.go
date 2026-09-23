@@ -184,11 +184,19 @@ func (m *Manager) Setup(ctx context.Context, options SetupOptions) error {
 			return err
 		}
 	}
-	if err := command(ctx, "systemctl", "enable", "--now", "cluster-node.service"); err != nil {
+	if err := command(ctx, "systemctl", "enable", "cluster-node.service"); err != nil {
 		if legacyWasActive {
 			_ = command(ctx, "systemctl", "start", "cluster-manager-node.service")
 		}
-		return fmt.Errorf("start cluster-node.service: %w", err)
+		return fmt.Errorf("enable cluster-node.service: %w", err)
+	}
+	// Setup may replace the configuration of an already running node. Reload it even
+	// when the service is active; enable --now would leave its old URL in memory.
+	if err := command(ctx, "systemctl", "restart", "cluster-node.service"); err != nil {
+		if legacyWasActive {
+			_ = command(ctx, "systemctl", "start", "cluster-manager-node.service")
+		}
+		return fmt.Errorf("restart cluster-node.service: %w", err)
 	}
 	if err := m.removeLegacy(ctx); err != nil {
 		return err
