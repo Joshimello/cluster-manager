@@ -37,7 +37,13 @@ function formString(formData: FormData, name: string): string {
 }
 
 function isUniqueViolation(error: unknown): boolean {
-  return typeof error === 'object' && error !== null && 'code' in error && error.code === '23505';
+  let current = error;
+  for (let depth = 0; depth < 3; depth += 1) {
+    if (typeof current !== 'object' || current === null) return false;
+    if ('code' in current && current.code === '23505') return true;
+    current = 'cause' in current ? current.cause : null;
+  }
+  return false;
 }
 
 export const load: PageServerLoad = async ({ locals }) => {
