@@ -173,7 +173,7 @@
         {#if data.gpus.length === 0}
           <p class="text-muted-foreground text-sm">No active GPUs are available to reserve.</p>
         {:else}
-          <div class="grid min-w-0 gap-5">
+          <div class="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-5">
             <div class="grid min-w-0 max-w-xl gap-2">
               <Label for="reservation-gpu">GPU</Label>
               <Select.Root
@@ -216,47 +216,54 @@
               {/each}
             </div>
 
-            <div>
+            <div class="min-w-0">
               <p class="mb-3 text-sm font-medium">{currentDay?.label} · one-hour slots</p>
-              <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
-                {#each currentDay?.slots ?? [] as slot (slot.startAt)}
-                  {@const index = slots.findIndex(
-                    (candidate) => candidate.startAt === slot.startAt
-                  )}
-                  {@const reservation = reservationAt(slot)}
-                  {@const past = Date.parse(slot.startAt) <= nowMs}
-                  {@const selected =
-                    selectedStart !== null &&
-                    selectedEnd !== null &&
-                    index >= selectedStart &&
-                    index <= selectedEnd}
-                  <Button
-                    type="button"
-                    variant={selected ? 'default' : 'outline'}
-                    class="h-auto min-h-16 flex-col items-start gap-1 py-2 text-left"
-                    disabled={past || !!reservation}
-                    aria-pressed={selected}
-                    onclick={() => chooseSlot(index)}
-                  >
-                    <span>{slot.label}</span>
-                    <span
-                      class={selected
-                        ? 'text-primary-foreground/75 text-xs'
-                        : 'text-muted-foreground text-xs'}
+              <div class="min-w-0 overflow-x-auto pb-2">
+                <div
+                  class="grid min-w-[40rem] grid-flow-col grid-rows-6 auto-cols-[minmax(10rem,1fr)] gap-2"
+                >
+                  {#each currentDay?.slots ?? [] as slot (slot.startAt)}
+                    {@const index = slots.findIndex(
+                      (candidate) => candidate.startAt === slot.startAt
+                    )}
+                    {@const reservation = reservationAt(slot)}
+                    {@const past = Date.parse(slot.startAt) <= nowMs}
+                    {@const selected =
+                      selectedStart !== null &&
+                      selectedEnd !== null &&
+                      index >= selectedStart &&
+                      index <= selectedEnd}
+                    <Button
+                      type="button"
+                      variant={selected ? 'default' : 'outline'}
+                      class="h-auto min-h-16 flex-col items-start gap-1 py-2 text-left"
+                      disabled={past || !!reservation}
+                      aria-pressed={selected}
+                      onclick={() => chooseSlot(index)}
                     >
-                      {reservation
-                        ? reservation.mine
-                          ? 'Your reservation'
-                          : 'Reserved'
-                        : past
-                          ? 'Past'
-                          : selected
-                            ? 'Selected'
-                            : 'Available'}
-                    </span>
-                  </Button>
-                {/each}
+                      <span>{slot.label}</span>
+                      <span
+                        class={selected
+                          ? 'text-primary-foreground/75 text-xs'
+                          : 'text-muted-foreground text-xs'}
+                      >
+                        {reservation
+                          ? reservation.mine
+                            ? 'Your reservation'
+                            : 'Reserved'
+                          : past
+                            ? 'Past'
+                            : selected
+                              ? 'Selected'
+                              : 'Available'}
+                      </span>
+                    </Button>
+                  {/each}
+                </div>
               </div>
+              <p class="text-muted-foreground mt-1 text-xs sm:hidden">
+                Scroll sideways to see later hours.
+              </p>
             </div>
 
             <div

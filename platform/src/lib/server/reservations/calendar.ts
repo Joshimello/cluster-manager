@@ -40,10 +40,21 @@ export function hourlyCalendar(now: Date, timeZone: string): CalendarDay[] {
   const minute = Number(parts.minute);
   const firstSlot =
     now.getTime() + (60 - minute) * 60_000 - now.getUTCSeconds() * 1000 - now.getUTCMilliseconds();
+  const dayKeyAt = (value: number) => {
+    const values = Object.fromEntries(
+      localParts.formatToParts(new Date(value)).map((part) => [part.type, part.value])
+    );
+    return `${values.year}-${values.month}-${values.day}`;
+  };
+  const todayKey = dayKeyAt(now.getTime());
+  let firstCalendarSlot = firstSlot;
+  while (dayKeyAt(firstCalendarSlot - hourMilliseconds) >= todayKey) {
+    firstCalendarSlot -= hourMilliseconds;
+  }
   const lastStart = now.getTime() + 7 * 24 * hourMilliseconds;
   const days: CalendarDay[] = [];
 
-  for (let start = firstSlot; start <= lastStart; start += hourMilliseconds) {
+  for (let start = firstCalendarSlot; start <= lastStart; start += hourMilliseconds) {
     const startAt = new Date(start);
     const endAt = new Date(start + hourMilliseconds);
     const slotParts = Object.fromEntries(
