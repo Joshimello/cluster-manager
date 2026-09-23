@@ -177,9 +177,9 @@
         </Card.Content>
       </Card.Root>
     {:else}
-      <div class="grid items-start gap-4 md:grid-cols-2 xl:grid-cols-3">
+      <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {#each data.workstations as workstation (workstation.id)}
-          <Card.Root class="min-w-0">
+          <Card.Root class="h-full min-w-0">
             <Card.Header class="gap-3">
               <div class="flex flex-wrap items-start justify-between gap-2">
                 <div class="min-w-0 space-y-1">
@@ -201,7 +201,7 @@
                   >{workstation.gpuCount} {workstation.gpuCount === 1 ? 'GPU' : 'GPUs'}</Badge
                 >
               </div>
-              <p class="text-muted-foreground text-xs">
+              <p class="text-muted-foreground text-xs xl:min-h-8">
                 {workstation.lastHeartbeatAt
                   ? `Last heartbeat ${dateTime.format(workstation.lastHeartbeatAt)}`
                   : 'Not yet connected'}
@@ -209,7 +209,7 @@
               </p>
             </Card.Header>
 
-            <Card.Content class="grid gap-2">
+            <Card.Content class="grow gap-2">
               {#if workstation.gpus.length === 0}
                 <div
                   class="bg-muted/30 text-muted-foreground rounded-lg border border-dashed p-4 text-sm"
@@ -247,24 +247,29 @@
               {/if}
             </Card.Content>
 
-            <Card.Footer class="flex-wrap gap-2 border-t pt-4">
+            <Card.Footer class="mt-auto grid grid-cols-2 gap-2 border-t pt-4">
               <Button
                 variant="outline"
                 size="sm"
+                class="w-full"
                 href={resolve('/admin/workstations/[id]', { id: workstation.id })}
                 >Details &amp; graphs</Button
               >
               <form method="POST" action="?/issueEnrollment">
                 <input type="hidden" name="workstationId" value={workstation.id} />
-                <Button variant="outline" size="sm" type="submit">Rotate / enroll</Button>
+                <Button variant="outline" size="sm" type="submit" class="w-full"
+                  >Rotate / enroll</Button
+                >
               </form>
               {#if workstation.enrolled}
                 <form method="POST" action="?/revoke">
                   <input type="hidden" name="workstationId" value={workstation.id} />
-                  <Button variant="destructive" size="sm" type="submit">Revoke</Button>
+                  <Button variant="destructive" size="sm" type="submit" class="w-full"
+                    >Revoke</Button
+                  >
                 </form>
               {/if}
-              <form method="POST" action="?/setStatus">
+              <form method="POST" action="?/setStatus" class:col-span-2={!workstation.enrolled}>
                 <input type="hidden" name="workstationId" value={workstation.id} />
                 <input
                   type="hidden"
@@ -275,6 +280,7 @@
                   variant={workstation.status === 'active' ? 'destructive' : 'outline'}
                   size="sm"
                   type="submit"
+                  class="w-full"
                 >
                   {workstation.status === 'active' ? 'Disable' : 'Enable'}
                 </Button>
