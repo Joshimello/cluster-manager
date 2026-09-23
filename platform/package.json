@@ -71,6 +71,7 @@
   },
   "dependencies": {
     "@node-rs/argon2": "2.2.1",
+    "@tanstack/svelte-table": "^9.2.4",
     "drizzle-orm": "0.45.2",
     "postgres": "3.4.9"
   }

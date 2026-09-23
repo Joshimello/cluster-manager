@@ -1,7 +1,19 @@
 <script lang="ts">
+  import ArrowUpDownIcon from '@lucide/svelte/icons/arrow-up-down';
   import PlusIcon from '@lucide/svelte/icons/plus';
   import UsersIcon from '@lucide/svelte/icons/users';
   import XIcon from '@lucide/svelte/icons/x';
+  import {
+    createColumnHelper,
+    createPaginatedRowModel,
+    createSortedRowModel,
+    createTable,
+    rowPaginationFeature,
+    rowSortingFeature,
+    sortFn_alphanumeric,
+    sortFn_text,
+    tableFeatures
+  } from '@tanstack/svelte-table';
   import CredentialDisplay from '$lib/components/credential-display.svelte';
   import FeedbackAlert from '$lib/components/feedback-alert.svelte';
   import PageHeader from '$lib/components/page-header.svelte';
@@ -13,6 +25,7 @@
   import { Label } from '$lib/components/ui/label/index.js';
   import * as Select from '$lib/components/ui/select/index.js';
   import * as Table from '$lib/components/ui/table/index.js';
+  import type { PageData } from './$types';
 
   let { data, form } = $props();
   let createDialog = $state<HTMLDialogElement>();
@@ -25,6 +38,33 @@
         .includes(search.trim().toLowerCase())
     )
   );
+  const features = tableFeatures({
+    rowPaginationFeature,
+    rowSortingFeature,
+    paginatedRowModel: createPaginatedRowModel(),
+    sortedRowModel: createSortedRowModel(),
+    sortFns: { alphanumeric: sortFn_alphanumeric, text: sortFn_text }
+  });
+  const columnHelper = createColumnHelper<typeof features, PageData['users'][number]>();
+  const columns = columnHelper.columns([
+    columnHelper.accessor('displayName', { id: 'user', header: 'User', sortFn: 'text' }),
+    columnHelper.accessor(
+      (user) => data.assignments.filter((assignment) => assignment.userId === user.id).length,
+      { id: 'workstations', header: 'Workstations' }
+    ),
+    columnHelper.accessor((user) => user.createdAt.getTime(), {
+      id: 'created',
+      header: 'Created'
+    })
+  ]);
+  const table = createTable({
+    features,
+    columns,
+    get data() {
+      return filteredUsers;
+    },
+    getRowId: (user) => user.id
+  });
   let dateFormatter = $derived(
     new Intl.DateTimeFormat(undefined, {
       dateStyle: 'medium',
@@ -161,7 +201,12 @@
           type="search"
           aria-label="Search users"
           placeholder="Search users"
-          bind:value={search}
+          value={search}
+          oninput={(event) => {
+            search = event.currentTarget.value;
+            table.setPageIndex(0);
+            expandedUserId = null;
+          }}
         />
       </div>
     </Card.Header>
@@ -181,15 +226,64 @@
         <Table.Caption class="sr-only">Platform users and account management</Table.Caption>
         <Table.Header>
           <Table.Row>
-            <Table.Head class="pl-6">User</Table.Head>
-            <Table.Head class="hidden md:table-cell">Workstations</Table.Head>
+            <Table.Head
+              class="pl-6"
+              aria-sort={table.getColumn('user')?.getIsSorted() === 'asc'
+                ? 'ascending'
+                : table.getColumn('user')?.getIsSorted() === 'desc'
+                  ? 'descending'
+                  : 'none'}
+            >
+              <Button
+                variant="ghost"
+                size="sm"
+                class="-ml-3"
+                onclick={() => table.getColumn('user')?.toggleSorting()}
+              >
+                User <ArrowUpDownIcon class="ml-1 size-4" aria-hidden="true" />
+              </Button>
+            </Table.Head>
+            <Table.Head
+              class="hidden md:table-cell"
+              aria-sort={table.getColumn('workstations')?.getIsSorted() === 'asc'
+                ? 'ascending'
+                : table.getColumn('workstations')?.getIsSorted() === 'desc'
+                  ? 'descending'
+                  : 'none'}
+            >
+              <Button
+                variant="ghost"
+                size="sm"
+                class="-ml-3"
+                onclick={() => table.getColumn('workstations')?.toggleSorting()}
+              >
+                Workstations <ArrowUpDownIcon class="ml-1 size-4" aria-hidden="true" />
+              </Button>
+            </Table.Head>
             <Table.Head class="hidden lg:table-cell">Activity</Table.Head>
-            <Table.Head class="hidden xl:table-cell">Created</Table.Head>
+            <Table.Head
+              class="hidden xl:table-cell"
+              aria-sort={table.getColumn('created')?.getIsSorted() === 'asc'
+                ? 'ascending'
+                : table.getColumn('created')?.getIsSorted() === 'desc'
+                  ? 'descending'
+                  : 'none'}
+            >
+              <Button
+                variant="ghost"
+                size="sm"
+                class="-ml-3"
+                onclick={() => table.getColumn('created')?.toggleSorting()}
+              >
+                Created <ArrowUpDownIcon class="ml-1 size-4" aria-hidden="true" />
+              </Button>
+            </Table.Head>
             <Table.Head class="pr-6 text-right">Actions</Table.Head>
           </Table.Row>
         </Table.Header>
         <Table.Body>
-          {#each filteredUsers as user (user.id)}
+          {#each table.getRowModel().rows as row (row.id)}
+            {@const user = row.original}
             {@const userAssignments = data.assignments.filter(
               (candidate) => candidate.userId === user.id
             )}
@@ -448,6 +542,33 @@
           {/each}
         </Table.Body>
       </Table.Root>
+      {#if filteredUsers.length > 10}
+        <div class="flex flex-wrap items-center justify-between gap-3 border-t px-6 py-3 text-sm">
+          <span class="text-muted-foreground">
+            Page {table.atoms.pagination.get().pageIndex + 1} of {table.getPageCount()}
+          </span>
+          <div class="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!table.getCanPreviousPage()}
+              onclick={() => {
+                table.previousPage();
+                expandedUserId = null;
+              }}>Previous</Button
+            >
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!table.getCanNextPage()}
+              onclick={() => {
+                table.nextPage();
+                expandedUserId = null;
+              }}>Next</Button
+            >
+          </div>
+        </div>
+      {/if}
     {/if}
   </Card.Root>
 </main>
