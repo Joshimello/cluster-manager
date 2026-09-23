@@ -5,8 +5,10 @@ import (
 	"errors"
 	"io"
 	"log"
+	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Joshimello/cluster-manager/node/internal/protocol"
 )
@@ -104,5 +106,82 @@ func TestCancellationBeforeLocalStartReportsCancelled(t *testing.T) {
 	})
 	if reported.Status != "cancelled" || reported.RunID != instruction.RunID {
 		t.Fatalf("unexpected cancellation report: %#v", reported)
+	}
+}
+
+func TestStopDiagnosticKillsWorkersBeforeSystemdWrapper(t *testing.T) {
+	var calls []string
+	manager := New(log.New(io.Discard, "", 0))
+	manager.runner = runnerFunc(func(_ context.Context, name string, arguments ...string) ([]byte, error) {
+		call := strings.Join(append([]string{name}, arguments...), " ")
+		calls = append(calls, call)
+		switch {
+		case strings.HasPrefix(call, "podman top"):
+			return []byte("HPID\n100\n101\n102\n"), nil
+		case strings.HasPrefix(call, "podman ps"):
+			return nil, nil
+		case strings.HasPrefix(call, "nvidia-smi"):
+			return nil, nil
+		default:
+			return nil, nil
+		}
+	})
+	current := state{Unit: "test-unit", Container: "test-container", Instruction: protocol.DiagnosticInstruction{RunID: "test", TargetGPUUUIDs: []string{"GPU-one"}}}
+	if !manager.stopDiagnostic(context.Background(), current) {
+		t.Fatal("expected cleanup to confirm no active GPU processes")
+	}
+	want := []string{
+		"podman top test-container hpid",
+		"kill -KILL 102",
+		"kill -KILL 101",
+		"kill -KILL 100",
+		"podman kill test-container",
+		"systemctl stop test-unit.service",
+		"podman ps --filter name=test-container --format {{.Names}}",
+		"nvidia-smi --query-compute-apps=gpu_uuid --format=csv,noheader,nounits",
+	}
+	if strings.Join(calls, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("unexpected cleanup order:\n%s", strings.Join(calls, "\n"))
+	}
+}
+
+func TestStopDiagnosticWaitsWhenTargetGPUIsStillBusy(t *testing.T) {
+	manager := New(log.New(io.Discard, "", 0))
+	manager.runner = runnerFunc(func(_ context.Context, name string, arguments ...string) ([]byte, error) {
+		if name == "podman" && len(arguments) > 0 && arguments[0] == "top" {
+			return nil, errors.New("container already removed")
+		}
+		if name == "nvidia-smi" {
+			return []byte("GPU-one\n"), nil
+		}
+		return nil, nil
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	current := state{Unit: "test-unit", Container: "test-container", Instruction: protocol.DiagnosticInstruction{RunID: "test", TargetGPUUUIDs: []string{"GPU-one"}}}
+	if manager.stopDiagnostic(ctx, current) {
+		t.Fatal("cleanup must not confirm while a target GPU process remains")
+	}
+}
+
+func TestRunKeepsDeadlineFailureWhenOutputIsIncomplete(t *testing.T) {
+	manager := New(log.New(io.Discard, "", 0))
+	manager.manifestPath = t.TempDir() + "/manifest.json"
+	if err := os.WriteFile(manager.manifestPath, []byte(`{"schemaVersion":1,"image":"ghcr.io/joshimello/cluster-manager/gpu-burn","digest":"sha256:`+strings.Repeat("a", 64)+`","upstreamCommit":"3ead140"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	manager.runner = runnerFunc(func(_ context.Context, name string, arguments ...string) ([]byte, error) {
+		if name == "podman" && len(arguments) > 0 && arguments[0] == "top" {
+			return nil, errors.New("container already removed")
+		}
+		return nil, nil
+	})
+	current := state{
+		Unit: "test-unit", Container: "test-container", StartedAt: time.Now().Add(-2 * time.Minute),
+		Instruction: protocol.DiagnosticInstruction{RunID: "test", DurationSeconds: 20, TargetGPUUUIDs: []string{"GPU-one"}},
+	}
+	result := manager.run(context.Background(), current, false)
+	if result.Status != "failed" || !strings.Contains(result.Detail, "local deadline") {
+		t.Fatalf("expected the deadline reason, got %#v", result)
 	}
 }

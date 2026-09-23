@@ -150,7 +150,7 @@ func (m *Manager) Shutdown() {
 	}
 	shutdownContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	_, _ = m.runner.Run(shutdownContext, "systemctl", "stop", current.Unit+".service")
+	_ = m.stopDiagnostic(shutdownContext, current)
 }
 
 func (m *Manager) Available(ctx context.Context) (string, bool) {
@@ -336,6 +336,10 @@ func (m *Manager) execute(ctx context.Context, instruction protocol.DiagnosticIn
 	}
 
 	final := m.run(ctx, runState, true)
+	if final.Status == "running" {
+		_ = reporter(context.Background(), final)
+		return
+	}
 	runState.Result = &final
 	if err := m.writeState(runState); err != nil {
 		m.logger.Printf("persist diagnostic result: %v", err)
@@ -354,6 +358,10 @@ func (m *Manager) finishExisting(ctx context.Context, current state, reporter Re
 		m.mu.Unlock()
 	}()
 	final := m.run(ctx, current, false)
+	if final.Status == "running" {
+		_ = reporter(context.Background(), final)
+		return
+	}
 	current.Result = &final
 	if err := m.writeState(current); err != nil {
 		m.logger.Printf("persist recovered diagnostic result: %v", err)
@@ -452,6 +460,12 @@ func (m *Manager) run(ctx context.Context, current state, start bool) protocol.D
 	arguments = append(arguments, strconv.Itoa(current.Instruction.DurationSeconds))
 	if start {
 		if output, err := m.runner.Run(ctx, "systemd-run", arguments...); err != nil {
+			cleanupContext, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			cleaned := m.stopDiagnostic(cleanupContext, current)
+			cancel()
+			if !cleaned {
+				return protocol.DiagnosticResult{RunID: current.Instruction.RunID, Status: "running", Detail: "The diagnostic service failed to start, but GPU cleanup is unconfirmed; retrying cleanup.", OutputLog: bounded(string(output)), Results: []protocol.DiagnosticGPUResult{}}
+			}
 			return protocol.DiagnosticResult{RunID: current.Instruction.RunID, Status: "failed", Detail: "The transient diagnostic service could not start.", OutputLog: bounded(string(output)), Results: []protocol.DiagnosticGPUResult{}}
 		}
 	}
@@ -459,9 +473,11 @@ func (m *Manager) run(ctx context.Context, current state, start bool) protocol.D
 	maximums := map[string]*gpuMaximum{}
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
-	remaining := time.Until(current.StartedAt.Add(time.Duration(current.Instruction.DurationSeconds+20) * time.Second))
-	if remaining < time.Second {
-		remaining = time.Second
+	// gpu-burn can spend time initializing CUDA and then waiting for its workers
+	// to exit after the requested burn duration.
+	remaining := time.Until(current.StartedAt.Add(time.Duration(current.Instruction.DurationSeconds+90) * time.Second))
+	if remaining < 0 {
+		remaining = 0
 	}
 	deadline := time.NewTimer(remaining)
 	defer deadline.Stop()
@@ -470,17 +486,14 @@ func (m *Manager) run(ctx context.Context, current state, start bool) protocol.D
 	for {
 		select {
 		case <-ctx.Done():
-			m.stopUnit(current.Unit)
 			status, detail = "cancelled", "The diagnostic was stopped by an administrator or node shutdown."
 			goto finished
 		case <-deadline.C:
-			m.stopUnit(current.Unit)
 			status, detail = "failed", "The diagnostic exceeded its local deadline and was stopped."
 			goto finished
 		case <-ticker.C:
 			samples, sampleErr := sampleGPUs(context.Background(), m.runner)
 			if sampleErr != nil {
-				m.stopUnit(current.Unit)
 				status, detail = "failed", "NVIDIA thermal telemetry became unavailable; the diagnostic was stopped."
 				goto finished
 			}
@@ -495,7 +508,6 @@ func (m *Manager) run(ctx context.Context, current state, start bool) protocol.D
 				}
 				maximum.add(sample)
 				if sample.TemperatureC >= float64(current.Instruction.TemperatureCutoffC) || sample.TemperatureC >= 90 {
-					m.stopUnit(current.Unit)
 					status, detail = "failed", fmt.Sprintf("Thermal cutoff reached on GPU %d at %.1f °C; the diagnostic was stopped.", sample.Index, sample.TemperatureC)
 					goto finished
 				}
@@ -508,9 +520,15 @@ func (m *Manager) run(ctx context.Context, current state, start bool) protocol.D
 	}
 
 finished:
+	cleanupContext, cleanupCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	cleaned := m.stopDiagnostic(cleanupContext, current)
+	cleanupCancel()
+	if !cleaned {
+		return protocol.DiagnosticResult{RunID: current.Instruction.RunID, Status: "running", Detail: "Diagnostic cleanup could not confirm that GPU processes stopped; retrying cleanup before releasing the GPUs.", OutputLog: "", Results: []protocol.DiagnosticGPUResult{}}
+	}
 	logs, _ := m.runner.Run(context.Background(), "journalctl", "-u", current.Unit+".service", "--no-pager", "--output=cat", "--lines=2000")
 	parsed, faulty, complete := parseResults(string(logs), current.Instruction.TargetGPUUUIDs, maximums)
-	if status != "cancelled" && !strings.HasPrefix(detail, "Thermal cutoff") {
+	if status != "cancelled" && detail == "The diagnostic service stopped without a valid result." {
 		if !complete {
 			status, detail = "failed", "gpu-burn did not produce a complete per-GPU result."
 			if strings.Contains(string(logs), "nvidia-cdi-hook") {
@@ -534,8 +552,54 @@ finished:
 	return protocol.DiagnosticResult{RunID: current.Instruction.RunID, Status: status, Detail: detail, OutputLog: bounded(string(logs)), Results: parsed}
 }
 
-func (m *Manager) stopUnit(unit string) {
-	_, _ = m.runner.Run(context.Background(), "systemctl", "stop", unit+".service")
+func (m *Manager) stopDiagnostic(ctx context.Context, current state) bool {
+	// Podman places container processes in a different cgroup from its
+	// systemd-run wrapper. Stopping only the wrapper can orphan GPU workers.
+	output, err := m.runner.Run(ctx, "podman", "top", current.Container, "hpid")
+	if err == nil {
+		pids := containerHostPIDs(output)
+		// Podman lists the container init first. Kill children before their parent
+		// can cause --rm to discard the container's process listing.
+		for index := len(pids) - 1; index >= 0; index-- {
+			_, _ = m.runner.Run(ctx, "kill", "-KILL", strconv.Itoa(pids[index]))
+		}
+	}
+	_, _ = m.runner.Run(ctx, "podman", "kill", current.Container)
+	_, _ = m.runner.Run(ctx, "systemctl", "stop", current.Unit+".service")
+	for {
+		running, containerErr := m.runner.Run(ctx, "podman", "ps", "--filter", "name="+current.Container, "--format", "{{.Names}}")
+		processes, err := sampleGPUProcessUUIDs(ctx, m.runner)
+		if err == nil && containerErr == nil {
+			active := false
+			for _, uuid := range processes {
+				active = active || contains(current.Instruction.TargetGPUUUIDs, uuid)
+			}
+			if !active && !strings.Contains(string(running), current.Container) {
+				return true
+			}
+		}
+		select {
+		case <-ctx.Done():
+			m.logger.Printf("diagnostic %s cleanup unconfirmed: %v", current.Instruction.RunID, ctx.Err())
+			return false
+		case <-time.After(time.Second):
+		}
+	}
+}
+
+func containerHostPIDs(output []byte) []int {
+	var pids []int
+	for _, line := range strings.Split(string(output), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) != 1 {
+			continue
+		}
+		pid, err := strconv.Atoi(fields[0])
+		if err == nil && pid > 1 {
+			pids = append(pids, pid)
+		}
+	}
+	return pids
 }
 
 type gpuSample struct {
