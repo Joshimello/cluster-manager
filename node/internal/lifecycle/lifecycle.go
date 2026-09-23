@@ -325,16 +325,19 @@ func (m *Manager) setupDiagnostics(ctx context.Context, confirm bool) error {
 	if err := m.ensureDiagnosticPackages(ctx); err != nil {
 		return err
 	}
+	fmt.Fprintln(m.Out, "Generating NVIDIA CDI device configuration...")
 	if err := os.MkdirAll("/etc/cdi", 0o755); err != nil {
 		return err
 	}
-	if err := command(ctx, "nvidia-ctk", "cdi", "generate", "--output=/etc/cdi/nvidia.yaml"); err != nil {
+	if err := commandStreaming(ctx, m.Out, m.Err, "nvidia-ctk", "cdi", "generate", "--output=/etc/cdi/nvidia.yaml"); err != nil {
 		return fmt.Errorf("generate NVIDIA CDI specification: %w", err)
 	}
 	image := manifest.Image + "@" + manifest.Digest
-	if err := command(ctx, "podman", "pull", image); err != nil {
+	fmt.Fprintln(m.Out, "Pulling the verified GPU diagnostics image...")
+	if err := commandStreaming(ctx, m.Out, m.Err, "podman", "pull", image); err != nil {
 		return fmt.Errorf("pull pinned gpu-burn image: %w", err)
 	}
+	fmt.Fprintln(m.Out, "Checking GPU diagnostics prerequisites...")
 	if err := m.checkDiagnostics(ctx); err != nil {
 		return err
 	}
@@ -1052,15 +1055,19 @@ func (m *Manager) ensurePackages(ctx context.Context) error {
 }
 
 func (m *Manager) ensureDiagnosticPackages(ctx context.Context) error {
-	if err := command(ctx, "apt-get", "update"); err != nil {
+	fmt.Fprintln(m.Out, "Updating package lists...")
+	if err := commandStreaming(ctx, m.Out, m.Err, "apt-get", "update"); err != nil {
 		return err
 	}
-	if err := command(ctx, "apt-get", "install", "-y", "podman", "curl", "ca-certificates", "gnupg"); err != nil {
+	fmt.Fprintln(m.Out, "Installing Podman and download prerequisites...")
+	if err := commandStreaming(ctx, m.Out, m.Err, "apt-get", "install", "-y", "podman", "curl", "ca-certificates", "gnupg"); err != nil {
 		return err
 	}
 	if _, err := exec.LookPath("nvidia-ctk"); err == nil {
+		fmt.Fprintln(m.Out, "NVIDIA Container Toolkit is already installed.")
 		return nil
 	}
+	fmt.Fprintln(m.Out, "Downloading the NVIDIA repository key...")
 	key, err := m.download(ctx, "https://nvidia.github.io/libnvidia-container/gpgkey", 1<<20)
 	if err != nil {
 		return fmt.Errorf("download NVIDIA repository key: %w", err)
@@ -1071,6 +1078,7 @@ func (m *Manager) ensureDiagnosticPackages(ctx context.Context) error {
 	if output, err := keyCommand.CombinedOutput(); err != nil {
 		return fmt.Errorf("install NVIDIA repository key: %w: %s", err, strings.TrimSpace(string(output)))
 	}
+	fmt.Fprintln(m.Out, "Downloading the NVIDIA package source list...")
 	list, err := m.download(ctx, "https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list", 1<<20)
 	if err != nil {
 		return fmt.Errorf("download NVIDIA repository definition: %w", err)
@@ -1079,10 +1087,12 @@ func (m *Manager) ensureDiagnosticPackages(ctx context.Context) error {
 	if err := atomicWrite("/etc/apt/sources.list.d/nvidia-container-toolkit.list", []byte(configured), 0o644); err != nil {
 		return err
 	}
-	if err := command(ctx, "apt-get", "update"); err != nil {
+	fmt.Fprintln(m.Out, "Updating package lists for NVIDIA Container Toolkit...")
+	if err := commandStreaming(ctx, m.Out, m.Err, "apt-get", "update"); err != nil {
 		return err
 	}
-	return command(ctx, "apt-get", "install", "-y", "nvidia-container-toolkit")
+	fmt.Fprintln(m.Out, "Installing NVIDIA Container Toolkit...")
+	return commandStreaming(ctx, m.Out, m.Err, "apt-get", "install", "-y", "nvidia-container-toolkit")
 }
 
 type inputResult struct {
@@ -1355,6 +1365,16 @@ func command(ctx context.Context, name string, args ...string) error {
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("%s %s: %w: %s", name, strings.Join(args, " "), err, strings.TrimSpace(string(output)))
+	}
+	return nil
+}
+
+func commandStreaming(ctx context.Context, stdout, stderr io.Writer, name string, args ...string) error {
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("%s %s: %w", name, strings.Join(args, " "), err)
 	}
 	return nil
 }

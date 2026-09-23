@@ -207,6 +207,22 @@ func TestAtomicWriteLeavesNoTemporaryFile(t *testing.T) {
 	}
 }
 
+func TestCommandStreamingShowsOutputAndRetainsFailure(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if err := commandStreaming(context.Background(), &stdout, &stderr, "sh", "-c", "printf 'downloaded\\n'; printf 'notice\\n' >&2"); err != nil {
+		t.Fatal(err)
+	}
+	if stdout.String() != "downloaded\n" || stderr.String() != "notice\n" {
+		t.Fatalf("command output was not forwarded: stdout=%q stderr=%q", stdout.String(), stderr.String())
+	}
+
+	stderr.Reset()
+	err := commandStreaming(context.Background(), &stdout, &stderr, "sh", "-c", "printf 'failed\\n' >&2; exit 7")
+	if err == nil || !strings.Contains(err.Error(), "exit status 7") || stderr.String() != "failed\n" {
+		t.Fatalf("command failure was not reported: error=%v stderr=%q", err, stderr.String())
+	}
+}
+
 func TestStableUpgradeOrdering(t *testing.T) {
 	for _, test := range []struct {
 		current string
