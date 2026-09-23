@@ -37,7 +37,7 @@
   });
 </script>
 
-<svelte:head><title>GPU status · Administration · Cluster Manager</title></svelte:head>
+<svelte:head><title>GPU status · Administration</title></svelte:head>
 
 <MonitoringHistoryProvider
   workstationIds={data.workstations.map((workstation) => workstation.id)}

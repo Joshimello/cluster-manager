@@ -17,7 +17,7 @@
   );
 </script>
 
-<svelte:head><title>Stop requests · Cluster Manager</title></svelte:head>
+<svelte:head><title>Stop requests</title></svelte:head>
 
 <main class="mx-auto grid w-full max-w-7xl gap-6 px-4 py-8 sm:px-6 lg:px-8">
   <PageHeader

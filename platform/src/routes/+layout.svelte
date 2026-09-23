@@ -39,12 +39,16 @@
   >
     <a
       class="focus-visible:ring-ring flex items-center gap-2 rounded-md font-semibold tracking-tight outline-none focus-visible:ring-2"
+      aria-label={data.user
+        ? data.user.mustChangePassword
+          ? 'Change password'
+          : 'Dashboard'
+        : 'Log in'}
       href={resolve(
         data.user ? (data.user.mustChangePassword ? '/change-password' : '/dashboard') : '/login'
       )}
     >
       <BoxesIcon class="size-5" aria-hidden="true" />
-      <span>Cluster Manager</span>
     </a>
     <nav class="flex items-center gap-1" aria-label="Primary navigation">
       {#if data.user}
@@ -95,9 +99,3 @@
 </header>
 
 {@render children()}
-
-<footer
-  class="text-muted-foreground mx-auto w-full max-w-7xl px-4 py-6 text-center text-xs sm:px-6 lg:px-8"
->
-  Cluster Manager {data.platformVersion}
-</footer>

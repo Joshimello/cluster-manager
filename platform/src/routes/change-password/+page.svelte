@@ -9,7 +9,7 @@
   let { data, form } = $props();
 </script>
 
-<svelte:head><title>Change password · Cluster Manager</title></svelte:head>
+<svelte:head><title>Change password</title></svelte:head>
 
 <main class="mx-auto flex min-h-[calc(100vh-3.5rem)] w-full max-w-md items-center px-4 py-12">
   <Card.Root class="w-full">

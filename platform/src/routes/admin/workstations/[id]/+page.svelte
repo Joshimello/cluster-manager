@@ -48,7 +48,7 @@
   });
 </script>
 
-<svelte:head><title>{ws.name} · Workstations · Cluster Manager</title></svelte:head>
+<svelte:head><title>{ws.name} · Workstations</title></svelte:head>
 
 <MonitoringHistoryProvider workstationIds={[ws.id]} range={data.range}>
   <main class="mx-auto grid w-full max-w-7xl gap-6 px-4 py-8 sm:px-6 lg:px-8">

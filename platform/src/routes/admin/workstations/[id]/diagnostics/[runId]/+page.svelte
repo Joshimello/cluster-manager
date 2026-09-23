@@ -52,7 +52,7 @@
   });
 </script>
 
-<svelte:head><title>GPU diagnostic · {data.workstation.name} · Cluster Manager</title></svelte:head>
+<svelte:head><title>GPU diagnostic · {data.workstation.name}</title></svelte:head>
 
 <MonitoringHistoryProvider
   workstationIds={[data.workstation.id]}

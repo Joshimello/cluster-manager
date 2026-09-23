@@ -25,17 +25,14 @@
   const now = new Date();
 </script>
 
-<svelte:head><title>Dashboard · Cluster Manager</title></svelte:head>
+<svelte:head><title>Dashboard</title></svelte:head>
 
 <MonitoringHistoryProvider
   workstationIds={data.assignments.map((assignment) => assignment.workstationId)}
   range={data.range}
 >
   <main class="mx-auto grid w-full max-w-7xl gap-6 px-4 py-8 sm:px-6 lg:px-8">
-    <PageHeader
-      title={`Welcome, ${data.user.displayName}`}
-      description="Your Cluster Manager account is active."
-    />
+    <PageHeader title={`Welcome, ${data.user.displayName}`} description="Your account is active." />
 
     <Card.Root>
       <Card.Header>

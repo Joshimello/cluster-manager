@@ -21,7 +21,7 @@
   const gigabytes = (value: number) => `${(value / 1_000_000_000).toFixed(1)} GB`;
 </script>
 
-<svelte:head><title>Review stop request · Administration · Cluster Manager</title></svelte:head>
+<svelte:head><title>Review stop request · Administration</title></svelte:head>
 
 <main class="mx-auto grid w-full max-w-5xl gap-6 px-4 py-8 sm:px-6 lg:px-8">
   <div>

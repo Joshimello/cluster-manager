@@ -9,14 +9,14 @@
   let { form } = $props();
 </script>
 
-<svelte:head><title>Log in · Cluster Manager</title></svelte:head>
+<svelte:head><title>Log in</title></svelte:head>
 
 <main class="mx-auto flex min-h-[calc(100vh-3.5rem)] w-full max-w-md items-center px-4 py-12">
   <Card.Root class="w-full">
     <Card.Header>
       <Card.Title class="text-2xl">Log in</Card.Title>
       <Card.Description
-        >Use your Cluster Manager account. Workstation SSH credentials are separate.</Card.Description
+        >Use your platform account. Workstation SSH credentials are separate.</Card.Description
       >
     </Card.Header>
     <Card.Content class="gap-4">

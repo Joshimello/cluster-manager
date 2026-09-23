@@ -14,10 +14,10 @@
   let selectedTimeZone = $derived(form?.timeZone ?? data.user.timeZone ?? defaultTimeZone);
 </script>
 
-<svelte:head><title>Account settings · Cluster Manager</title></svelte:head>
+<svelte:head><title>Account settings</title></svelte:head>
 
 <main class="mx-auto grid w-full max-w-2xl gap-6 px-4 py-8 sm:px-6 lg:px-8">
-  <PageHeader title="Account settings" description="Control how Cluster Manager appears to you." />
+  <PageHeader title="Account settings" description="Manage your time zone and password." />
 
   <Card.Root>
     <Card.Header>
