@@ -361,6 +361,9 @@ func (m *Manager) checkDiagnostics(ctx context.Context) error {
 	if err != nil {
 		return errors.New("pinned gpu-burn image is missing or has the wrong digest")
 	}
+	if err := diagnostics.ProbeContainerRuntime(ctx, manifest.Image+"@"+manifest.Digest); err != nil {
+		return err
+	}
 	return nil
 }
 

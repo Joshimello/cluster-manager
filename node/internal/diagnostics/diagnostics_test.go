@@ -28,6 +28,18 @@ func TestLoadManifestBytes(t *testing.T) {
 	}
 }
 
+func TestPodmanSecurityArgumentsAllowNVIDIACDIHook(t *testing.T) {
+	arguments := strings.Join(podmanSecurityArguments("nvidia.com/gpu=all"), " ")
+	if strings.Contains(arguments, "--read-only") {
+		t.Fatal("a read-only root prevents the NVIDIA CDI hook from starting on supported hosts")
+	}
+	for _, required := range []string{"--network=none", "--pull=never", "--cap-drop=all", "--security-opt=no-new-privileges", "--pids-limit=128"} {
+		if !strings.Contains(arguments, required) {
+			t.Fatalf("missing diagnostic isolation option %s", required)
+		}
+	}
+}
+
 func TestParseResultsUsesFinalStatusAndTelemetryIdentity(t *testing.T) {
 	maxima := map[string]*gpuMaximum{
 		"GPU-a": {Index: 2, Model: "RTX A", Temperature: 81, Utilization: 99, Memory: 1234},

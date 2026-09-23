@@ -80,6 +80,29 @@ func (osRunner) Run(ctx context.Context, name string, args ...string) ([]byte, e
 	return exec.CommandContext(ctx, name, args...).CombinedOutput()
 }
 
+func podmanSecurityArguments(device string) []string {
+	// NVIDIA CDI hooks on some hosts need to update files in the container root.
+	// The container is ephemeral and has no network or user-specified host mounts.
+	return []string{
+		"--rm", "--network=none", "--device", device, "--pull=never",
+		"--tmpfs", "/tmp:rw,nosuid,size=1g", "--cap-drop=all",
+		"--security-opt=no-new-privileges", "--pids-limit=128",
+	}
+}
+
+// ProbeContainerRuntime checks that the pinned image can start with the same
+// GPU and security options as a diagnostic, without running a GPU workload.
+func ProbeContainerRuntime(ctx context.Context, image string) error {
+	probeCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	arguments := append(podmanSecurityArguments("nvidia.com/gpu=all"), "--entrypoint=/bin/true", image)
+	output, err := (osRunner{}).Run(probeCtx, "podman", append([]string{"run"}, arguments...)...)
+	if err != nil {
+		return fmt.Errorf("GPU diagnostic container could not start: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+	return nil
+}
+
 type state struct {
 	SchemaVersion int                            `json:"schemaVersion"`
 	Instruction   protocol.DiagnosticInstruction `json:"instruction"`
@@ -413,11 +436,13 @@ func (m *Manager) run(ctx context.Context, current state, start bool) protocol.D
 	arguments := []string{
 		"--unit=" + current.Unit, "--collect", "--property=Type=exec", "--property=NoNewPrivileges=yes",
 		"--property=PrivateTmp=yes", "--property=ProtectHome=read-only", "--property=TimeoutStopSec=5s", "--",
-		"podman", "run", "--rm", "--name", current.Container, "--network=none", "--device", device,
-		"--pull=never", "--read-only", "--tmpfs", "/tmp:rw,nosuid,size=1g", "--cap-drop=all", "--security-opt=no-new-privileges", "--pids-limit=128",
-		manifest.Image + "@" + manifest.Digest,
-		"-m", strconv.Itoa(current.Instruction.MemoryPercent) + "%", "-stts", "5",
+		"podman", "run", "--name", current.Container,
 	}
+	arguments = append(arguments, podmanSecurityArguments(device)...)
+	arguments = append(arguments,
+		manifest.Image+"@"+manifest.Digest,
+		"-m", strconv.Itoa(current.Instruction.MemoryPercent)+"%", "-stts", "5",
+	)
 	switch current.Instruction.Workload {
 	case "fp64":
 		arguments = append(arguments, "-d")
@@ -488,6 +513,9 @@ finished:
 	if status != "cancelled" && !strings.HasPrefix(detail, "Thermal cutoff") {
 		if !complete {
 			status, detail = "failed", "gpu-burn did not produce a complete per-GPU result."
+			if strings.Contains(string(logs), "nvidia-cdi-hook") {
+				detail = "NVIDIA CDI could not start the GPU container. Run cluster-node doctor on the workstation and inspect the diagnostic log."
+			}
 		} else if faulty {
 			status, detail = "faulty", "gpu-burn reported at least one faulty GPU."
 		} else {
