@@ -117,7 +117,7 @@ func TestStopDiagnosticKillsWorkersBeforeSystemdWrapper(t *testing.T) {
 		calls = append(calls, call)
 		switch {
 		case strings.HasPrefix(call, "podman top"):
-			return []byte("HPID\n100\n101\n102\n"), nil
+			return []byte("PID HPID\n1 100\n3 102\n2 101\n"), nil
 		case strings.HasPrefix(call, "podman ps"):
 			return nil, nil
 		case strings.HasPrefix(call, "nvidia-smi"):
@@ -131,7 +131,7 @@ func TestStopDiagnosticKillsWorkersBeforeSystemdWrapper(t *testing.T) {
 		t.Fatal("expected cleanup to confirm no active GPU processes")
 	}
 	want := []string{
-		"podman top test-container hpid",
+		"podman top test-container pid hpid",
 		"kill -KILL 102",
 		"kill -KILL 101",
 		"kill -KILL 100",

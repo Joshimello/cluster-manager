@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -555,13 +556,13 @@ finished:
 func (m *Manager) stopDiagnostic(ctx context.Context, current state) bool {
 	// Podman places container processes in a different cgroup from its
 	// systemd-run wrapper. Stopping only the wrapper can orphan GPU workers.
-	output, err := m.runner.Run(ctx, "podman", "top", current.Container, "hpid")
+	output, err := m.runner.Run(ctx, "podman", "top", current.Container, "pid", "hpid")
 	if err == nil {
 		pids := containerHostPIDs(output)
-		// Podman lists the container init first. Kill children before their parent
-		// can cause --rm to discard the container's process listing.
-		for index := len(pids) - 1; index >= 0; index-- {
-			_, _ = m.runner.Run(ctx, "kill", "-KILL", strconv.Itoa(pids[index]))
+		// Kill the container init last; otherwise --rm may discard the listing
+		// while GPU worker processes are still running.
+		for _, pid := range pids {
+			_, _ = m.runner.Run(ctx, "kill", "-KILL", strconv.Itoa(pid))
 		}
 	}
 	_, _ = m.runner.Run(ctx, "podman", "kill", current.Container)
@@ -588,16 +589,23 @@ func (m *Manager) stopDiagnostic(ctx context.Context, current state) bool {
 }
 
 func containerHostPIDs(output []byte) []int {
-	var pids []int
+	type process struct{ containerPID, hostPID int }
+	var processes []process
 	for _, line := range strings.Split(string(output), "\n") {
 		fields := strings.Fields(line)
-		if len(fields) != 1 {
+		if len(fields) != 2 {
 			continue
 		}
-		pid, err := strconv.Atoi(fields[0])
-		if err == nil && pid > 1 {
-			pids = append(pids, pid)
+		containerPID, containerErr := strconv.Atoi(fields[0])
+		hostPID, hostErr := strconv.Atoi(fields[1])
+		if containerErr == nil && hostErr == nil && containerPID > 0 && hostPID > 1 {
+			processes = append(processes, process{containerPID, hostPID})
 		}
+	}
+	sort.Slice(processes, func(i, j int) bool { return processes[i].containerPID > processes[j].containerPID })
+	pids := make([]int, 0, len(processes))
+	for _, process := range processes {
+		pids = append(pids, process.hostPID)
 	}
 	return pids
 }
