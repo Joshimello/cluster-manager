@@ -119,37 +119,42 @@
 
       <div class="grid min-w-0 content-start gap-6">
         {#if activeTab === 'overview'}
-          <Card.Root>
-            <Card.Header>
-              <Card.Title>Node facts</Card.Title>
-              <Card.Description
-                >Identity and health information from the latest heartbeat.</Card.Description
-              >
-            </Card.Header>
-            <Card.Content class="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-              <div class="grid gap-1">
-                <span class="text-muted-foreground text-sm">Last heartbeat</span>
-                <strong>{ws.lastHeartbeatAt ? dateTime.format(ws.lastHeartbeatAt) : 'Never'}</strong
-                >
-              </div>
-              <div class="grid gap-1">
-                <span class="text-muted-foreground text-sm">Node version</span>
-                <strong>{ws.nodeVersion ?? 'Unknown'}</strong>
-              </div>
-              <div class="grid gap-1">
-                <span class="text-muted-foreground text-sm">Hostname</span>
-                <strong class="break-all">{ws.hostname ?? 'Unknown'}</strong>
-              </div>
-              <div class="grid gap-1">
-                <span class="text-muted-foreground text-sm">Uptime</span>
-                <strong
-                  >{ws.uptimeSeconds === null
-                    ? 'Unknown'
-                    : `${ws.uptimeSeconds.toLocaleString()} seconds`}</strong
-                >
-              </div>
-            </Card.Content>
-          </Card.Root>
+          <section class="grid gap-3" aria-labelledby="node-facts-heading">
+            <div>
+              <h2 id="node-facts-heading" class="text-xl font-semibold tracking-tight">
+                Node facts
+              </h2>
+              <p class="text-muted-foreground text-sm">
+                Identity and health information from the latest heartbeat.
+              </p>
+            </div>
+            <Card.Root>
+              <Card.Content class="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+                <div class="grid gap-1">
+                  <span class="text-muted-foreground text-sm">Last heartbeat</span>
+                  <strong
+                    >{ws.lastHeartbeatAt ? dateTime.format(ws.lastHeartbeatAt) : 'Never'}</strong
+                  >
+                </div>
+                <div class="grid gap-1">
+                  <span class="text-muted-foreground text-sm">Node version</span>
+                  <strong>{ws.nodeVersion ?? 'Unknown'}</strong>
+                </div>
+                <div class="grid gap-1">
+                  <span class="text-muted-foreground text-sm">Hostname</span>
+                  <strong class="break-all">{ws.hostname ?? 'Unknown'}</strong>
+                </div>
+                <div class="grid gap-1">
+                  <span class="text-muted-foreground text-sm">Uptime</span>
+                  <strong
+                    >{ws.uptimeSeconds === null
+                      ? 'Unknown'
+                      : `${ws.uptimeSeconds.toLocaleString()} seconds`}</strong
+                  >
+                </div>
+              </Card.Content>
+            </Card.Root>
+          </section>
         {/if}
 
         {#if activeTab === 'overview' || activeTab === 'monitoring'}
@@ -199,466 +204,497 @@
             {/if}
 
             {#if activeTab === 'overview'}
-              <Card.Root>
-                <Card.Header>
-                  <Card.Title>Logged-in sessions</Card.Title>
-                  <Card.Description>Interactive sessions reported by the node.</Card.Description>
-                </Card.Header>
-                <Card.Content class={ws.inventory.sessions.length > 0 ? 'px-0' : undefined}>
-                  {#if ws.inventory.sessions.length === 0}
-                    <p class="text-muted-foreground text-sm">No sessions reported.</p>
-                  {:else}
-                    <Table.Root>
-                      <Table.Header>
-                        <Table.Row>
-                          <Table.Head class="pl-6">User</Table.Head>
-                          <Table.Head>Terminal</Table.Head>
-                          <Table.Head class="pr-6">Remote host</Table.Head>
-                        </Table.Row>
-                      </Table.Header>
-                      <Table.Body>
-                        {#each ws.inventory.sessions as session (session.username + session.terminal)}
+              <section class="grid gap-3" aria-labelledby="sessions-heading">
+                <div>
+                  <h2 id="sessions-heading" class="text-xl font-semibold tracking-tight">
+                    Logged-in sessions
+                  </h2>
+                  <p class="text-muted-foreground text-sm">
+                    Interactive sessions reported by the node.
+                  </p>
+                </div>
+                <Card.Root>
+                  <Card.Content class={ws.inventory.sessions.length > 0 ? 'px-0' : undefined}>
+                    {#if ws.inventory.sessions.length === 0}
+                      <p class="text-muted-foreground text-sm">No sessions reported.</p>
+                    {:else}
+                      <Table.Root>
+                        <Table.Header>
                           <Table.Row>
-                            <Table.Cell class="pl-6 font-medium">{session.username}</Table.Cell>
-                            <Table.Cell><code>{session.terminal}</code></Table.Cell>
-                            <Table.Cell class="pr-6">{session.remoteHost ?? 'Local'}</Table.Cell>
+                            <Table.Head class="pl-6">User</Table.Head>
+                            <Table.Head>Terminal</Table.Head>
+                            <Table.Head class="pr-6">Remote host</Table.Head>
                           </Table.Row>
-                        {/each}
-                      </Table.Body>
-                    </Table.Root>
-                  {/if}
-                </Card.Content>
-              </Card.Root>
+                        </Table.Header>
+                        <Table.Body>
+                          {#each ws.inventory.sessions as session (session.username + session.terminal)}
+                            <Table.Row>
+                              <Table.Cell class="pl-6 font-medium">{session.username}</Table.Cell>
+                              <Table.Cell><code>{session.terminal}</code></Table.Cell>
+                              <Table.Cell class="pr-6">{session.remoteHost ?? 'Local'}</Table.Cell>
+                            </Table.Row>
+                          {/each}
+                        </Table.Body>
+                      </Table.Root>
+                    {/if}
+                  </Card.Content>
+                </Card.Root>
+              </section>
             {/if}
           {:else}
-            <Card.Root>
-              <Card.Header>
-                <Card.Title>Waiting for inventory</Card.Title>
-                <Card.Description
-                  >Enroll and start this node to receive its first report.</Card.Description
-                >
-              </Card.Header>
-            </Card.Root>
+            <section class="grid gap-3" aria-labelledby="inventory-heading">
+              <div>
+                <h2 id="inventory-heading" class="text-xl font-semibold tracking-tight">
+                  Waiting for inventory
+                </h2>
+                <p class="text-muted-foreground text-sm">
+                  Enroll and start this node to receive its first report.
+                </p>
+              </div>
+            </section>
           {/if}
         {/if}
 
         {#if activeTab === 'updates'}
-          <Card.Root>
-            <Card.Header>
-              <Card.Title class="flex items-center gap-2">
+          <section class="grid gap-3" aria-labelledby="software-update-heading">
+            <div>
+              <h2
+                id="software-update-heading"
+                class="flex items-center gap-2 text-xl font-semibold tracking-tight"
+              >
                 <RefreshCwIcon class="size-5" aria-hidden="true" />
                 Node software update
-              </Card.Title>
-              <Card.Description>
+              </h2>
+              <p class="text-muted-foreground text-sm">
                 Install a verified GitHub release. The node keeps its current binary and service
                 definition until the replacement authenticates and sends a healthy heartbeat.
-              </Card.Description>
-            </Card.Header>
-            <Card.Content class="grid gap-5">
-              <div class="bg-muted/50 grid gap-3 rounded-lg border p-4 sm:grid-cols-3">
-                <div class="grid gap-1">
-                  <span class="text-muted-foreground text-sm">Managed updates</span>
-                  <strong>{supportsManagedUpdate ? 'Supported' : 'Manual upgrade required'}</strong>
-                </div>
-                <div class="grid gap-1">
-                  <span class="text-muted-foreground text-sm">Current version</span>
-                  <strong>{ws.nodeVersion ?? 'Unknown'}</strong>
-                </div>
-                <div class="grid gap-1">
-                  <span class="text-muted-foreground text-sm">Update state</span>
-                  {#if activeUpdate}
-                    <StatusBadge status={activeUpdate.status} />
-                  {:else}
-                    <strong>Idle</strong>
-                  {/if}
-                </div>
-              </div>
-
-              {#if activeUpdate}
-                <div
-                  class="grid gap-3 rounded-lg border p-4 sm:grid-cols-[1fr_auto] sm:items-center"
-                >
+              </p>
+            </div>
+            <Card.Root>
+              <Card.Content class="grid gap-5">
+                <div class="bg-muted/50 grid gap-3 rounded-lg border p-4 sm:grid-cols-3">
                   <div class="grid gap-1">
-                    <strong>{activeUpdate.sourceVersion} → {activeUpdate.targetVersion}</strong>
-                    <p class="text-muted-foreground text-sm">
-                      {activeUpdate.detail ?? 'Waiting for the node to report progress.'}
-                    </p>
-                    <p class="text-muted-foreground text-xs">
-                      Requested {dateTime.format(activeUpdate.createdAt)} · expires {dateTime.format(
-                        activeUpdate.expiresAt
-                      )}
-                    </p>
-                  </div>
-                  {#if activeUpdate.status === 'pending'}
-                    <form method="POST" action="?/cancelUpdate">
-                      <input type="hidden" name="updateId" value={activeUpdate.id} />
-                      <Button type="submit" variant="outline">Cancel</Button>
-                    </form>
-                  {/if}
-                </div>
-              {:else if supportsManagedUpdate}
-                <form
-                  method="POST"
-                  action="?/queueUpdate"
-                  class="grid items-end gap-4 lg:grid-cols-[1fr_1fr_auto]"
-                >
-                  <div class="grid gap-2">
-                    <Label for="node-target-version">Exact stable release</Label>
-                    <Input
-                      id="node-target-version"
-                      name="targetVersion"
-                      required
-                      placeholder="v0.3.0"
-                      pattern="v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
-                      value={form?.action === 'queueUpdate' &&
-                      form.values &&
-                      'targetVersion' in form.values
-                        ? (form.values.targetVersion ?? '')
-                        : ''}
-                    />
-                  </div>
-                  <div class="grid gap-2">
-                    <Label for="node-update-confirmation">Type {ws.name} to confirm</Label>
-                    <Input
-                      id="node-update-confirmation"
-                      name="confirmation"
-                      required
-                      autocomplete="off"
-                      value={form?.action === 'queueUpdate'
-                        ? (form.values?.confirmation ?? '')
-                        : ''}
-                    />
-                  </div>
-                  <Button
-                    type="submit"
-                    disabled={ws.connectionState !== 'online' || ws.status !== 'active'}
-                  >
-                    Install release
-                  </Button>
-                </form>
-              {:else}
-                <p class="text-muted-foreground text-sm">
-                  Install the first compatible release with
-                  <code>sudo /usr/local/sbin/cluster-node upgrade</code>. After that, future updates
-                  can be safely requested here.
-                </p>
-              {/if}
-
-              <div class="flex gap-3 rounded-lg border p-4">
-                <ShieldCheckIcon
-                  class="text-muted-foreground mt-0.5 size-5 shrink-0"
-                  aria-hidden="true"
-                />
-                <p class="text-muted-foreground text-sm">
-                  Only the node binary and systemd service are updated. Configuration, credentials,
-                  Linux users, homes, and running jobs are left alone. If the new node cannot
-                  authenticate and complete three healthy heartbeats, the local watchdog restores
-                  the previous version automatically.
-                </p>
-              </div>
-
-              {#if data.updates.length > 0}
-                <div class="grid gap-3">
-                  <h3 class="font-medium">Recent update history</h3>
-                  <div class="overflow-hidden rounded-lg border">
-                    <Table.Root>
-                      <Table.Header>
-                        <Table.Row>
-                          <Table.Head class="pl-4">Release</Table.Head>
-                          <Table.Head>Status</Table.Head>
-                          <Table.Head>Detail</Table.Head>
-                          <Table.Head class="pr-4">Requested</Table.Head>
-                        </Table.Row>
-                      </Table.Header>
-                      <Table.Body>
-                        {#each data.updates as update (update.id)}
-                          <Table.Row>
-                            <Table.Cell class="pl-4 font-medium"
-                              >{update.sourceVersion} → {update.targetVersion}</Table.Cell
-                            >
-                            <Table.Cell><StatusBadge status={update.status} /></Table.Cell>
-                            <Table.Cell class="max-w-md text-sm">{update.detail ?? '—'}</Table.Cell>
-                            <Table.Cell class="pr-4 text-sm"
-                              >{dateTime.format(update.createdAt)}</Table.Cell
-                            >
-                          </Table.Row>
-                        {/each}
-                      </Table.Body>
-                    </Table.Root>
-                  </div>
-                </div>
-              {/if}
-            </Card.Content>
-          </Card.Root>
-        {/if}
-
-        {#if activeTab === 'diagnostics'}
-          <Card.Root>
-            <Card.Header>
-              <Card.Title class="flex items-center gap-2">
-                <FlameIcon class="size-5" aria-hidden="true" />
-                GPU diagnostics
-              </Card.Title>
-              <Card.Description>
-                Run a guarded gpu-burn stress test. The node refuses to start when a target has a
-                process, reservation, stale identity, untrusted image, or unsafe temperature.
-              </Card.Description>
-            </Card.Header>
-            <Card.Content class="grid gap-5">
-              <div class="bg-muted/50 grid gap-3 rounded-lg border p-4 sm:grid-cols-3">
-                <div class="grid gap-1">
-                  <span class="text-muted-foreground text-sm">Diagnostics</span>
-                  <strong>{supportsGpuDiagnostics ? 'Ready' : 'Not configured'}</strong>
-                </div>
-                <div class="grid gap-1">
-                  <span class="text-muted-foreground text-sm">Target availability</span>
-                  <strong
-                    >{data.gpus.filter((gpu) => gpu.processCount === 0).length} of {data.gpus
-                      .length} idle</strong
-                  >
-                </div>
-                <div class="grid gap-1">
-                  <span class="text-muted-foreground text-sm">Test state</span>
-                  {#if activeDiagnostic}
-                    <StatusBadge status={activeDiagnostic.status} />
-                  {:else}
-                    <strong>Idle</strong>
-                  {/if}
-                </div>
-              </div>
-
-              {#if activeDiagnostic}
-                <div
-                  class="grid gap-3 rounded-lg border p-4 sm:grid-cols-[1fr_auto] sm:items-center"
-                >
-                  <div class="grid gap-1">
-                    <strong>
-                      {activeDiagnostic.scope === 'all' ? 'All GPUs' : 'Single GPU'} ·
-                      {activeDiagnostic.durationSeconds}s · {activeDiagnostic.memoryPercent}% VRAM
-                    </strong>
-                    <p class="text-muted-foreground text-sm">
-                      {activeDiagnostic.detail ?? 'Waiting for the node to report progress.'}
-                    </p>
-                    <Button
-                      variant="link"
-                      class="h-auto w-fit p-0"
-                      href={resolve(
-                        `/admin/workstations/${ws.id}/diagnostics/${activeDiagnostic.id}`
-                      )}>View live diagnostic</Button
+                    <span class="text-muted-foreground text-sm">Managed updates</span>
+                    <strong
+                      >{supportsManagedUpdate ? 'Supported' : 'Manual upgrade required'}</strong
                     >
                   </div>
-                  <form method="POST" action="?/cancelDiagnostic">
-                    <input type="hidden" name="runId" value={activeDiagnostic.id} />
-                    <Button type="submit" variant="destructive">Cancel test</Button>
-                  </form>
-                </div>
-              {:else if supportsGpuDiagnostics && data.gpus.length > 0}
-                <form method="POST" action="?/queueDiagnostic" class="grid gap-4">
-                  <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
-                    <div class="grid gap-2">
-                      <Label for="diagnostic-target">GPU target</Label>
-                      <select
-                        id="diagnostic-target"
-                        name="target"
-                        class="border-input bg-background h-9 rounded-md border px-3 text-sm shadow-xs"
-                        required
-                      >
-                        <option value="all">All GPUs</option>
-                        {#each data.gpus as gpu (gpu.id)}
-                          <option value={gpu.id}>GPU {gpu.index} · {gpu.model}</option>
-                        {/each}
-                      </select>
-                    </div>
-                    <div class="grid gap-2">
-                      <Label for="diagnostic-duration">Duration (seconds)</Label>
-                      <Input
-                        id="diagnostic-duration"
-                        name="durationSeconds"
-                        type="number"
-                        min="10"
-                        max="1800"
-                        value="60"
-                        required
-                      />
-                    </div>
-                    <div class="grid gap-2">
-                      <Label for="diagnostic-memory">VRAM (%)</Label>
-                      <Input
-                        id="diagnostic-memory"
-                        name="memoryPercent"
-                        type="number"
-                        min="50"
-                        max="90"
-                        value="90"
-                        required
-                      />
-                    </div>
-                    <div class="grid gap-2">
-                      <Label for="diagnostic-workload">Workload</Label>
-                      <select
-                        id="diagnostic-workload"
-                        name="workload"
-                        class="border-input bg-background h-9 rounded-md border px-3 text-sm shadow-xs"
-                        required
-                      >
-                        <option value="fp32">FP32</option>
-                        <option value="fp64">FP64</option>
-                        <option value="tensor">Tensor Core</option>
-                      </select>
-                    </div>
-                    <div class="grid gap-2">
-                      <Label for="diagnostic-temperature">Stop at (°C)</Label>
-                      <Input
-                        id="diagnostic-temperature"
-                        name="temperatureCutoffC"
-                        type="number"
-                        min="70"
-                        max="90"
-                        value="85"
-                        required
-                      />
-                    </div>
+                  <div class="grid gap-1">
+                    <span class="text-muted-foreground text-sm">Current version</span>
+                    <strong>{ws.nodeVersion ?? 'Unknown'}</strong>
                   </div>
-                  <div class="grid items-end gap-4 sm:grid-cols-[1fr_auto]">
+                  <div class="grid gap-1">
+                    <span class="text-muted-foreground text-sm">Update state</span>
+                    {#if activeUpdate}
+                      <StatusBadge status={activeUpdate.status} />
+                    {:else}
+                      <strong>Idle</strong>
+                    {/if}
+                  </div>
+                </div>
+
+                {#if activeUpdate}
+                  <div
+                    class="grid gap-3 rounded-lg border p-4 sm:grid-cols-[1fr_auto] sm:items-center"
+                  >
+                    <div class="grid gap-1">
+                      <strong>{activeUpdate.sourceVersion} → {activeUpdate.targetVersion}</strong>
+                      <p class="text-muted-foreground text-sm">
+                        {activeUpdate.detail ?? 'Waiting for the node to report progress.'}
+                      </p>
+                      <p class="text-muted-foreground text-xs">
+                        Requested {dateTime.format(activeUpdate.createdAt)} · expires {dateTime.format(
+                          activeUpdate.expiresAt
+                        )}
+                      </p>
+                    </div>
+                    {#if activeUpdate.status === 'pending'}
+                      <form method="POST" action="?/cancelUpdate">
+                        <input type="hidden" name="updateId" value={activeUpdate.id} />
+                        <Button type="submit" variant="outline">Cancel</Button>
+                      </form>
+                    {/if}
+                  </div>
+                {:else if supportsManagedUpdate}
+                  <form
+                    method="POST"
+                    action="?/queueUpdate"
+                    class="grid items-end gap-4 lg:grid-cols-[1fr_1fr_auto]"
+                  >
                     <div class="grid gap-2">
-                      <Label for="diagnostic-confirmation"
-                        >Type {ws.name} to confirm this intensive test</Label
-                      >
+                      <Label for="node-target-version">Exact stable release</Label>
                       <Input
-                        id="diagnostic-confirmation"
+                        id="node-target-version"
+                        name="targetVersion"
+                        required
+                        placeholder="v0.3.0"
+                        pattern="v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
+                        value={form?.action === 'queueUpdate' &&
+                        form.values &&
+                        'targetVersion' in form.values
+                          ? (form.values.targetVersion ?? '')
+                          : ''}
+                      />
+                    </div>
+                    <div class="grid gap-2">
+                      <Label for="node-update-confirmation">Type {ws.name} to confirm</Label>
+                      <Input
+                        id="node-update-confirmation"
                         name="confirmation"
                         required
                         autocomplete="off"
+                        value={form?.action === 'queueUpdate'
+                          ? (form.values?.confirmation ?? '')
+                          : ''}
                       />
                     </div>
                     <Button
                       type="submit"
-                      variant="destructive"
-                      disabled={ws.connectionState !== 'online'}
+                      disabled={ws.connectionState !== 'online' || ws.status !== 'active'}
                     >
-                      Start stress test
+                      Install release
                     </Button>
-                  </div>
-                </form>
-              {:else}
-                <p class="text-muted-foreground text-sm">
-                  {supportsGpuDiagnostics
-                    ? 'No active NVIDIA GPU is available.'
-                    : 'Run sudo /usr/local/sbin/cluster-node diagnostics setup on the workstation, then re-run node doctor.'}
-                </p>
-              {/if}
+                  </form>
+                {:else}
+                  <p class="text-muted-foreground text-sm">
+                    Install the first compatible release with
+                    <code>sudo /usr/local/sbin/cluster-node upgrade</code>. After that, future
+                    updates can be safely requested here.
+                  </p>
+                {/if}
 
-              {#if data.diagnostics.length > 0}
-                <div class="grid gap-3">
-                  <h3 class="font-medium">Recent diagnostic history</h3>
-                  <div class="overflow-hidden rounded-lg border">
-                    <Table.Root>
-                      <Table.Header>
-                        <Table.Row>
-                          <Table.Head class="pl-4">Target</Table.Head>
-                          <Table.Head>Status</Table.Head>
-                          <Table.Head>Settings</Table.Head>
-                          <Table.Head class="pr-4">Requested</Table.Head>
-                        </Table.Row>
-                      </Table.Header>
-                      <Table.Body>
-                        {#each data.diagnostics as diagnostic (diagnostic.id)}
+                <div class="flex gap-3 rounded-lg border p-4">
+                  <ShieldCheckIcon
+                    class="text-muted-foreground mt-0.5 size-5 shrink-0"
+                    aria-hidden="true"
+                  />
+                  <p class="text-muted-foreground text-sm">
+                    Only the node binary and systemd service are updated. Configuration,
+                    credentials, Linux users, homes, and running jobs are left alone. If the new
+                    node cannot authenticate and complete three healthy heartbeats, the local
+                    watchdog restores the previous version automatically.
+                  </p>
+                </div>
+
+                {#if data.updates.length > 0}
+                  <div class="grid gap-3">
+                    <h3 class="font-medium">Recent update history</h3>
+                    <div class="overflow-hidden rounded-lg border">
+                      <Table.Root>
+                        <Table.Header>
                           <Table.Row>
-                            <Table.Cell class="pl-4 font-medium">
-                              <a
-                                class="hover:underline"
-                                href={resolve(
-                                  `/admin/workstations/${ws.id}/diagnostics/${diagnostic.id}`
-                                )}
-                              >
-                                {diagnostic.scope === 'all' ? 'All GPUs' : 'Single GPU'}
-                              </a>
-                            </Table.Cell>
-                            <Table.Cell><StatusBadge status={diagnostic.status} /></Table.Cell>
-                            <Table.Cell class="text-sm"
-                              >{diagnostic.durationSeconds}s · {diagnostic.memoryPercent}% · {diagnostic.workload.toUpperCase()}</Table.Cell
-                            >
-                            <Table.Cell class="pr-4 text-sm"
-                              >{dateTime.format(diagnostic.createdAt)}</Table.Cell
-                            >
+                            <Table.Head class="pl-4">Release</Table.Head>
+                            <Table.Head>Status</Table.Head>
+                            <Table.Head>Detail</Table.Head>
+                            <Table.Head class="pr-4">Requested</Table.Head>
                           </Table.Row>
-                        {/each}
-                      </Table.Body>
-                    </Table.Root>
+                        </Table.Header>
+                        <Table.Body>
+                          {#each data.updates as update (update.id)}
+                            <Table.Row>
+                              <Table.Cell class="pl-4 font-medium"
+                                >{update.sourceVersion} → {update.targetVersion}</Table.Cell
+                              >
+                              <Table.Cell><StatusBadge status={update.status} /></Table.Cell>
+                              <Table.Cell class="max-w-md text-sm"
+                                >{update.detail ?? '—'}</Table.Cell
+                              >
+                              <Table.Cell class="pr-4 text-sm"
+                                >{dateTime.format(update.createdAt)}</Table.Cell
+                              >
+                            </Table.Row>
+                          {/each}
+                        </Table.Body>
+                      </Table.Root>
+                    </div>
+                  </div>
+                {/if}
+              </Card.Content>
+            </Card.Root>
+          </section>
+        {/if}
+
+        {#if activeTab === 'diagnostics'}
+          <section class="grid gap-3" aria-labelledby="gpu-diagnostics-heading">
+            <div>
+              <h2
+                id="gpu-diagnostics-heading"
+                class="flex items-center gap-2 text-xl font-semibold tracking-tight"
+              >
+                <FlameIcon class="size-5" aria-hidden="true" />
+                GPU diagnostics
+              </h2>
+              <p class="text-muted-foreground text-sm">
+                Run a guarded gpu-burn stress test. The node refuses to start when a target has a
+                process, reservation, stale identity, untrusted image, or unsafe temperature.
+              </p>
+            </div>
+            <Card.Root>
+              <Card.Content class="grid gap-5">
+                <div class="bg-muted/50 grid gap-3 rounded-lg border p-4 sm:grid-cols-3">
+                  <div class="grid gap-1">
+                    <span class="text-muted-foreground text-sm">Diagnostics</span>
+                    <strong>{supportsGpuDiagnostics ? 'Ready' : 'Not configured'}</strong>
+                  </div>
+                  <div class="grid gap-1">
+                    <span class="text-muted-foreground text-sm">Target availability</span>
+                    <strong
+                      >{data.gpus.filter((gpu) => gpu.processCount === 0).length} of {data.gpus
+                        .length} idle</strong
+                    >
+                  </div>
+                  <div class="grid gap-1">
+                    <span class="text-muted-foreground text-sm">Test state</span>
+                    {#if activeDiagnostic}
+                      <StatusBadge status={activeDiagnostic.status} />
+                    {:else}
+                      <strong>Idle</strong>
+                    {/if}
                   </div>
                 </div>
-              {/if}
-            </Card.Content>
-          </Card.Root>
+
+                {#if activeDiagnostic}
+                  <div
+                    class="grid gap-3 rounded-lg border p-4 sm:grid-cols-[1fr_auto] sm:items-center"
+                  >
+                    <div class="grid gap-1">
+                      <strong>
+                        {activeDiagnostic.scope === 'all' ? 'All GPUs' : 'Single GPU'} ·
+                        {activeDiagnostic.durationSeconds}s · {activeDiagnostic.memoryPercent}% VRAM
+                      </strong>
+                      <p class="text-muted-foreground text-sm">
+                        {activeDiagnostic.detail ?? 'Waiting for the node to report progress.'}
+                      </p>
+                      <Button
+                        variant="link"
+                        class="h-auto w-fit p-0"
+                        href={resolve(
+                          `/admin/workstations/${ws.id}/diagnostics/${activeDiagnostic.id}`
+                        )}>View live diagnostic</Button
+                      >
+                    </div>
+                    <form method="POST" action="?/cancelDiagnostic">
+                      <input type="hidden" name="runId" value={activeDiagnostic.id} />
+                      <Button type="submit" variant="destructive">Cancel test</Button>
+                    </form>
+                  </div>
+                {:else if supportsGpuDiagnostics && data.gpus.length > 0}
+                  <form method="POST" action="?/queueDiagnostic" class="grid gap-4">
+                    <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+                      <div class="grid gap-2">
+                        <Label for="diagnostic-target">GPU target</Label>
+                        <select
+                          id="diagnostic-target"
+                          name="target"
+                          class="border-input bg-background h-9 rounded-md border px-3 text-sm shadow-xs"
+                          required
+                        >
+                          <option value="all">All GPUs</option>
+                          {#each data.gpus as gpu (gpu.id)}
+                            <option value={gpu.id}>GPU {gpu.index} · {gpu.model}</option>
+                          {/each}
+                        </select>
+                      </div>
+                      <div class="grid gap-2">
+                        <Label for="diagnostic-duration">Duration (seconds)</Label>
+                        <Input
+                          id="diagnostic-duration"
+                          name="durationSeconds"
+                          type="number"
+                          min="10"
+                          max="1800"
+                          value="60"
+                          required
+                        />
+                      </div>
+                      <div class="grid gap-2">
+                        <Label for="diagnostic-memory">VRAM (%)</Label>
+                        <Input
+                          id="diagnostic-memory"
+                          name="memoryPercent"
+                          type="number"
+                          min="50"
+                          max="90"
+                          value="90"
+                          required
+                        />
+                      </div>
+                      <div class="grid gap-2">
+                        <Label for="diagnostic-workload">Workload</Label>
+                        <select
+                          id="diagnostic-workload"
+                          name="workload"
+                          class="border-input bg-background h-9 rounded-md border px-3 text-sm shadow-xs"
+                          required
+                        >
+                          <option value="fp32">FP32</option>
+                          <option value="fp64">FP64</option>
+                          <option value="tensor">Tensor Core</option>
+                        </select>
+                      </div>
+                      <div class="grid gap-2">
+                        <Label for="diagnostic-temperature">Stop at (°C)</Label>
+                        <Input
+                          id="diagnostic-temperature"
+                          name="temperatureCutoffC"
+                          type="number"
+                          min="70"
+                          max="90"
+                          value="85"
+                          required
+                        />
+                      </div>
+                    </div>
+                    <div class="grid items-end gap-4 sm:grid-cols-[1fr_auto]">
+                      <div class="grid gap-2">
+                        <Label for="diagnostic-confirmation"
+                          >Type {ws.name} to confirm this intensive test</Label
+                        >
+                        <Input
+                          id="diagnostic-confirmation"
+                          name="confirmation"
+                          required
+                          autocomplete="off"
+                        />
+                      </div>
+                      <Button
+                        type="submit"
+                        variant="destructive"
+                        disabled={ws.connectionState !== 'online'}
+                      >
+                        Start stress test
+                      </Button>
+                    </div>
+                  </form>
+                {:else}
+                  <p class="text-muted-foreground text-sm">
+                    {supportsGpuDiagnostics
+                      ? 'No active NVIDIA GPU is available.'
+                      : 'Run sudo /usr/local/sbin/cluster-node diagnostics setup on the workstation, then re-run node doctor.'}
+                  </p>
+                {/if}
+
+                {#if data.diagnostics.length > 0}
+                  <div class="grid gap-3">
+                    <h3 class="font-medium">Recent diagnostic history</h3>
+                    <div class="overflow-hidden rounded-lg border">
+                      <Table.Root>
+                        <Table.Header>
+                          <Table.Row>
+                            <Table.Head class="pl-4">Target</Table.Head>
+                            <Table.Head>Status</Table.Head>
+                            <Table.Head>Settings</Table.Head>
+                            <Table.Head class="pr-4">Requested</Table.Head>
+                          </Table.Row>
+                        </Table.Header>
+                        <Table.Body>
+                          {#each data.diagnostics as diagnostic (diagnostic.id)}
+                            <Table.Row>
+                              <Table.Cell class="pl-4 font-medium">
+                                <a
+                                  class="hover:underline"
+                                  href={resolve(
+                                    `/admin/workstations/${ws.id}/diagnostics/${diagnostic.id}`
+                                  )}
+                                >
+                                  {diagnostic.scope === 'all' ? 'All GPUs' : 'Single GPU'}
+                                </a>
+                              </Table.Cell>
+                              <Table.Cell><StatusBadge status={diagnostic.status} /></Table.Cell>
+                              <Table.Cell class="text-sm"
+                                >{diagnostic.durationSeconds}s · {diagnostic.memoryPercent}% · {diagnostic.workload.toUpperCase()}</Table.Cell
+                              >
+                              <Table.Cell class="pr-4 text-sm"
+                                >{dateTime.format(diagnostic.createdAt)}</Table.Cell
+                              >
+                            </Table.Row>
+                          {/each}
+                        </Table.Body>
+                      </Table.Root>
+                    </div>
+                  </div>
+                {/if}
+              </Card.Content>
+            </Card.Root>
+          </section>
         {/if}
 
         {#if activeTab === 'settings'}
-          <Card.Root>
-            <Card.Header>
-              <Card.Title>Workstation settings</Card.Title>
-              <Card.Description
-                >Manage enrollment, credentials, and availability for {ws.name}.</Card.Description
-              >
-            </Card.Header>
-            <Card.Content class="grid gap-4">
-              <div class="flex flex-wrap items-center justify-between gap-4 rounded-lg border p-4">
-                <div class="grid gap-1">
-                  <strong>Enrollment</strong>
-                  <p class="text-muted-foreground text-sm">
-                    Issuing a new token revokes the current node credential. Copy the token before
-                    leaving this page.
-                  </p>
-                  <div><StatusBadge status={ws.enrolled ? 'enrolled' : 'not enrolled'} /></div>
-                </div>
-                <form method="POST" action="?/issueEnrollment">
-                  <Button variant="outline" type="submit"
-                    >{ws.enrolled ? 'Rotate token' : 'Issue token'}</Button
-                  >
-                </form>
-              </div>
-
-              {#if ws.enrolled}
+          <section class="grid gap-3" aria-labelledby="workstation-settings-heading">
+            <div>
+              <h2 id="workstation-settings-heading" class="text-xl font-semibold tracking-tight">
+                Workstation settings
+              </h2>
+              <p class="text-muted-foreground text-sm">
+                Manage enrollment, credentials, and availability for {ws.name}.
+              </p>
+            </div>
+            <Card.Root>
+              <Card.Content class="grid gap-4">
                 <div
                   class="flex flex-wrap items-center justify-between gap-4 rounded-lg border p-4"
                 >
                   <div class="grid gap-1">
-                    <strong>Node credential</strong>
+                    <strong>Enrollment</strong>
                     <p class="text-muted-foreground text-sm">
-                      Revoke this workstation’s credential to disconnect it until it enrolls again.
+                      Issuing a new token revokes the current node credential. Copy the token before
+                      leaving this page.
                     </p>
+                    <div><StatusBadge status={ws.enrolled ? 'enrolled' : 'not enrolled'} /></div>
                   </div>
-                  <form method="POST" action="?/revoke">
-                    <Button variant="destructive" type="submit">Revoke credential</Button>
+                  <form method="POST" action="?/issueEnrollment">
+                    <Button variant="outline" type="submit"
+                      >{ws.enrolled ? 'Rotate token' : 'Issue token'}</Button
+                    >
                   </form>
                 </div>
-              {/if}
 
-              <div class="flex flex-wrap items-center justify-between gap-4 rounded-lg border p-4">
-                <div class="grid gap-1">
-                  <strong>Availability</strong>
-                  <p class="text-muted-foreground text-sm">
-                    {ws.status === 'active'
-                      ? 'Disable this workstation to stop new work from being assigned.'
-                      : 'Enable this workstation for new work.'}
-                  </p>
-                  <div><StatusBadge status={ws.status} /></div>
-                </div>
-                <form method="POST" action="?/setStatus">
-                  <input
-                    type="hidden"
-                    name="status"
-                    value={ws.status === 'active' ? 'disabled' : 'active'}
-                  />
-                  <Button
-                    variant={ws.status === 'active' ? 'destructive' : 'outline'}
-                    type="submit"
+                {#if ws.enrolled}
+                  <div
+                    class="flex flex-wrap items-center justify-between gap-4 rounded-lg border p-4"
                   >
-                    {ws.status === 'active' ? 'Disable workstation' : 'Enable workstation'}
-                  </Button>
-                </form>
-              </div>
-            </Card.Content>
-          </Card.Root>
+                    <div class="grid gap-1">
+                      <strong>Node credential</strong>
+                      <p class="text-muted-foreground text-sm">
+                        Revoke this workstation’s credential to disconnect it until it enrolls
+                        again.
+                      </p>
+                    </div>
+                    <form method="POST" action="?/revoke">
+                      <Button variant="destructive" type="submit">Revoke credential</Button>
+                    </form>
+                  </div>
+                {/if}
+
+                <div
+                  class="flex flex-wrap items-center justify-between gap-4 rounded-lg border p-4"
+                >
+                  <div class="grid gap-1">
+                    <strong>Availability</strong>
+                    <p class="text-muted-foreground text-sm">
+                      {ws.status === 'active'
+                        ? 'Disable this workstation to stop new work from being assigned.'
+                        : 'Enable this workstation for new work.'}
+                    </p>
+                    <div><StatusBadge status={ws.status} /></div>
+                  </div>
+                  <form method="POST" action="?/setStatus">
+                    <input
+                      type="hidden"
+                      name="status"
+                      value={ws.status === 'active' ? 'disabled' : 'active'}
+                    />
+                    <Button
+                      variant={ws.status === 'active' ? 'destructive' : 'outline'}
+                      type="submit"
+                    >
+                      {ws.status === 'active' ? 'Disable workstation' : 'Enable workstation'}
+                    </Button>
+                  </form>
+                </div>
+              </Card.Content>
+            </Card.Root>
+          </section>
         {/if}
       </div>
     </div>
