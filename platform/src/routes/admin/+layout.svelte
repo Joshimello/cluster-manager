@@ -3,7 +3,6 @@
   import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
   import ClipboardListIcon from '@lucide/svelte/icons/clipboard-list';
   import MonitorCogIcon from '@lucide/svelte/icons/monitor-cog';
-  import ScanSearchIcon from '@lucide/svelte/icons/scan-search';
   import ShieldAlertIcon from '@lucide/svelte/icons/shield-alert';
   import UsersIcon from '@lucide/svelte/icons/users';
   import { page } from '$app/state';
@@ -14,7 +13,6 @@
   const sections = [
     { href: '/admin/users', label: 'Users', icon: UsersIcon },
     { href: '/admin/workstations', label: 'Workstations', icon: MonitorCogIcon },
-    { href: '/admin/monitoring', label: 'GPU status', icon: ScanSearchIcon },
     { href: '/admin/stop-requests', label: 'Stop requests', icon: ShieldAlertIcon },
     { href: '/admin/reservations', label: 'Reservations', icon: CalendarCogIcon },
     { href: '/admin/audit', label: 'Audit history', icon: ClipboardListIcon }
