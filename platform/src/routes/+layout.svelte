@@ -1,7 +1,6 @@
 <script lang="ts">
   import BoxesIcon from '@lucide/svelte/icons/boxes';
   import LayoutDashboardIcon from '@lucide/svelte/icons/layout-dashboard';
-  import LogOutIcon from '@lucide/svelte/icons/log-out';
   import MenuIcon from '@lucide/svelte/icons/menu';
   import SettingsIcon from '@lucide/svelte/icons/settings';
   import UserRoundCogIcon from '@lucide/svelte/icons/user-round-cog';
@@ -63,7 +62,7 @@
     >
       <BoxesIcon class="size-5" aria-hidden="true" />
     </a>
-    {#if data.user}
+    {#if data.user && !data.user.mustChangePassword}
       <Button
         class="lg:hidden"
         variant="ghost"
@@ -75,7 +74,7 @@
       >
         {#if mobileMenuOpen}<XIcon aria-hidden="true" />{:else}<MenuIcon aria-hidden="true" />{/if}
       </Button>
-    {:else}
+    {:else if !data.user}
       <Button class="lg:hidden" href={resolve('/login')} size="sm">Log in</Button>
     {/if}
     <nav class="hidden items-center gap-1 lg:flex" aria-label="Primary navigation">
@@ -87,21 +86,12 @@
             </Button>
           {/each}
         {/if}
-        <span class="text-muted-foreground hidden max-w-40 truncate px-2 text-sm xl:inline"
-          >{data.user.displayName}</span
-        >
-        <form method="POST" action="/logout">
-          <Button variant="outline" size="sm" type="submit">
-            <LogOutIcon data-icon="inline-start" />
-            Log out
-          </Button>
-        </form>
       {:else}
         <Button href={resolve('/login')} size="sm">Log in</Button>
       {/if}
     </nav>
   </div>
-  {#if data.user}
+  {#if data.user && !data.user.mustChangePassword}
     <nav
       id="mobile-navigation"
       class="border-t px-4 py-2 lg:hidden"
@@ -109,23 +99,16 @@
       aria-label="Mobile navigation"
     >
       <div class="mx-auto grid max-w-7xl gap-1">
-        {#if !data.user.mustChangePassword}
-          {#each visibleNavigation as item (item.href)}
-            <Button
-              class="h-11 justify-start"
-              href={resolve(item.href)}
-              variant="ghost"
-              onclick={() => (mobileMenuOpen = false)}
-            >
-              <item.icon data-icon="inline-start" />{item.label}
-            </Button>
-          {/each}
-        {/if}
-        <form method="POST" action="/logout">
-          <Button class="h-11 w-full justify-start" variant="ghost" type="submit">
-            <LogOutIcon data-icon="inline-start" />Log out
+        {#each visibleNavigation as item (item.href)}
+          <Button
+            class="h-11 justify-start"
+            href={resolve(item.href)}
+            variant="ghost"
+            onclick={() => (mobileMenuOpen = false)}
+          >
+            <item.icon data-icon="inline-start" />{item.label}
           </Button>
-        </form>
+        {/each}
       </div>
     </nav>
   {/if}

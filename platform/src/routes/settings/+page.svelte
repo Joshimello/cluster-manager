@@ -1,6 +1,7 @@
 <script lang="ts">
   import ClockIcon from '@lucide/svelte/icons/clock';
   import KeyRoundIcon from '@lucide/svelte/icons/key-round';
+  import LogOutIcon from '@lucide/svelte/icons/log-out';
   import UserRoundIcon from '@lucide/svelte/icons/user-round';
   import { resolve } from '$app/paths';
   import FeedbackAlert from '$lib/components/feedback-alert.svelte';
@@ -18,7 +19,14 @@
 <svelte:head><title>Account</title></svelte:head>
 
 <main class="mx-auto grid w-full max-w-2xl gap-6 px-4 py-8 sm:px-6 lg:px-8">
-  <PageHeader title="Account" description="Your identity, password, and time zone." />
+  <div class="flex flex-wrap items-start justify-between gap-4">
+    <PageHeader title="Account" description="Your identity, password, and time zone." />
+    <form method="POST" action={resolve('/logout')}>
+      <Button variant="outline" type="submit">
+        <LogOutIcon data-icon="inline-start" />Log out
+      </Button>
+    </form>
+  </div>
 
   <Card.Root>
     <Card.Header>

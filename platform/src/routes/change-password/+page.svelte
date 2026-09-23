@@ -1,5 +1,7 @@
 <script lang="ts">
   import KeyRoundIcon from '@lucide/svelte/icons/key-round';
+  import LogOutIcon from '@lucide/svelte/icons/log-out';
+  import { resolve } from '$app/paths';
   import FeedbackAlert from '$lib/components/feedback-alert.svelte';
   import { Button } from '$lib/components/ui/button/index.js';
   import * as Card from '$lib/components/ui/card/index.js';
@@ -66,5 +68,14 @@
         >
       </form>
     </Card.Content>
+    {#if data.user.mustChangePassword}
+      <Card.Footer>
+        <form method="POST" action={resolve('/logout')}>
+          <Button variant="ghost" type="submit">
+            <LogOutIcon data-icon="inline-start" />Log out
+          </Button>
+        </form>
+      </Card.Footer>
+    {/if}
   </Card.Root>
 </main>
