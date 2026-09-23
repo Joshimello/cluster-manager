@@ -62,4 +62,14 @@ describe('validateReservationWindow', () => {
       )
     ).toBeNull();
   });
+
+  it('checks half-hour boundaries in the actor time zone', () => {
+    expect(
+      validateReservationWindow(
+        new Date('2026-09-23T06:15:00.000Z'),
+        new Date('2026-09-23T07:15:00.000Z'),
+        { now: new Date('2026-09-23T06:00:00.000Z'), timeZone: 'Asia/Kathmandu' }
+      )
+    ).toBeNull();
+  });
 });

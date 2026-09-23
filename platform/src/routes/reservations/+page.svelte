@@ -1,13 +1,13 @@
 <script lang="ts">
   import CalendarDaysIcon from '@lucide/svelte/icons/calendar-days';
   import ClockIcon from '@lucide/svelte/icons/clock';
+  import { onMount } from 'svelte';
   import FeedbackAlert from '$lib/components/feedback-alert.svelte';
   import PageHeader from '$lib/components/page-header.svelte';
   import StatusBadge from '$lib/components/status-badge.svelte';
   import { Badge } from '$lib/components/ui/badge/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
   import * as Card from '$lib/components/ui/card/index.js';
-  import { Input } from '$lib/components/ui/input/index.js';
   import { Label } from '$lib/components/ui/label/index.js';
   import * as Select from '$lib/components/ui/select/index.js';
   import * as Table from '$lib/components/ui/table/index.js';
@@ -20,6 +20,89 @@
       timeStyle: 'short'
     })
   );
+  let slots = $derived(data.calendarDays.flatMap((day) => day.slots));
+  const slotIndex = (value: string | undefined, boundary: 'startAt' | 'endAt') => {
+    if (!value) return null;
+    const index = data.calendarDays
+      .flatMap((day) => day.slots)
+      .findIndex((slot) => slot[boundary] === value);
+    return index < 0 ? null : index;
+  };
+  let gpuChoice = $state<string | null>(null);
+  let dayChoice = $state<string | null>(null);
+  let startChoice = $state<number | null | undefined>(undefined);
+  let endChoice = $state<number | null | undefined>(undefined);
+  let selectedGpuId = $derived(
+    gpuChoice ??
+      (form?.action === 'create' && form.values?.gpuId
+        ? form.values.gpuId
+        : (data.gpus[0]?.id ?? ''))
+  );
+  let selectedDayKey = $derived(
+    dayChoice ??
+      data.calendarDays.find((day) =>
+        day.slots.some((slot) => slot.startAt === form?.values?.startAt)
+      )?.key ??
+      data.calendarDays[0]?.key ??
+      ''
+  );
+  let selectedStart = $derived(
+    startChoice === undefined
+      ? slotIndex(form?.action === 'create' ? form.values?.startAt : undefined, 'startAt')
+      : startChoice
+  );
+  let selectedEnd = $derived(
+    endChoice === undefined
+      ? slotIndex(form?.action === 'create' ? form.values?.endAt : undefined, 'endAt')
+      : endChoice
+  );
+  let nowMs = $state(Date.now());
+  let currentDay = $derived(data.calendarDays.find((day) => day.key === selectedDayKey));
+  let selectedCount = $derived(
+    selectedStart === null || selectedEnd === null ? 0 : selectedEnd - selectedStart + 1
+  );
+  let selectedValid = $derived(
+    selectedStart !== null &&
+      selectedEnd !== null &&
+      selectedCount >= 1 &&
+      selectedCount <= 6 &&
+      slots.slice(selectedStart, selectedEnd + 1).every((slot) => slotAvailable(slot))
+  );
+
+  const reservationAt = (slot: (typeof data.calendarDays)[number]['slots'][number]) =>
+    data.schedule.find(
+      (reservation) =>
+        reservation.gpuId === selectedGpuId &&
+        reservation.startAt.getTime() < Date.parse(slot.endAt) &&
+        reservation.endAt.getTime() > Date.parse(slot.startAt)
+    );
+  const slotAvailable = (slot: (typeof data.calendarDays)[number]['slots'][number]) =>
+    Date.parse(slot.startAt) > nowMs && !reservationAt(slot);
+
+  function chooseSlot(index: number) {
+    if (!slotAvailable(slots[index])) return;
+    if (selectedStart === index && selectedEnd === index) {
+      startChoice = null;
+      endChoice = null;
+      return;
+    }
+    if (
+      selectedStart === null ||
+      index < selectedStart ||
+      index > selectedStart + 5 ||
+      !slots.slice(selectedStart, index + 1).every(slotAvailable)
+    ) {
+      startChoice = index;
+      endChoice = index;
+      return;
+    }
+    endChoice = index;
+  }
+
+  onMount(() => {
+    const timer = window.setInterval(() => (nowMs = Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  });
 </script>
 
 <svelte:head><title>Reservations</title></svelte:head>
@@ -27,7 +110,7 @@
 <main class="mx-auto grid w-full max-w-7xl gap-6 px-4 py-8 sm:px-6 lg:px-8">
   <PageHeader
     title="GPU reservations"
-    description={`Coordinate GPU use in 30-minute increments. All times are ${data.timeZone}.`}
+    description={`Choose consecutive one-hour slots. All times are ${data.timeZone}.`}
   />
 
   {#if form?.message}
@@ -41,34 +124,31 @@
           ><CalendarDaysIcon class="size-5" />Reserve a GPU</Card.Title
         >
         <Card.Description>
-          Choose from {data.assignments.length} assigned workstation{data.assignments.length === 1
-            ? ''
-            : 's'} · maximum six hours · up to seven days ahead
+          Choose a GPU, then select up to six consecutive hours within the next seven days.
         </Card.Description>
       </Card.Header>
-      <Card.Content>
+      <Card.Content class="min-w-0">
         {#if data.gpus.length === 0}
           <p class="text-muted-foreground text-sm">No active GPUs are available to reserve.</p>
         {:else}
-          <form
-            method="POST"
-            action="?/create"
-            class="grid items-end gap-4 lg:grid-cols-[1fr_1fr_1fr_auto]"
-          >
-            <div class="grid gap-2">
+          <div class="grid min-w-0 gap-5">
+            <div class="grid min-w-0 max-w-xl gap-2">
               <Label for="reservation-gpu">GPU</Label>
               <Select.Root
                 type="single"
-                name="gpuId"
-                value={form?.action === 'create' && form.values?.gpuId
-                  ? form.values.gpuId
-                  : data.gpus[0].id}
+                value={selectedGpuId}
+                onValueChange={(value) => {
+                  gpuChoice = value;
+                  startChoice = null;
+                  endChoice = null;
+                }}
                 items={data.gpus.map((gpu) => ({
                   value: gpu.id,
                   label: `${gpu.workstationName} · GPU ${gpu.index} — ${gpu.model}`
                 }))}
               >
-                <Select.Trigger id="reservation-gpu" class="w-full"><Select.Value /></Select.Trigger
+                <Select.Trigger id="reservation-gpu" class="min-w-0 max-w-full"
+                  ><Select.Value /></Select.Trigger
                 >
                 <Select.Content>
                   {#each data.gpus as gpu (gpu.id)}
@@ -79,34 +159,95 @@
                 </Select.Content>
               </Select.Root>
             </div>
-            <div class="grid gap-2">
-              <Label for="reservation-start">Start ({data.timeZone})</Label>
-              <Input
-                id="reservation-start"
-                name="startAt"
-                type="datetime-local"
-                step="1800"
-                required
-                value={form?.action === 'create'
-                  ? (form.values?.startAt ?? data.defaultStart)
-                  : data.defaultStart}
-              />
+
+            <div class="flex gap-2 overflow-x-auto pb-1" aria-label="Reservation dates">
+              {#each data.calendarDays as day (day.key)}
+                <Button
+                  type="button"
+                  variant={selectedDayKey === day.key ? 'default' : 'outline'}
+                  class="shrink-0"
+                  aria-pressed={selectedDayKey === day.key}
+                  onclick={() => (dayChoice = day.key)}
+                >
+                  {day.label}
+                </Button>
+              {/each}
             </div>
-            <div class="grid gap-2">
-              <Label for="reservation-end">End ({data.timeZone})</Label>
-              <Input
-                id="reservation-end"
-                name="endAt"
-                type="datetime-local"
-                step="1800"
-                required
-                value={form?.action === 'create'
-                  ? (form.values?.endAt ?? data.defaultEnd)
-                  : data.defaultEnd}
-              />
+
+            <div>
+              <p class="mb-3 text-sm font-medium">{currentDay?.label} · one-hour slots</p>
+              <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+                {#each currentDay?.slots ?? [] as slot (slot.startAt)}
+                  {@const index = slots.findIndex(
+                    (candidate) => candidate.startAt === slot.startAt
+                  )}
+                  {@const reservation = reservationAt(slot)}
+                  {@const past = Date.parse(slot.startAt) <= nowMs}
+                  {@const selected =
+                    selectedStart !== null &&
+                    selectedEnd !== null &&
+                    index >= selectedStart &&
+                    index <= selectedEnd}
+                  <Button
+                    type="button"
+                    variant={selected ? 'default' : 'outline'}
+                    class="h-auto min-h-16 flex-col items-start gap-1 py-2 text-left"
+                    disabled={past || !!reservation}
+                    aria-pressed={selected}
+                    onclick={() => chooseSlot(index)}
+                  >
+                    <span>{slot.label}</span>
+                    <span
+                      class={selected
+                        ? 'text-primary-foreground/75 text-xs'
+                        : 'text-muted-foreground text-xs'}
+                    >
+                      {reservation
+                        ? reservation.mine
+                          ? 'Your reservation'
+                          : 'Reserved'
+                        : past
+                          ? 'Past'
+                          : selected
+                            ? 'Selected'
+                            : 'Available'}
+                    </span>
+                  </Button>
+                {/each}
+              </div>
             </div>
-            <Button type="submit">Reserve GPU</Button>
-          </form>
+
+            <div
+              class="bg-muted/50 flex flex-wrap items-center justify-between gap-4 rounded-lg border p-4"
+            >
+              <div class="grid gap-1">
+                <strong
+                  >{selectedCount > 0
+                    ? `${selectedCount} hour${selectedCount === 1 ? '' : 's'} selected`
+                    : 'Choose a time slot'}</strong
+                >
+                <p class="text-muted-foreground text-sm">
+                  {selectedValid && selectedStart !== null && selectedEnd !== null
+                    ? `${dateTime.format(new Date(slots[selectedStart].startAt))} – ${dateTime.format(new Date(slots[selectedEnd].endAt))}`
+                    : 'Select a start slot, then another slot to extend the reservation.'}
+                </p>
+              </div>
+              <form method="POST" action="?/create">
+                <input type="hidden" name="gpuId" value={selectedGpuId} />
+                <input
+                  type="hidden"
+                  name="startAt"
+                  value={selectedStart === null ? '' : slots[selectedStart].startAt}
+                />
+                <input
+                  type="hidden"
+                  name="endAt"
+                  value={selectedEnd === null ? '' : slots[selectedEnd].endAt}
+                />
+                <Button type="submit" disabled={!selectedValid}>Reserve GPU</Button>
+              </form>
+            </div>
+          </div>
         {/if}
       </Card.Content>
     </Card.Root>

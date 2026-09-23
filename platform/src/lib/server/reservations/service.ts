@@ -57,7 +57,10 @@ export async function createReservation(input: {
   if (!adminOverride && overrideReason) {
     return { ok: false, status: 400, message: 'A reason is valid only for an admin override.' };
   }
-  const windowError = validateReservationWindow(input.startAt, input.endAt, { adminOverride });
+  const windowError = validateReservationWindow(input.startAt, input.endAt, {
+    adminOverride,
+    timeZone: input.actor.timeZone ?? undefined
+  });
   if (windowError) return { ok: false, status: 400, message: windowError };
 
   const [eligible] = await getDatabase()

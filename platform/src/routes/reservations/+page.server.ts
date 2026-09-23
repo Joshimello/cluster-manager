@@ -4,12 +4,8 @@ import { fail } from '@sveltejs/kit';
 import { requireReadyUser } from '$lib/server/auth/guards';
 import { getDatabase } from '$lib/server/db';
 import { gpus, reservations, workstationAssignments, workstations } from '$lib/server/db/schema';
+import { hourlyCalendar, isHourlyWindow } from '$lib/server/reservations/calendar';
 import { cancelReservation, createReservation } from '$lib/server/reservations/service';
-import {
-  formatDateTimeInput,
-  nextHalfHour,
-  parseZonedDateTime
-} from '$lib/server/reservations/time';
 import { defaultTimeZone } from '$lib/time-zone';
 
 import type { Actions, PageServerLoad } from './$types';
@@ -111,7 +107,6 @@ export const load: PageServerLoad = async ({ locals }) => {
     .orderBy(desc(reservations.startAt))
     .limit(50);
 
-  const defaultStart = nextHalfHour(now);
   return {
     assignments,
     gpus: availableGpus,
@@ -123,8 +118,7 @@ export const load: PageServerLoad = async ({ locals }) => {
     })),
     history,
     timeZone,
-    defaultStart: formatDateTimeInput(defaultStart, timeZone),
-    defaultEnd: formatDateTimeInput(new Date(defaultStart.getTime() + 2 * 60 * 60_000), timeZone)
+    calendarDays: hourlyCalendar(now, timeZone)
   };
 };
 
@@ -136,12 +130,14 @@ export const actions: Actions = {
     const gpuId = formString(formData, 'gpuId');
     const start = formString(formData, 'startAt');
     const end = formString(formData, 'endAt');
-    const startAt = parseZonedDateTime(start, timeZone);
-    const endAt = parseZonedDateTime(end, timeZone);
-    if (!startAt || !endAt) {
+    const parseSlot = (value: string) =>
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value) ? new Date(value) : null;
+    const startAt = parseSlot(start);
+    const endAt = parseSlot(end);
+    if (!startAt || !endAt || !isHourlyWindow(startAt, endAt, timeZone)) {
       return fail(400, {
         action: 'create',
-        message: `Enter unambiguous dates and times in ${timeZone}.`,
+        message: 'Select one to six consecutive hourly slots from the calendar.',
         values: { gpuId, startAt: start, endAt: end }
       });
     }
