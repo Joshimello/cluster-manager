@@ -42,8 +42,8 @@
   );
   onMount(() => {
     const timer = window.setInterval(() => {
-      if (activeUpdate || activeDiagnostic) void invalidateAll();
-    }, 5_000);
+      void invalidateAll();
+    }, 10_000);
     return () => window.clearInterval(timer);
   });
 </script>
@@ -99,6 +99,87 @@
         </div>
       </Card.Content>
     </Card.Root>
+
+    {#if ws.inventory}
+      <section class="grid gap-3" aria-labelledby="resource-monitoring-heading">
+        <div class="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 id="resource-monitoring-heading" class="text-xl font-semibold tracking-tight">
+              Resource monitoring
+            </h2>
+            <p class="text-muted-foreground text-sm">
+              Current values and recent history from the node.
+            </p>
+          </div>
+          <MonitoringRangeSelector range={data.range} />
+        </div>
+        <HostMonitor
+          workstationId={ws.id}
+          inventory={ws.inventory}
+          observedAt={ws.inventoryObservedAt}
+          telemetryState={ws.connectionState}
+          timeZone={data.user.timeZone ?? 'UTC'}
+        />
+      </section>
+
+      <section class="grid gap-3" aria-labelledby="gpu-monitoring-heading">
+        <div>
+          <h2 id="gpu-monitoring-heading" class="text-xl font-semibold tracking-tight">
+            GPU monitoring
+          </h2>
+          <p class="text-muted-foreground text-sm">
+            Current NVIDIA telemetry refreshes every 10 seconds.
+          </p>
+        </div>
+        <GpuMonitor
+          workstationId={ws.id}
+          gpus={data.gpus}
+          gpuStatus={ws.inventory.gpuStatus}
+          autoRefresh={false}
+          timeZone={data.user.timeZone ?? 'UTC'}
+        />
+      </section>
+
+      <Card.Root>
+        <Card.Header>
+          <Card.Title>Logged-in sessions</Card.Title>
+          <Card.Description>Interactive sessions reported by the node.</Card.Description>
+        </Card.Header>
+        <Card.Content class={ws.inventory.sessions.length > 0 ? 'px-0' : undefined}>
+          {#if ws.inventory.sessions.length === 0}
+            <p class="text-muted-foreground text-sm">No sessions reported.</p>
+          {:else}
+            <Table.Root>
+              <Table.Header>
+                <Table.Row>
+                  <Table.Head class="pl-6">User</Table.Head>
+                  <Table.Head>Terminal</Table.Head>
+                  <Table.Head class="pr-6">Remote host</Table.Head>
+                </Table.Row>
+              </Table.Header>
+              <Table.Body>
+                {#each ws.inventory.sessions as session (session.username + session.terminal)}
+                  <Table.Row>
+                    <Table.Cell class="pl-6 font-medium">{session.username}</Table.Cell>
+                    <Table.Cell><code>{session.terminal}</code></Table.Cell>
+                    <Table.Cell class="pr-6">{session.remoteHost ?? 'Local'}</Table.Cell>
+                  </Table.Row>
+                {/each}
+              </Table.Body>
+            </Table.Root>
+          {/if}
+        </Card.Content>
+      </Card.Root>
+    {:else}
+      <Card.Root>
+        <Card.Header>
+          <Card.Title>Waiting for inventory</Card.Title>
+          <Card.Description
+            >Enroll and start this node to receive its first report.</Card.Description
+          >
+        </Card.Header>
+      </Card.Root>
+    {/if}
 
     <Card.Root>
       <Card.Header>
@@ -437,85 +518,5 @@
         {/if}
       </Card.Content>
     </Card.Root>
-
-    {#if ws.inventory}
-      <section class="grid gap-3" aria-labelledby="resource-monitoring-heading">
-        <div class="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h2 id="resource-monitoring-heading" class="text-xl font-semibold tracking-tight">
-              Resource monitoring
-            </h2>
-            <p class="text-muted-foreground text-sm">
-              Current values and recent history from the node.
-            </p>
-          </div>
-          <MonitoringRangeSelector range={data.range} />
-        </div>
-        <HostMonitor
-          workstationId={ws.id}
-          inventory={ws.inventory}
-          observedAt={ws.inventoryObservedAt}
-          telemetryState={ws.connectionState}
-          timeZone={data.user.timeZone ?? 'UTC'}
-        />
-      </section>
-
-      <section class="grid gap-3" aria-labelledby="gpu-monitoring-heading">
-        <div>
-          <h2 id="gpu-monitoring-heading" class="text-xl font-semibold tracking-tight">
-            GPU monitoring
-          </h2>
-          <p class="text-muted-foreground text-sm">
-            Current NVIDIA telemetry refreshes every 10 seconds.
-          </p>
-        </div>
-        <GpuMonitor
-          workstationId={ws.id}
-          gpus={data.gpus}
-          gpuStatus={ws.inventory.gpuStatus}
-          timeZone={data.user.timeZone ?? 'UTC'}
-        />
-      </section>
-
-      <Card.Root>
-        <Card.Header>
-          <Card.Title>Logged-in sessions</Card.Title>
-          <Card.Description>Interactive sessions reported by the node.</Card.Description>
-        </Card.Header>
-        <Card.Content class={ws.inventory.sessions.length > 0 ? 'px-0' : undefined}>
-          {#if ws.inventory.sessions.length === 0}
-            <p class="text-muted-foreground text-sm">No sessions reported.</p>
-          {:else}
-            <Table.Root>
-              <Table.Header>
-                <Table.Row>
-                  <Table.Head class="pl-6">User</Table.Head>
-                  <Table.Head>Terminal</Table.Head>
-                  <Table.Head class="pr-6">Remote host</Table.Head>
-                </Table.Row>
-              </Table.Header>
-              <Table.Body>
-                {#each ws.inventory.sessions as session (session.username + session.terminal)}
-                  <Table.Row>
-                    <Table.Cell class="pl-6 font-medium">{session.username}</Table.Cell>
-                    <Table.Cell><code>{session.terminal}</code></Table.Cell>
-                    <Table.Cell class="pr-6">{session.remoteHost ?? 'Local'}</Table.Cell>
-                  </Table.Row>
-                {/each}
-              </Table.Body>
-            </Table.Root>
-          {/if}
-        </Card.Content>
-      </Card.Root>
-    {:else}
-      <Card.Root>
-        <Card.Header>
-          <Card.Title>Waiting for inventory</Card.Title>
-          <Card.Description
-            >Enroll and start this node to receive its first report.</Card.Description
-          >
-        </Card.Header>
-      </Card.Root>
-    {/if}
   </main>
 </MonitoringHistoryProvider>

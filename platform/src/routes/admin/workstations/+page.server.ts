@@ -4,7 +4,7 @@ import { fail } from '@sveltejs/kit';
 import { recordAudit } from '$lib/server/audit';
 import { requireAdmin } from '$lib/server/auth/guards';
 import { getDatabase } from '$lib/server/db';
-import { gpus, workstations, type WorkstationStatus } from '$lib/server/db/schema';
+import { workstations, type WorkstationStatus } from '$lib/server/db/schema';
 import {
   isWorkstationId,
   issueEnrollmentToken,
@@ -14,6 +14,7 @@ import {
   validateWorkstationName
 } from '$lib/server/nodes/credentials';
 import { deriveConnectionState } from '$lib/server/nodes/heartbeat';
+import { loadWorkstationGpus } from '$lib/server/nodes/gpu-monitoring';
 import { presentWorkstation } from '$lib/server/nodes/presentation';
 
 import type { Actions, PageServerLoad } from './$types';
@@ -28,27 +29,31 @@ function uniqueViolation(error: unknown): boolean {
 
 export const load: PageServerLoad = async ({ locals }) => {
   requireAdmin(locals);
-  const [rows, activeGpus] = await Promise.all([
-    getDatabase().select().from(workstations).orderBy(asc(workstations.name)),
-    getDatabase()
-      .select({ workstationId: gpus.workstationId })
-      .from(gpus)
-      .where(eq(gpus.active, true))
-  ]);
-  const gpuCounts = new Map<string, number>();
-  for (const gpu of activeGpus) {
-    gpuCounts.set(gpu.workstationId, (gpuCounts.get(gpu.workstationId) ?? 0) + 1);
-  }
+  const rows = await getDatabase().select().from(workstations).orderBy(asc(workstations.name));
   const now = new Date();
   return {
-    workstations: rows.map((row) => {
-      return {
-        ...presentWorkstation(row),
-        connectionState: deriveConnectionState(row.lastHeartbeatAt, now),
-        gpuCount: gpuCounts.get(row.id) ?? 0,
-        nodeVersion: row.nodeVersion
-      };
-    })
+    workstations: await Promise.all(
+      rows.map(async (row) => {
+        const gpuViews = await loadWorkstationGpus(row.id, { now });
+        return {
+          ...presentWorkstation(row),
+          connectionState: deriveConnectionState(row.lastHeartbeatAt, now),
+          gpuCount: gpuViews.length,
+          gpus: gpuViews.map((gpu) => ({
+            id: gpu.id,
+            index: gpu.index,
+            model: gpu.model,
+            telemetryState: gpu.telemetryState,
+            coordinationState: gpu.coordinationState,
+            utilizationPercent: gpu.utilizationPercent,
+            memoryUsedBytes: gpu.memoryUsedBytes,
+            memoryTotalBytes: gpu.memoryTotalBytes,
+            processCount: gpu.processCount
+          })),
+          nodeVersion: row.nodeVersion
+        };
+      })
+    )
   };
 };
 
