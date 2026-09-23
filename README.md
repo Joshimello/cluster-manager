@@ -103,6 +103,7 @@ On each workstation, update the installed node and check its health:
 
 ```bash
 sudo /usr/local/sbin/cluster-node upgrade
+sudo systemctl restart cluster-node
 sudo /usr/local/sbin/cluster-node doctor
 ```
 
