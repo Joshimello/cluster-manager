@@ -1,6 +1,7 @@
 <script lang="ts">
   import ClockIcon from '@lucide/svelte/icons/clock';
   import KeyRoundIcon from '@lucide/svelte/icons/key-round';
+  import UserRoundIcon from '@lucide/svelte/icons/user-round';
   import { resolve } from '$app/paths';
   import FeedbackAlert from '$lib/components/feedback-alert.svelte';
   import PageHeader from '$lib/components/page-header.svelte';
@@ -14,10 +15,28 @@
   let selectedTimeZone = $derived(form?.timeZone ?? data.user.timeZone ?? defaultTimeZone);
 </script>
 
-<svelte:head><title>Account settings</title></svelte:head>
+<svelte:head><title>Account</title></svelte:head>
 
 <main class="mx-auto grid w-full max-w-2xl gap-6 px-4 py-8 sm:px-6 lg:px-8">
-  <PageHeader title="Account settings" description="Manage your time zone and password." />
+  <PageHeader title="Account" description="Your identity, password, and time zone." />
+
+  <Card.Root>
+    <Card.Header>
+      <Card.Title class="flex items-center gap-2"
+        ><UserRoundIcon class="size-5" />Identity</Card.Title
+      >
+    </Card.Header>
+    <Card.Content class="grid gap-5 sm:grid-cols-2">
+      <div class="grid gap-1">
+        <span class="text-muted-foreground text-sm">Username</span>
+        <strong>{data.user.username}</strong>
+      </div>
+      <div class="grid gap-1">
+        <span class="text-muted-foreground text-sm">POSIX UID:GID</span>
+        <strong class="font-mono">{data.user.posixUid}:{data.user.posixGid}</strong>
+      </div>
+    </Card.Content>
+  </Card.Root>
 
   <Card.Root>
     <Card.Header>

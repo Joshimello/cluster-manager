@@ -1,10 +1,8 @@
 <script lang="ts">
   import BoxesIcon from '@lucide/svelte/icons/boxes';
-  import CalendarDaysIcon from '@lucide/svelte/icons/calendar-days';
   import LayoutDashboardIcon from '@lucide/svelte/icons/layout-dashboard';
   import LogOutIcon from '@lucide/svelte/icons/log-out';
   import MenuIcon from '@lucide/svelte/icons/menu';
-  import ShieldAlertIcon from '@lucide/svelte/icons/shield-alert';
   import SettingsIcon from '@lucide/svelte/icons/settings';
   import UserRoundCogIcon from '@lucide/svelte/icons/user-round-cog';
   import XIcon from '@lucide/svelte/icons/x';
@@ -16,8 +14,6 @@
 
   const navigation = [
     { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboardIcon },
-    { href: '/reservations', label: 'Reservations', icon: CalendarDaysIcon },
-    { href: '/stop-requests', label: 'Stop requests', icon: ShieldAlertIcon },
     { href: '/admin/users', label: 'Administration', icon: SettingsIcon },
     { href: '/settings', label: 'Account', icon: UserRoundCogIcon }
   ] as const;
