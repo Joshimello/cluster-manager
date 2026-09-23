@@ -3,17 +3,31 @@
   import CalendarDaysIcon from '@lucide/svelte/icons/calendar-days';
   import LayoutDashboardIcon from '@lucide/svelte/icons/layout-dashboard';
   import LogOutIcon from '@lucide/svelte/icons/log-out';
+  import MenuIcon from '@lucide/svelte/icons/menu';
   import ShieldAlertIcon from '@lucide/svelte/icons/shield-alert';
   import SettingsIcon from '@lucide/svelte/icons/settings';
   import UserRoundCogIcon from '@lucide/svelte/icons/user-round-cog';
+  import XIcon from '@lucide/svelte/icons/x';
   import { browser } from '$app/environment';
   import { invalidateAll } from '$app/navigation';
   import { resolve } from '$app/paths';
   import { Button } from '$lib/components/ui/button/index.js';
   import '../app.css';
 
+  const navigation = [
+    { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboardIcon },
+    { href: '/reservations', label: 'Reservations', icon: CalendarDaysIcon },
+    { href: '/stop-requests', label: 'Stop requests', icon: ShieldAlertIcon },
+    { href: '/admin/users', label: 'Administration', icon: SettingsIcon },
+    { href: '/settings', label: 'Account', icon: UserRoundCogIcon }
+  ] as const;
+
   let { data, children } = $props();
   let detectingTimeZone = false;
+  let mobileMenuOpen = $state(false);
+  let visibleNavigation = $derived(
+    navigation.filter(({ href }) => href !== '/admin/users' || data.user?.role === 'admin')
+  );
 
   $effect(() => {
     if (!browser || !data.user || data.user.timeZone || detectingTimeZone) return;
@@ -31,6 +45,8 @@
   });
 </script>
 
+<svelte:window onkeydown={(event) => event.key === 'Escape' && (mobileMenuOpen = false)} />
+
 <header
   class="bg-background/95 supports-[backdrop-filter]:bg-background/75 sticky top-0 z-50 border-b backdrop-blur"
 >
@@ -47,48 +63,41 @@
       href={resolve(
         data.user ? (data.user.mustChangePassword ? '/change-password' : '/dashboard') : '/login'
       )}
+      onclick={() => (mobileMenuOpen = false)}
     >
       <BoxesIcon class="size-5" aria-hidden="true" />
     </a>
-    <nav class="flex items-center gap-1" aria-label="Primary navigation">
+    {#if data.user}
+      <Button
+        class="lg:hidden"
+        variant="ghost"
+        size="icon"
+        aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
+        aria-expanded={mobileMenuOpen}
+        aria-controls="mobile-navigation"
+        onclick={() => (mobileMenuOpen = !mobileMenuOpen)}
+      >
+        {#if mobileMenuOpen}<XIcon aria-hidden="true" />{:else}<MenuIcon aria-hidden="true" />{/if}
+      </Button>
+    {:else}
+      <Button class="lg:hidden" href={resolve('/login')} size="sm">Log in</Button>
+    {/if}
+    <nav class="hidden items-center gap-1 lg:flex" aria-label="Primary navigation">
       {#if data.user}
         {#if !data.user.mustChangePassword}
-          <Button href={resolve('/dashboard')} variant="ghost" size="sm">
-            <LayoutDashboardIcon data-icon="inline-start" />
-            <span class="hidden sm:inline">Dashboard</span>
-            <span class="sr-only sm:hidden">Dashboard</span>
-          </Button>
-          <Button href={resolve('/reservations')} variant="ghost" size="sm">
-            <CalendarDaysIcon data-icon="inline-start" />
-            <span class="hidden sm:inline">Reservations</span>
-            <span class="sr-only sm:hidden">Reservations</span>
-          </Button>
-          <Button href={resolve('/stop-requests')} variant="ghost" size="sm">
-            <ShieldAlertIcon data-icon="inline-start" />
-            <span class="hidden sm:inline">Stop requests</span>
-            <span class="sr-only sm:hidden">Stop requests</span>
-          </Button>
-          {#if data.user.role === 'admin'}
-            <Button href={resolve('/admin/users')} variant="ghost" size="sm">
-              <SettingsIcon data-icon="inline-start" />
-              <span class="hidden sm:inline">Administration</span>
-              <span class="sr-only sm:hidden">Administration</span>
+          {#each visibleNavigation as item (item.href)}
+            <Button href={resolve(item.href)} variant="ghost" size="sm">
+              <item.icon data-icon="inline-start" />{item.label}
             </Button>
-          {/if}
-          <Button href={resolve('/settings')} variant="ghost" size="sm">
-            <UserRoundCogIcon data-icon="inline-start" />
-            <span class="hidden sm:inline">Account</span>
-            <span class="sr-only sm:hidden">Account settings</span>
-          </Button>
+          {/each}
         {/if}
-        <span class="text-muted-foreground hidden max-w-40 truncate px-2 text-sm md:inline"
+        <span class="text-muted-foreground hidden max-w-40 truncate px-2 text-sm xl:inline"
           >{data.user.displayName}</span
         >
         <form method="POST" action="/logout">
           <Button variant="outline" size="sm" type="submit">
             <LogOutIcon data-icon="inline-start" />
-            <span class="hidden sm:inline">Log out</span>
-            <span class="sr-only sm:hidden">Log out</span>
+            Log out
           </Button>
         </form>
       {:else}
@@ -96,6 +105,34 @@
       {/if}
     </nav>
   </div>
+  {#if data.user}
+    <nav
+      id="mobile-navigation"
+      class="border-t px-4 py-2 lg:hidden"
+      class:hidden={!mobileMenuOpen}
+      aria-label="Mobile navigation"
+    >
+      <div class="mx-auto grid max-w-7xl gap-1">
+        {#if !data.user.mustChangePassword}
+          {#each visibleNavigation as item (item.href)}
+            <Button
+              class="h-11 justify-start"
+              href={resolve(item.href)}
+              variant="ghost"
+              onclick={() => (mobileMenuOpen = false)}
+            >
+              <item.icon data-icon="inline-start" />{item.label}
+            </Button>
+          {/each}
+        {/if}
+        <form method="POST" action="/logout">
+          <Button class="h-11 w-full justify-start" variant="ghost" type="submit">
+            <LogOutIcon data-icon="inline-start" />Log out
+          </Button>
+        </form>
+      </div>
+    </nav>
+  {/if}
 </header>
 
 {@render children()}
