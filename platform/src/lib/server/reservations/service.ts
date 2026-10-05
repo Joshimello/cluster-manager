@@ -1,4 +1,4 @@
-import { and, eq, gt, inArray, lt, or } from 'drizzle-orm';
+import { and, eq, gt, inArray, isNull, lt, or } from 'drizzle-orm';
 
 import { recordAudit } from '$lib/server/audit';
 import type { AuthUser } from '$lib/server/auth/session';
@@ -12,6 +12,10 @@ import {
   workstations
 } from '$lib/server/db/schema';
 
+import { allocateReservationSlot } from '$lib/reservation-limits';
+import { localDateKey } from '$lib/reservation-week';
+import { loadReservationPolicy, loadReservationUsage, type ReservationDatabase } from './policy';
+import { reservationSlot } from './calendar';
 import { validateReservationWindow } from './rules';
 
 export type ReservationResult =
@@ -31,15 +35,18 @@ function exclusionViolation(error: unknown): boolean {
   return false;
 }
 
-export async function createReservation(input: {
-  actor: AuthUser;
-  userId: string;
-  gpuId: string;
-  startAt: Date;
-  endAt: Date;
-  adminOverride?: boolean;
-  overrideReason?: string;
-}): Promise<ReservationResult> {
+export async function createReservation(
+  input: {
+    actor: AuthUser;
+    userId: string;
+    gpuId: string;
+    startAt: Date;
+    endAt: Date;
+    adminOverride?: boolean;
+    overrideReason?: string;
+  },
+  database: ReservationDatabase = getDatabase()
+): Promise<ReservationResult> {
   const isAdmin = input.actor.role === 'admin';
   const targetUserId = isAdmin ? input.userId : input.actor.id;
   if (!isAdmin && input.userId !== input.actor.id) {
@@ -57,13 +64,8 @@ export async function createReservation(input: {
   if (!adminOverride && overrideReason) {
     return { ok: false, status: 400, message: 'A reason is valid only for an admin override.' };
   }
-  const windowError = validateReservationWindow(input.startAt, input.endAt, {
-    adminOverride,
-    timeZone: input.actor.timeZone ?? undefined
-  });
-  if (windowError) return { ok: false, status: 400, message: windowError };
 
-  const [eligible] = await getDatabase()
+  const [eligible] = await database
     .select({
       gpuId: gpus.id,
       gpuIndex: gpus.localIndex,
@@ -74,14 +76,6 @@ export async function createReservation(input: {
     })
     .from(gpus)
     .innerJoin(workstations, eq(gpus.workstationId, workstations.id))
-    .innerJoin(
-      workstationAssignments,
-      and(
-        eq(workstationAssignments.workstationId, gpus.workstationId),
-        eq(workstationAssignments.userId, targetUserId),
-        eq(workstationAssignments.status, 'active')
-      )
-    )
     .innerJoin(users, eq(users.id, targetUserId))
     .where(
       and(
@@ -101,12 +95,66 @@ export async function createReservation(input: {
   }
 
   try {
-    const reservationId = await getDatabase().transaction(async (transaction) => {
-      await transaction
+    const reservationId = await database.transaction(async (transaction) => {
+      const [currentUser] = await transaction
+        .select({ id: users.id })
+        .from(users)
+        .where(and(eq(users.id, targetUserId), eq(users.status, 'active'), isNull(users.deletedAt)))
+        .for('update')
+        .limit(1);
+      const [currentWorkstation] = await transaction
+        .select({ id: workstations.id })
+        .from(workstations)
+        .where(
+          and(
+            eq(workstations.id, eligible.workstationId),
+            eq(workstations.status, 'active'),
+            isNull(workstations.deletedAt)
+          )
+        )
+        .for('update')
+        .limit(1);
+      const [currentAssignment] = await transaction
+        .select({ id: workstationAssignments.id })
+        .from(workstationAssignments)
+        .where(
+          and(
+            eq(workstationAssignments.userId, targetUserId),
+            eq(workstationAssignments.workstationId, eligible.workstationId),
+            eq(workstationAssignments.status, 'active')
+          )
+        )
+        .limit(1);
+      if (!currentUser || !currentWorkstation || (!isAdmin && !currentAssignment))
+        throw new EligibilityChangedError();
+      const policy = await loadReservationPolicy(transaction);
+      const now = new Date();
+      const windowError = validateReservationWindow(input.startAt, input.endAt, {
+        now,
+        adminOverride,
+        timeZone: policy.timeZone
+      });
+      if (windowError) throw new ReservationRuleError(400, windowError);
+      const slot = reservationSlot(input.startAt, input.endAt, policy.timeZone);
+      let quotaKind = 'override';
+      if (!adminOverride) {
+        const usage = await loadReservationUsage(targetUserId, input.startAt, policy, transaction);
+        const allocation = allocateReservationSlot(
+          localDateKey(input.startAt, policy.timeZone),
+          slot!.overnight,
+          localDateKey(now, policy.timeZone),
+          usage,
+          policy
+        );
+        if ('error' in allocation) throw new ReservationRuleError(409, allocation.error);
+        quotaKind = allocation.kind;
+      }
+      const [currentGpu] = await transaction
         .select({ id: gpus.id })
         .from(gpus)
-        .where(eq(gpus.id, eligible.gpuId))
+        .where(and(eq(gpus.id, eligible.gpuId), eq(gpus.active, true)))
         .for('update');
+      if (!currentGpu) throw new EligibilityChangedError();
       const [diagnostic] = await transaction
         .select({ id: gpuDiagnosticRuns.id })
         .from(gpuDiagnosticRuns)
@@ -140,6 +188,8 @@ export async function createReservation(input: {
           startAt: input.startAt,
           endAt: input.endAt,
           isAdminOverride: adminOverride,
+          quotaKind,
+          overnightSlot: slot?.overnight ?? false,
           overrideReason: adminOverride ? overrideReason : null
         })
         .returning({ id: reservations.id });
@@ -157,13 +207,23 @@ export async function createReservation(input: {
           workstationName: eligible.workstationName,
           startAt: input.startAt.toISOString(),
           endAt: input.endAt.toISOString(),
-          adminOverride
+          adminOverride,
+          quotaKind
         }
       });
       return created.id;
     });
     return { ok: true, reservationId };
   } catch (error) {
+    if (error instanceof ReservationRuleError)
+      return { ok: false, status: error.status, message: error.message };
+    if (error instanceof EligibilityChangedError) {
+      return {
+        ok: false,
+        status: 403,
+        message: 'Workstation access changed. Refresh and try again.'
+      };
+    }
     if (error instanceof DiagnosticConflictError) {
       return {
         ok: false,
@@ -183,6 +243,15 @@ export async function createReservation(input: {
 }
 
 class DiagnosticConflictError extends Error {}
+class EligibilityChangedError extends Error {}
+class ReservationRuleError extends Error {
+  constructor(
+    public status: number,
+    message: string
+  ) {
+    super(message);
+  }
+}
 
 export async function cancelReservation(input: {
   actor: AuthUser;

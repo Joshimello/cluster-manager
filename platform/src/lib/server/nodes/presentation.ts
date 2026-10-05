@@ -1,3 +1,4 @@
+import { workstationSshAddress } from './ssh-address';
 import type { Workstation } from '$lib/server/db/schema';
 
 export function presentWorkstation(workstation: Workstation) {
@@ -16,6 +17,9 @@ export function presentWorkstation(workstation: Workstation) {
     nodeVersion: workstation.nodeVersion,
     nodeCapabilities: workstation.nodeCapabilities,
     hostname: workstation.hostname,
+    ipAddresses: workstation.ipAddresses,
+    sshAddressOverride: workstation.sshAddressOverride,
+    sshAddress: workstationSshAddress(workstation),
     bootId: workstation.bootId,
     uptimeSeconds: workstation.uptimeSeconds,
     inventory: workstation.inventory,

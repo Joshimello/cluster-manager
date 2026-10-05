@@ -1,10 +1,11 @@
-import { and, asc, desc, eq, gt, inArray, lt } from 'drizzle-orm';
-import { error, fail } from '@sveltejs/kit';
+import { and, asc, desc, eq, gt, inArray, isNull, lt } from 'drizzle-orm';
+import { error, fail, redirect } from '@sveltejs/kit';
 
 import { parseMonitoringRange } from '$lib/monitoring-history';
 import { recordAudit } from '$lib/server/audit';
 import { requireAdmin } from '$lib/server/auth/guards';
 import { getDatabase } from '$lib/server/db';
+import { deleteWorkstation } from '$lib/server/deletion';
 import {
   gpuDiagnosticResults,
   gpuDiagnosticRuns,
@@ -25,7 +26,9 @@ import {
 } from '$lib/server/nodes/diagnostics';
 import { deriveConnectionState } from '$lib/server/nodes/heartbeat';
 import { loadWorkstationGpus } from '$lib/server/nodes/gpu-monitoring';
+import { loadWorkstationUsers } from '$lib/server/nodes/workstation-users';
 import { presentWorkstation } from '$lib/server/nodes/presentation';
+import { validSshAddress } from '$lib/server/nodes/ssh-address';
 import {
   expireNodeUpdates,
   isNewerStableRelease,
@@ -51,7 +54,7 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
   const [workstation] = await getDatabase()
     .select()
     .from(workstations)
-    .where(eq(workstations.id, params.id))
+    .where(and(eq(workstations.id, params.id), isNull(workstations.deletedAt)))
     .limit(1);
   if (!workstation) error(404, 'Workstation not found');
   const [gpuState, updates, diagnostics] = await Promise.all([
@@ -83,6 +86,8 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
       connectionState: deriveConnectionState(workstation.lastHeartbeatAt)
     },
     gpus: gpuState,
+    managedUsers: await loadWorkstationUsers(workstation, gpuState),
+    userUsageStartedAt: workstation.userUsageStartedAt,
     updates,
     diagnostics: diagnostics.map((run) => ({
       ...run,
@@ -95,6 +100,62 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
 };
 
 export const actions: Actions = {
+  setSshAddress: async ({ locals, params, request }) => {
+    const actor = requireAdmin(locals);
+    if (!isWorkstationId(params.id))
+      return fail(400, { action: 'setSshAddress', message: 'Invalid workstation.' });
+    const address = formString(await request.formData(), 'sshAddress');
+    if (address && !validSshAddress(address))
+      return fail(400, {
+        action: 'setSshAddress',
+        message: 'Enter an IPv4 address, IPv6 address, or hostname without a port or SSH options.',
+        values: { sshAddress: address }
+      });
+    const saved = await getDatabase().transaction(async (transaction) => {
+      const [target] = await transaction
+        .select()
+        .from(workstations)
+        .where(and(eq(workstations.id, params.id), isNull(workstations.deletedAt)))
+        .for('update')
+        .limit(1);
+      if (!target) return false;
+      await transaction
+        .update(workstations)
+        .set({ sshAddressOverride: address || null, updatedAt: new Date() })
+        .where(eq(workstations.id, target.id));
+      await recordAudit((query) => transaction.execute(query), {
+        actorUserId: actor.id,
+        action: 'workstation.ssh_address_updated',
+        targetType: 'workstation',
+        targetId: target.id,
+        metadata: { previousAddress: target.sshAddressOverride, address: address || null }
+      });
+      return true;
+    });
+    if (!saved) return fail(404, { action: 'setSshAddress', message: 'Workstation not found.' });
+    return {
+      action: 'setSshAddress',
+      success: true,
+      message: address
+        ? 'SSH instruction address saved.'
+        : 'SSH instructions will use the detected IP address.'
+    };
+  },
+  delete: async ({ locals, params, request }) => {
+    const actor = requireAdmin(locals);
+    if (!isWorkstationId(params.id))
+      return fail(400, { action: 'delete', message: 'Invalid workstation.' });
+    const formData = await request.formData();
+    const outcome = await deleteWorkstation({
+      actorId: actor.id,
+      targetId: params.id,
+      confirmation: formString(formData, 'confirmation')
+    });
+    if ('error' in outcome)
+      return fail(outcome.status, { action: 'delete', message: outcome.error });
+    redirect(303, '/admin/workstations');
+  },
+
   issueEnrollment: async ({ locals, params }) => {
     const actor = requireAdmin(locals);
     const workstationId = params.id;
@@ -105,7 +166,7 @@ export const actions: Actions = {
       const [target] = await transaction
         .select()
         .from(workstations)
-        .where(eq(workstations.id, workstationId))
+        .where(and(eq(workstations.id, workstationId), isNull(workstations.deletedAt)))
         .for('update')
         .limit(1);
       if (!target) return null;
@@ -119,7 +180,7 @@ export const actions: Actions = {
           credentialIssuedAt: null,
           updatedAt: new Date()
         })
-        .where(eq(workstations.id, target.id));
+        .where(and(eq(workstations.id, target.id), isNull(workstations.deletedAt)));
       await recordAudit((query) => transaction.execute(query), {
         actorUserId: actor.id,
         action: 'workstation.enrollment_issued',
@@ -146,17 +207,18 @@ export const actions: Actions = {
     const workstationId = params.id;
     if (!isWorkstationId(workstationId))
       return fail(400, { action: 'revoke', message: 'Invalid workstation.' });
-    const [target] = await getDatabase()
-      .select()
-      .from(workstations)
-      .where(eq(workstations.id, workstationId))
-      .limit(1);
-    if (!target) return fail(404, { action: 'revoke', message: 'Workstation was not found.' });
-    await getDatabase().transaction(async (transaction) => {
+    const target = await getDatabase().transaction(async (transaction) => {
+      const [target] = await transaction
+        .select()
+        .from(workstations)
+        .where(and(eq(workstations.id, workstationId), isNull(workstations.deletedAt)))
+        .for('update')
+        .limit(1);
+      if (!target) return null;
       await transaction
         .update(workstations)
         .set({ credentialHash: null, credentialIssuedAt: null, updatedAt: new Date() })
-        .where(eq(workstations.id, target.id));
+        .where(and(eq(workstations.id, target.id), isNull(workstations.deletedAt)));
       await recordAudit((query) => transaction.execute(query), {
         actorUserId: actor.id,
         action: 'workstation.credential_revoked',
@@ -164,7 +226,9 @@ export const actions: Actions = {
         targetId: target.id,
         metadata: { name: target.name }
       });
+      return target;
     });
+    if (!target) return fail(404, { action: 'revoke', message: 'Workstation was not found.' });
     return { action: 'revoke', success: true, message: `Revoked ${target.name}'s credential.` };
   },
 
@@ -177,17 +241,18 @@ export const actions: Actions = {
       value === 'active' || value === 'disabled' ? value : null;
     if (!isWorkstationId(workstationId) || !status)
       return fail(400, { action: 'setStatus', message: 'Invalid workstation status update.' });
-    const [target] = await getDatabase()
-      .select()
-      .from(workstations)
-      .where(eq(workstations.id, workstationId))
-      .limit(1);
-    if (!target) return fail(404, { action: 'setStatus', message: 'Workstation was not found.' });
-    await getDatabase().transaction(async (transaction) => {
+    const target = await getDatabase().transaction(async (transaction) => {
+      const [target] = await transaction
+        .select()
+        .from(workstations)
+        .where(and(eq(workstations.id, workstationId), isNull(workstations.deletedAt)))
+        .for('update')
+        .limit(1);
+      if (!target) return null;
       await transaction
         .update(workstations)
         .set({ status, updatedAt: new Date() })
-        .where(eq(workstations.id, target.id));
+        .where(and(eq(workstations.id, target.id), isNull(workstations.deletedAt)));
       await recordAudit((query) => transaction.execute(query), {
         actorUserId: actor.id,
         action: status === 'active' ? 'workstation.enabled' : 'workstation.disabled',
@@ -195,7 +260,9 @@ export const actions: Actions = {
         targetId: target.id,
         metadata: { name: target.name, previousStatus: target.status, status }
       });
+      return target;
     });
+    if (!target) return fail(404, { action: 'setStatus', message: 'Workstation was not found.' });
     return { action: 'setStatus', success: true, message: `${target.name} is now ${status}.` };
   },
 
@@ -263,7 +330,7 @@ export const actions: Actions = {
         const [workstation] = await transaction
           .select()
           .from(workstations)
-          .where(eq(workstations.id, params.id))
+          .where(and(eq(workstations.id, params.id), isNull(workstations.deletedAt)))
           .for('update')
           .limit(1);
         if (!workstation) return { error: 'Workstation not found.', status: 404 } as const;
@@ -478,7 +545,7 @@ export const actions: Actions = {
         const [workstation] = await transaction
           .select()
           .from(workstations)
-          .where(eq(workstations.id, params.id))
+          .where(and(eq(workstations.id, params.id), isNull(workstations.deletedAt)))
           .for('update')
           .limit(1);
         if (!workstation) return { error: 'Workstation not found.', status: 404 } as const;

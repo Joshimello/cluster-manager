@@ -1,5 +1,6 @@
 <script lang="ts">
   import CalendarCogIcon from '@lucide/svelte/icons/calendar-cog';
+  import ReservationTimeline from '$lib/components/reservation-timeline.svelte';
   import FeedbackAlert from '$lib/components/feedback-alert.svelte';
   import PageHeader from '$lib/components/page-header.svelte';
   import StatusBadge from '$lib/components/status-badge.svelte';
@@ -12,6 +13,13 @@
   import * as Table from '$lib/components/ui/table/index.js';
 
   let { data, form } = $props();
+  const policyFields = [
+    { name: 'standardSlotsPerWeek', label: 'Standard slots per week' },
+    { name: 'dynamicSlotsToday', label: 'Dynamic slots for today' },
+    { name: 'dynamicSlotsTomorrow', label: 'Dynamic slots for tomorrow' },
+    { name: 'dynamicSlotsDayAfter', label: 'Dynamic slots for the day after' },
+    { name: 'overnightSlotsPerWeek', label: 'Overnight slots per week' }
+  ] as const;
   let dateTime = $derived(
     new Intl.DateTimeFormat('en-MY', {
       timeZone: data.timeZone,
@@ -34,19 +42,78 @@
   {/if}
 
   <Card.Root>
+    <Card.Header
+      ><Card.Title>Booking limits</Card.Title><Card.Description
+        >Shared UTC scheduling by default. Dynamic slots are used first; earlier bookings for a date
+        count toward its later allowance.</Card.Description
+      ></Card.Header
+    >
+    <Card.Content>
+      <form method="POST" action="?/policy" class="grid gap-4">
+        <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {#each policyFields as field (field.name)}
+            <div class="grid gap-2">
+              <Label for={`policy-${field.name}`}>{field.label}</Label><Input
+                id={`policy-${field.name}`}
+                name={field.name}
+                type="number"
+                min="0"
+                max="1000"
+                step="1"
+                required
+                value={data.policy[field.name]}
+              />
+            </div>
+          {/each}
+          <div class="grid gap-2">
+            <Label for="policy-timezone">Shared scheduling timezone</Label><Input
+              id="policy-timezone"
+              name="timeZone"
+              required
+              maxlength={64}
+              value={data.policy.timeZone}
+              placeholder="UTC"
+            />
+          </div>
+        </div>
+        <p class="text-muted-foreground text-sm">
+          Weekly allowances reset Monday. Overnight slots also consume a dynamic or standard slot.
+          Canceling before a booking starts restores its allowance; used slots still count. Zero
+          disables an allowance. Admin bypasses consume no quota.
+        </p>
+        <div><Button type="submit">Save booking limits</Button></div>
+      </form>
+    </Card.Content>
+  </Card.Root>
+  <Card.Root
+    ><Card.Header
+      ><Card.Title>Seven-day schedule</Card.Title><Card.Description
+        >Today and the next six days · all workstations.</Card.Description
+      ></Card.Header
+    ><Card.Content class="min-w-0"
+      ><ReservationTimeline
+        bookings={data.schedule}
+        days={data.calendarDays}
+        timeZone={data.timeZone}
+        viewerId={data.viewerId}
+        cancelAction={null}
+      /></Card.Content
+    ></Card.Root
+  >
+
+  <Card.Root>
     <Card.Header>
       <Card.Title class="flex items-center gap-2"
         ><CalendarCogIcon class="size-5" />Create for a user</Card.Title
       >
       <Card.Description>
-        Normal rules still apply unless override is checked. Overlapping bookings are never allowed.
+        Choose one fixed slot, or use an admin bypass. Any active GPU can be scheduled without an
+        assignment. Overlapping bookings and diagnostic safety checks still apply.
       </Card.Description>
     </Card.Header>
     <Card.Content>
       {#if data.targets.length === 0}
-        <p class="text-muted-foreground text-sm">
-          No assigned users with active GPUs are available.
-        </p>
+        <p class="text-muted-foreground text-sm">No active users or GPUs are available.</p>
       {:else}
         <form method="POST" action="?/create" class="grid gap-4">
           <div class="grid items-end gap-4 lg:grid-cols-3">
@@ -76,7 +143,7 @@
                 id="admin-reservation-start"
                 name="startAt"
                 type="datetime-local"
-                step="1800"
+                step="60"
                 required
                 value={form?.action === 'create'
                   ? (form.values?.startAt ?? data.defaultStart)
@@ -89,7 +156,7 @@
                 id="admin-reservation-end"
                 name="endAt"
                 type="datetime-local"
-                step="1800"
+                step="60"
                 required
                 value={form?.action === 'create'
                   ? (form.values?.endAt ?? data.defaultEnd)
@@ -105,7 +172,7 @@
                 value="true"
                 checked={form?.action === 'create' && form.values?.adminOverride}
               />
-              Override duration/horizon
+              Bypass slot and quota limits
             </Label>
             <div class="grid gap-2">
               <Label for="override-reason">Override reason</Label>
@@ -162,7 +229,10 @@
                 <Table.Cell>
                   <div class="flex flex-wrap gap-1">
                     <StatusBadge status={reservation.state} />
-                    {#if reservation.isAdminOverride}<Badge variant="outline">override</Badge>{/if}
+                    {#if reservation.isAdminOverride}<Badge variant="outline">bypass</Badge
+                      >{:else if reservation.quotaKind !== 'legacy'}<Badge variant="outline"
+                        >{reservation.quotaKind}</Badge
+                      >{/if}
                   </div>
                   {#if reservation.overrideReason}
                     <span

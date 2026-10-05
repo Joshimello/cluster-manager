@@ -1,10 +1,11 @@
-import { and, asc, eq, gt, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
 import { fail } from '@sveltejs/kit';
 
 import { recordAudit } from '$lib/server/audit';
 import { requireAdmin } from '$lib/server/auth/guards';
 import { generateTemporaryPassword, hashPasswordPair } from '$lib/server/auth/password';
 import { getDatabase } from '$lib/server/db';
+import { deleteUser, lockUserAdministration } from '$lib/server/deletion';
 import {
   sessions,
   gpus,
@@ -65,6 +66,7 @@ export const load: PageServerLoad = async ({ locals }) => {
         updatedAt: users.updatedAt
       })
       .from(users)
+      .where(isNull(users.deletedAt))
       .orderBy(asc(users.username)),
     database
       .select({
@@ -152,6 +154,25 @@ export const load: PageServerLoad = async ({ locals }) => {
 };
 
 export const actions: Actions = {
+  delete: async ({ locals, request }) => {
+    const actor = requireAdmin(locals);
+    const formData = await request.formData();
+    const userId = formString(formData, 'userId');
+    if (!isUserId(userId)) return fail(400, { action: 'delete', message: 'Invalid user.' });
+    const outcome = await deleteUser({
+      actorId: actor.id,
+      targetId: userId,
+      confirmation: formString(formData, 'confirmation')
+    });
+    if ('error' in outcome)
+      return fail(outcome.status, { action: 'delete', message: outcome.error });
+    return {
+      action: 'delete',
+      success: true,
+      message: `Deleted ${outcome.name}. Workstation login access will be revoked when nodes next synchronize.`
+    };
+  },
+
   create: async ({ locals, request }) => {
     const actor = requireAdmin(locals);
     const formData = await request.formData();
@@ -242,7 +263,13 @@ export const actions: Actions = {
     }
 
     const outcome = await getDatabase().transaction(async (transaction) => {
-      const [target] = await transaction.select().from(users).where(eq(users.id, userId)).limit(1);
+      await lockUserAdministration(transaction);
+      const [target] = await transaction
+        .select()
+        .from(users)
+        .where(and(eq(users.id, userId), isNull(users.deletedAt)))
+        .for('update')
+        .limit(1);
 
       if (!target) {
         return { error: 'User was not found.' } as const;
@@ -305,7 +332,13 @@ export const actions: Actions = {
     }
 
     const outcome = await getDatabase().transaction(async (transaction) => {
-      const [target] = await transaction.select().from(users).where(eq(users.id, userId)).limit(1);
+      await lockUserAdministration(transaction);
+      const [target] = await transaction
+        .select()
+        .from(users)
+        .where(and(eq(users.id, userId), isNull(users.deletedAt)))
+        .for('update')
+        .limit(1);
 
       if (!target) {
         return { error: 'User was not found.' } as const;
@@ -393,7 +426,12 @@ export const actions: Actions = {
     const temporaryPassword = generateTemporaryPassword();
     const { passwordHash, linuxPasswordHash } = await hashPasswordPair(temporaryPassword);
     const outcome = await getDatabase().transaction(async (transaction) => {
-      const [target] = await transaction.select().from(users).where(eq(users.id, userId)).limit(1);
+      const [target] = await transaction
+        .select()
+        .from(users)
+        .where(and(eq(users.id, userId), isNull(users.deletedAt)))
+        .for('update')
+        .limit(1);
 
       if (!target) {
         return { error: 'User was not found.' } as const;
@@ -457,13 +495,14 @@ export const actions: Actions = {
       const [targetUser] = await transaction
         .select()
         .from(users)
-        .where(eq(users.id, userId))
+        .where(and(eq(users.id, userId), isNull(users.deletedAt)))
         .for('update')
         .limit(1);
       const [targetWorkstation] = await transaction
         .select()
         .from(workstations)
-        .where(eq(workstations.id, workstationId))
+        .where(and(eq(workstations.id, workstationId), isNull(workstations.deletedAt)))
+        .for('update')
         .limit(1);
 
       if (!targetUser) return { error: 'User was not found.' } as const;

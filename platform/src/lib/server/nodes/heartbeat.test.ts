@@ -42,6 +42,58 @@ const report = {
 };
 
 describe('parseHeartbeatReport', () => {
+  it('validates optional per-user storage snapshots, session identities, and heartbeat cadence', () => {
+    const storage = {
+      username: 'ada',
+      uid: 20001,
+      bytes: 1000,
+      status: 'measured',
+      observedAt: report.observedAt
+    };
+    expect(
+      parseHeartbeatReport({ ...report, userStorage: [storage], reportIntervalSeconds: 15 })
+        ?.userStorage[0].bytes
+    ).toBe(1000);
+    expect(
+      parseHeartbeatReport({
+        ...report,
+        userStorage: [{ ...storage, bytes: null, status: 'scan_failed' }]
+      })
+    ).not.toBeNull();
+    for (const entry of [
+      { ...storage, bytes: -1 },
+      { ...storage, uid: 1000 },
+      { ...storage, status: 'scan_failed' },
+      { ...storage, observedAt: '2027-01-01T00:00:00Z' }
+    ])
+      expect(parseHeartbeatReport({ ...report, userStorage: [entry] })).toBeNull();
+    expect(parseHeartbeatReport({ ...report, userStorage: [storage, storage] })).toBeNull();
+    expect(parseHeartbeatReport({ ...report, reportIntervalSeconds: 601 })).toBeNull();
+    expect(
+      parseHeartbeatReport({
+        ...report,
+        inventory: {
+          ...report.inventory,
+          sessions: [{ username: 'ada', terminal: 'pts/0', uid: 20001 }]
+        }
+      })?.inventory.sessions[0].uid
+    ).toBe(20001);
+  });
+  it('accepts optional IP detection from new nodes and preserves compatibility with older nodes', () => {
+    expect(parseHeartbeatReport(report)?.ipAddresses).toBeNull();
+    expect(
+      parseHeartbeatReport({ ...report, ipAddresses: ['192.168.1.50', '2001:db8::1'] })?.ipAddresses
+    ).toEqual(['192.168.1.50', '2001:db8::1']);
+    expect(parseHeartbeatReport({ ...report, ipAddresses: [] })?.ipAddresses).toEqual([]);
+    for (const ipAddresses of [
+      ['not-an-ip'],
+      ['10.0.0.1', '10.0.0.1'],
+      '10.0.0.1',
+      [1],
+      Array.from({ length: 65 }, (_, i) => `10.0.0.${i}`)
+    ])
+      expect(parseHeartbeatReport({ ...report, ipAddresses })).toBeNull();
+  });
   it('accepts a complete bounded report', () => {
     expect(parseHeartbeatReport(report)).toMatchObject({
       hostname: 'ws01',

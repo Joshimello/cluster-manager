@@ -1,8 +1,7 @@
+import { addDays } from '$lib/reservation-limits';
+import { localDateKey } from '$lib/reservation-week';
 import { defaultTimeZone } from '$lib/time-zone';
-import { formatDateTimeInput } from './time';
-
-export const normalMaximumDurationMilliseconds = 6 * 60 * 60_000;
-export const normalMaximumAdvanceMilliseconds = 7 * 24 * 60 * 60_000;
+import { reservationSlot } from './calendar';
 
 export function validateReservationWindow(
   startAt: Date,
@@ -10,26 +9,21 @@ export function validateReservationWindow(
   options: { now?: Date; adminOverride?: boolean; timeZone?: string } = {}
 ): string | null {
   const now = options.now ?? new Date();
-  if (Number.isNaN(startAt.getTime()) || Number.isNaN(endAt.getTime())) {
-    return 'Enter a valid start and end time.';
-  }
   const timeZone = options.timeZone ?? defaultTimeZone;
-  const aligned = (date: Date) =>
-    Number(formatDateTimeInput(date, timeZone).slice(-2)) % 30 === 0 &&
-    date.getUTCSeconds() === 0 &&
-    date.getUTCMilliseconds() === 0;
-  if (!aligned(startAt) || !aligned(endAt)) {
-    return 'Start and end times must align to 30-minute boundaries.';
-  }
+  if (!Number.isFinite(startAt.getTime()) || !Number.isFinite(endAt.getTime()))
+    return 'Enter a valid start and end time.';
   if (endAt <= startAt) return 'End time must be after start time.';
   if (startAt < now) return 'Start time cannot be in the past.';
-  if (!options.adminOverride) {
-    if (endAt.getTime() - startAt.getTime() > normalMaximumDurationMilliseconds) {
-      return 'Reservations may be at most six hours.';
-    }
-    if (startAt.getTime() - now.getTime() > normalMaximumAdvanceMilliseconds) {
-      return 'Reservations may start at most seven days ahead.';
-    }
+  if (options.adminOverride) {
+    if (
+      [startAt, endAt].some((date) => date.getUTCSeconds() !== 0 || date.getUTCMilliseconds() !== 0)
+    )
+      return 'Choose whole-minute times.';
+    return null;
   }
+  if (!reservationSlot(startAt, endAt, timeZone))
+    return 'Choose one fixed slot: four hours from midnight to 08:00, or two hours from 08:00 to midnight.';
+  if (localDateKey(startAt, timeZone) > addDays(localDateKey(now, timeZone), 6))
+    return 'Choose a slot within the seven days including today.';
   return null;
 }

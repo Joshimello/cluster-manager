@@ -1,75 +1,30 @@
 import { describe, expect, it } from 'vitest';
-
 import { validateReservationWindow } from './rules';
-
-const now = new Date('2026-09-16T04:00:00.000Z');
-
-describe('validateReservationWindow', () => {
-  it('accepts adjacent half-hour windows', () => {
-    expect(
-      validateReservationWindow(
-        new Date('2026-09-16T04:30:00.000Z'),
-        new Date('2026-09-16T06:30:00.000Z'),
-        { now }
-      )
-    ).toBeNull();
+const now = new Date('2026-10-04T07:00:00Z');
+const check = (start: string, end: string, adminOverride = false) =>
+  validateReservationWindow(new Date(start), new Date(end), {
+    now,
+    timeZone: 'UTC',
+    adminOverride
   });
-
-  it('enforces boundaries, direction, duration, horizon, and past starts', () => {
-    expect(
-      validateReservationWindow(
-        new Date('2026-09-16T04:15:00.000Z'),
-        new Date('2026-09-16T05:00:00.000Z'),
-        { now }
-      )
-    ).toMatch(/30-minute/);
-    expect(
-      validateReservationWindow(
-        new Date('2026-09-16T05:00:00.000Z'),
-        new Date('2026-09-16T04:30:00.000Z'),
-        { now }
-      )
-    ).toMatch(/after/);
-    expect(
-      validateReservationWindow(
-        new Date('2026-09-16T04:30:00.000Z'),
-        new Date('2026-09-16T11:00:00.000Z'),
-        { now }
-      )
-    ).toMatch(/six hours/);
-    expect(
-      validateReservationWindow(
-        new Date('2026-09-24T04:00:00.000Z'),
-        new Date('2026-09-24T04:30:00.000Z'),
-        { now }
-      )
-    ).toMatch(/seven days/);
-    expect(
-      validateReservationWindow(
-        new Date('2026-09-16T03:30:00.000Z'),
-        new Date('2026-09-16T04:30:00.000Z'),
-        { now }
-      )
-    ).toMatch(/past/);
+describe('reservation windows', () => {
+  it('accepts daytime slots, overnight slots, and a slot ending at midnight', () => {
+    expect(check('2026-10-04T08:00:00Z', '2026-10-04T10:00:00Z')).toBeNull();
+    expect(check('2026-10-05T00:00:00Z', '2026-10-05T04:00:00Z')).toBeNull();
+    expect(check('2026-10-05T04:00:00Z', '2026-10-05T08:00:00Z')).toBeNull();
+    expect(check('2026-10-04T22:00:00Z', '2026-10-05T00:00:00Z')).toBeNull();
   });
-
-  it('lets an explicit admin override exceed duration and horizon only', () => {
-    expect(
-      validateReservationWindow(
-        new Date('2026-09-24T04:00:00.000Z'),
-        new Date('2026-09-25T04:00:00.000Z'),
-        { now, adminOverride: true }
-      )
-    ).toBeNull();
+  it('enforces one exact slot and seven calendar days including today', () => {
+    expect(check('2026-10-04T08:30:00Z', '2026-10-04T10:30:00Z')).toMatch(/fixed slot/);
+    expect(check('2026-10-04T08:00:00Z', '2026-10-04T12:00:00Z')).toMatch(/fixed slot/);
+    expect(check('2026-10-10T22:00:00Z', '2026-10-11T00:00:00Z')).toBeNull();
+    expect(check('2026-10-11T08:00:00Z', '2026-10-11T10:00:00Z')).toMatch(/seven days/);
+    expect(check('2026-10-04T04:00:00Z', '2026-10-04T08:00:00Z')).toMatch(/past/);
+    expect(check('2026-10-04T10:00:00Z', '2026-10-04T08:00:00Z')).toMatch(/after/);
   });
-
-  it('checks half-hour boundaries in the actor time zone', () => {
-    expect(
-      validateReservationWindow(
-        new Date('2026-09-23T06:15:00.000Z'),
-        new Date('2026-09-23T07:15:00.000Z'),
-        { now: new Date('2026-09-23T06:00:00.000Z'), timeZone: 'Asia/Kathmandu' }
-      )
-    ).toBeNull();
+  it('allows explicit admin bypasses without permitting invalid or past times', () => {
+    expect(check('2026-10-14T09:15:00Z', '2026-10-15T11:00:00Z', true)).toBeNull();
+    expect(check('2026-10-04T04:00:00Z', '2026-10-04T08:00:00Z', true)).toMatch(/past/);
+    expect(check('invalid', '2026-10-05T08:00:00Z', true)).toMatch(/valid/);
   });
 });

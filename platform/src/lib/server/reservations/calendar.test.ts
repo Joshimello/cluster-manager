@@ -1,59 +1,63 @@
 import { describe, expect, it } from 'vitest';
+import { slotCalendar, reservationSlot } from './calendar';
 
-import { hourlyCalendar, isHourlyWindow } from './calendar';
-
-describe('hourlyCalendar', () => {
-  it('shows the full local day while keeping the seven-day booking horizon', () => {
-    const now = new Date('2026-09-23T00:12:00.000Z');
-    const days = hourlyCalendar(now, 'Asia/Kuala_Lumpur');
-    const slots = days.flatMap((day) => day.slots);
-
-    expect(days[0].key).toBe('2026-09-23');
-    expect(days[0].slots).toHaveLength(24);
-    expect(slots[0]).toMatchObject({
-      startAt: '2026-09-22T16:00:00.000Z',
-      endAt: '2026-09-22T17:00:00.000Z',
-      label: '00:00–01:00'
+describe('fixed slot calendar', () => {
+  it('shows exactly seven days including today, with two overnight and eight daytime slots', () => {
+    const days = slotCalendar(new Date('2026-10-04T15:12:00Z'), 'UTC');
+    expect(days.map((day) => day.key)).toEqual([
+      '2026-10-04',
+      '2026-10-05',
+      '2026-10-06',
+      '2026-10-07',
+      '2026-10-08',
+      '2026-10-09',
+      '2026-10-10'
+    ]);
+    expect(days.every((day) => day.slots.length === 10)).toBe(true);
+    expect(days[0].slots.map((slot) => [slot.startHour, slot.endHour])).toEqual([
+      [0, 4],
+      [4, 8],
+      [8, 10],
+      [10, 12],
+      [12, 14],
+      [14, 16],
+      [16, 18],
+      [18, 20],
+      [20, 22],
+      [22, 24]
+    ]);
+    expect(days[0].slots[0]).toMatchObject({
+      startAt: '2026-10-04T00:00:00.000Z',
+      endAt: '2026-10-04T04:00:00.000Z',
+      overnight: true
     });
-    expect(slots[9].label).toBe('09:00–10:00');
-    expect(
-      slots.every((slot) => Date.parse(slot.endAt) - Date.parse(slot.startAt) === 60 * 60_000)
-    ).toBe(true);
-    expect(Date.parse(slots.at(-1)!.startAt)).toBeLessThanOrEqual(
-      now.getTime() + 7 * 24 * 60 * 60_000
-    );
+    expect(days[0].slots.at(-1)?.endAt).toBe('2026-10-05T00:00:00.000Z');
+    expect(days[0].slots.filter((slot) => slot.overnight)).toHaveLength(2);
   });
-
-  it('keeps repeated daylight-saving hours as separate bookable slots', () => {
-    const days = hourlyCalendar(new Date('2026-11-01T04:30:00.000Z'), 'America/New_York');
-    expect(days[0].slots).toHaveLength(25);
-    expect(days[0].slots[1].startAt).toBe('2026-11-01T05:00:00.000Z');
-    expect(days[0].slots[2].startAt).toBe('2026-11-01T06:00:00.000Z');
+  it('supports fractional-offset timezones and local day boundaries', () => {
+    const days = slotCalendar(new Date('2026-10-04T20:00:00Z'), 'Asia/Kathmandu');
+    expect(days[0].key).toBe('2026-10-05');
+    expect(days[0].slots[2].startAt).toBe('2026-10-05T02:15:00.000Z');
     expect(
-      isHourlyWindow(
-        new Date(days[0].slots[1].startAt),
+      reservationSlot(
+        new Date(days[0].slots[2].startAt),
         new Date(days[0].slots[2].endAt),
-        'America/New_York'
+        'Asia/Kathmandu'
       )
-    ).toBe(true);
+    ).not.toBeNull();
   });
-});
-
-describe('isHourlyWindow', () => {
-  it('accepts local whole-hour slots in a 45-minute-offset time zone', () => {
+  it('keeps wall-clock overnight slots across daylight-saving changes', () => {
+    const spring = slotCalendar(new Date('2026-03-08T05:00:00Z'), 'America/New_York')[0].slots[0];
+    const autumn = slotCalendar(new Date('2026-11-01T04:00:00Z'), 'America/New_York')[0].slots[0];
+    expect(Date.parse(spring.endAt) - Date.parse(spring.startAt)).toBe(3 * 3600_000);
+    expect(Date.parse(autumn.endAt) - Date.parse(autumn.startAt)).toBe(5 * 3600_000);
+  });
+  it('rejects partial and combined slots', () => {
     expect(
-      isHourlyWindow(
-        new Date('2026-09-23T06:15:00.000Z'),
-        new Date('2026-09-23T07:15:00.000Z'),
-        'Asia/Kathmandu'
-      )
-    ).toBe(true);
+      reservationSlot(new Date('2026-10-05T09:00:00Z'), new Date('2026-10-05T11:00:00Z'), 'UTC')
+    ).toBeNull();
     expect(
-      isHourlyWindow(
-        new Date('2026-09-23T06:30:00.000Z'),
-        new Date('2026-09-23T07:30:00.000Z'),
-        'Asia/Kathmandu'
-      )
-    ).toBe(false);
+      reservationSlot(new Date('2026-10-05T08:00:00Z'), new Date('2026-10-05T12:00:00Z'), 'UTC')
+    ).toBeNull();
   });
 });

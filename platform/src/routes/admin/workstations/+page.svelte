@@ -6,6 +6,7 @@
   import { invalidateAll } from '$app/navigation';
   import { resolve } from '$app/paths';
   import CoordinationBadge from '$lib/components/coordination-badge.svelte';
+  import DeleteConfirmation from '$lib/components/delete-confirmation.svelte';
   import CredentialDisplay from '$lib/components/credential-display.svelte';
   import FeedbackAlert from '$lib/components/feedback-alert.svelte';
   import PageHeader from '$lib/components/page-header.svelte';
@@ -50,7 +51,8 @@
 
   onMount(() => {
     const timer = window.setInterval(() => {
-      if (!form?.enrollmentToken && !createDialog?.open) void invalidateAll();
+      if (!form?.enrollmentToken && !createDialog?.open && !document.querySelector('dialog[open]'))
+        void invalidateAll();
     }, 10_000);
     return () => window.clearInterval(timer);
   });
@@ -246,6 +248,15 @@
                 {/each}
               {/if}
             </Card.Content>
+            <Card.Footer>
+              <DeleteConfirmation
+                kind="workstation"
+                name={workstation.name}
+                targetId={workstation.id}
+                field="workstationId"
+                description="This removes the workstation from management, revokes its credentials and enrollment tokens, removes assignments, and cancels current and upcoming reservations. The node service, local accounts, processes, and files remain on the machine. History and the workstation name are retained."
+              />
+            </Card.Footer>
           </Card.Root>
         {/each}
       </div>

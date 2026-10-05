@@ -1,96 +1,59 @@
-const hourMilliseconds = 60 * 60_000;
+import { addDays, slotBoundaries } from '$lib/reservation-limits';
+import { localDateKey } from '$lib/reservation-week';
+import { formatDateTimeInput, parseZonedDateTime } from './time';
 
 export type CalendarSlot = {
   startAt: string;
   endAt: string;
   label: string;
+  overnight: boolean;
+  startHour: number;
+  endHour: number;
 };
+export type CalendarDay = { key: string; label: string; slots: CalendarSlot[] };
 
-export type CalendarDay = {
-  key: string;
-  label: string;
-  slots: CalendarSlot[];
-};
-
-export function hourlyCalendar(now: Date, timeZone: string): CalendarDay[] {
-  const localParts = new Intl.DateTimeFormat('en-CA', {
-    timeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hourCycle: 'h23'
-  });
-  const dayLabel = new Intl.DateTimeFormat('en-MY', {
-    timeZone,
+export function slotCalendar(now: Date, timeZone: string, days = 7): CalendarDay[] {
+  const today = localDateKey(now, timeZone);
+  const label = new Intl.DateTimeFormat('en-MY', {
+    timeZone: 'UTC',
     weekday: 'short',
     day: 'numeric',
     month: 'short'
   });
-  const hourLabel = new Intl.DateTimeFormat('en-MY', {
-    timeZone,
-    hour: '2-digit',
-    minute: '2-digit',
-    hourCycle: 'h23'
-  });
-  const parts = Object.fromEntries(
-    localParts.formatToParts(now).map((part) => [part.type, part.value])
-  );
-  const minute = Number(parts.minute);
-  const firstSlot =
-    now.getTime() + (60 - minute) * 60_000 - now.getUTCSeconds() * 1000 - now.getUTCMilliseconds();
-  const dayKeyAt = (value: number) => {
-    const values = Object.fromEntries(
-      localParts.formatToParts(new Date(value)).map((part) => [part.type, part.value])
-    );
-    return `${values.year}-${values.month}-${values.day}`;
-  };
-  const todayKey = dayKeyAt(now.getTime());
-  let firstCalendarSlot = firstSlot;
-  while (dayKeyAt(firstCalendarSlot - hourMilliseconds) >= todayKey) {
-    firstCalendarSlot -= hourMilliseconds;
-  }
-  const lastStart = now.getTime() + 7 * 24 * hourMilliseconds;
-  const days: CalendarDay[] = [];
-
-  for (let start = firstCalendarSlot; start <= lastStart; start += hourMilliseconds) {
-    const startAt = new Date(start);
-    const endAt = new Date(start + hourMilliseconds);
-    const slotParts = Object.fromEntries(
-      localParts.formatToParts(startAt).map((part) => [part.type, part.value])
-    );
-    const key = `${slotParts.year}-${slotParts.month}-${slotParts.day}`;
-    let day = days[days.length - 1];
-    if (day?.key !== key) {
-      day = { key, label: dayLabel.format(startAt), slots: [] };
-      days.push(day);
-    }
-    day.slots.push({
-      startAt: startAt.toISOString(),
-      endAt: endAt.toISOString(),
-      label: `${hourLabel.format(startAt)}–${hourLabel.format(endAt)}`
+  return Array.from({ length: days }, (_, offset) => {
+    const key = addDays(today, offset);
+    const slots = slotBoundaries.slice(0, -1).flatMap((hour, index) => {
+      const endHour = slotBoundaries[index + 1];
+      const startAt = parseZonedDateTime(`${key}T${String(hour).padStart(2, '0')}:00`, timeZone);
+      const endAt = parseZonedDateTime(
+        `${endHour === 24 ? addDays(key, 1) : key}T${String(endHour % 24).padStart(2, '0')}:00`,
+        timeZone
+      );
+      if (!startAt || !endAt || endAt <= startAt) return [];
+      return [
+        {
+          startAt: startAt.toISOString(),
+          endAt: endAt.toISOString(),
+          overnight: hour < 8,
+          startHour: hour,
+          endHour,
+          label: `${String(hour).padStart(2, '0')}:00–${endHour === 24 ? '24:00' : `${String(endHour).padStart(2, '0')}:00`}`
+        }
+      ];
     });
-  }
-
-  return days;
+    return { key, label: label.format(new Date(`${key}T12:00:00Z`)), slots };
+  });
 }
 
-export function isHourlyWindow(startAt: Date, endAt: Date, timeZone: string): boolean {
-  const localMinute = (date: Date) =>
-    Number(
-      new Intl.DateTimeFormat('en-GB', { timeZone, minute: '2-digit' })
-        .formatToParts(date)
-        .find((part) => part.type === 'minute')?.value
-    );
+export function reservationSlot(startAt: Date, endAt: Date, timeZone: string): CalendarSlot | null {
+  if (!Number.isFinite(startAt.getTime()) || !Number.isFinite(endAt.getTime())) return null;
+  const start = formatDateTimeInput(startAt, timeZone);
+  const hour = Number(start.slice(11, 13));
+  if (!slotBoundaries.slice(0, -1).includes(hour)) return null;
   return (
-    endAt > startAt &&
-    (endAt.getTime() - startAt.getTime()) % hourMilliseconds === 0 &&
-    startAt.getUTCSeconds() === 0 &&
-    endAt.getUTCSeconds() === 0 &&
-    startAt.getUTCMilliseconds() === 0 &&
-    endAt.getUTCMilliseconds() === 0 &&
-    localMinute(startAt) === 0 &&
-    localMinute(endAt) === 0
+    slotCalendar(startAt, timeZone, 1)[0].slots.find(
+      (slot) =>
+        Date.parse(slot.startAt) === startAt.getTime() && Date.parse(slot.endAt) === endAt.getTime()
+    ) ?? null
   );
 }

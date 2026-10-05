@@ -3,6 +3,7 @@ package inventory
 import (
 	"context"
 	"fmt"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -17,10 +18,27 @@ type Simulated struct {
 	samples    atomic.Uint64
 	mu         sync.Mutex
 	terminated map[string]struct{}
+	managed    []simulatedIdentity
 }
 
 func NewSimulated(name, scenario string) *Simulated {
 	return &Simulated{Name: name, Scenario: scenario, StartedAt: time.Now(), terminated: make(map[string]struct{})}
+}
+
+type simulatedIdentity struct {
+	username string
+	uid      uint32
+	enabled  bool
+}
+
+func (s *Simulated) SetManagedUsers(users []protocol.DesiredUser) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.managed = nil
+	for _, entry := range users {
+		s.managed = append(s.managed, simulatedIdentity{entry.Username, uint32(entry.UID), entry.Enabled})
+	}
+	sort.Slice(s.managed, func(i, j int) bool { return s.managed[i].username < s.managed[j].username })
 }
 
 func (s *Simulated) Collect(_ context.Context, version string) (protocol.Heartbeat, error) {
@@ -38,11 +56,26 @@ func (s *Simulated) Collect(_ context.Context, version string) (protocol.Heartbe
 	if s.Scenario == "multi-user" {
 		sessions = append(sessions, protocol.Session{Username: "analyst", Terminal: "pts/1", RemoteHost: "10.20.0.16"}, protocol.Session{Username: "operator", Terminal: "tty1"})
 	}
+	s.mu.Lock()
+	managed := append([]simulatedIdentity(nil), s.managed...)
+	s.mu.Unlock()
+	storageUsers := []protocol.UserStorage{}
+	if len(managed) > 0 {
+		sessions = nil
+		for _, identity := range managed {
+			bytes := uint64(5+identity.uid%4) * 1024 * 1024 * 1024
+			storageUsers = append(storageUsers, protocol.UserStorage{Username: identity.username, UID: identity.uid, ObservedAt: time.Now().UTC(), Bytes: &bytes, Status: "measured"})
+			if identity.enabled {
+				uid := identity.uid
+				sessions = append(sessions, protocol.Session{Username: identity.username, UID: &uid, Terminal: "pts/0", RemoteHost: "10.20.0.15"})
+			}
+		}
+	}
 	memoryTotal := uint64(64 * 1024 * 1024 * 1024)
 	storageTotal := uint64(2 * 1024 * 1024 * 1024 * 1024)
 	gpus, gpuProcesses := s.gpuInventory()
 	return protocol.Heartbeat{
-		ObservedAt: time.Now().UTC(), NodeVersion: version, Hostname: s.Name, BootID: "simulation-" + s.Name,
+		ObservedAt: time.Now().UTC(), NodeVersion: version, Hostname: s.Name, IPAddresses: ipAddresses(), UserStorage: storageUsers, BootID: "simulation-" + s.Name,
 		UptimeSeconds: uint64(time.Since(s.StartedAt).Seconds()) + 3600,
 		Inventory: protocol.Inventory{
 			OperatingSystem: "Simulated Linux 1.0",
@@ -98,6 +131,32 @@ func (s *Simulated) gpuInventory() ([]protocol.GPU, []protocol.GPUProcess) {
 			protocol.GPUProcess{GPUUUID: gpus[1].UUID, PID: 5210, UID: 1002, Username: "analyst", Command: "python", MemoryUsedBytes: 18_000_000_000, ProcessStartTicks: 923456},
 			protocol.GPUProcess{GPUUUID: gpus[1].UUID, PID: 5277, UID: 1002, Username: "analyst", Command: "llama-server", MemoryUsedBytes: 6_000_000_000, ProcessStartTicks: 923999},
 		)
+	}
+	activeUsers := []simulatedIdentity{}
+	for _, identity := range s.managed {
+		if identity.enabled {
+			activeUsers = append(activeUsers, identity)
+		}
+	}
+	if len(s.managed) > 0 {
+		explicitOwners := s.Scenario == "owner-use" || s.Scenario == "reservation-conflict" || s.Scenario == "mixed-owner" || s.Scenario == "unknown-owner"
+		if !explicitOwners && len(activeUsers) == 0 {
+			processes = nil
+		}
+		for index := range processes {
+			matched := false
+			for _, identity := range activeUsers {
+				if processes[index].Username == identity.username {
+					processes[index].UID = identity.uid
+					matched = true
+					break
+				}
+			}
+			if !matched && !explicitOwners && len(activeUsers) > 0 {
+				identity := activeUsers[index%len(activeUsers)]
+				processes[index].Username, processes[index].UID = identity.username, identity.uid
+			}
+		}
 	}
 	remaining := processes[:0]
 	for _, process := range processes {

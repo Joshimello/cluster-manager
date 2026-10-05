@@ -27,7 +27,11 @@ class BrowserSession {
   async form(path, values) {
     return this.request(path, {
       method: 'POST',
-      headers: { 'content-type': 'application/x-www-form-urlencoded', origin: baseUrl },
+      headers: {
+        'content-type': 'application/x-www-form-urlencoded',
+        accept: 'application/json',
+        origin: baseUrl
+      },
       body: new URLSearchParams(values)
     });
   }
@@ -37,11 +41,6 @@ async function actionResult(response) {
   const payload = await response.json();
   if (payload.type === 'redirect') return { redirect: payload.location, status: payload.status };
   return { ...parse(payload.data), status: payload.status };
-}
-
-function localInput(date) {
-  const local = new Date(date.getTime() + 8 * 60 * 60_000);
-  return local.toISOString().slice(0, 16);
 }
 
 async function createReadyUser(admin, username, workstationId) {
@@ -77,304 +76,116 @@ async function createReadyUser(admin, username, workstationId) {
 const sql = postgres(databaseUrl, { max: 5 });
 const userIds = [];
 const reservationIds = [];
-let inactiveGpuId;
 try {
   const admin = new BrowserSession();
   let result = await actionResult(
     await admin.form('/login', { username: adminUsername, password: adminPassword })
   );
   assert.equal(result.redirect, '/dashboard');
-
-  const [ws01] = await sql`select id from workstations where name = 'ws01'`;
-  const [ws02] = await sql`select id from workstations where name = 'ws02'`;
-  assert.ok(ws01?.id && ws02?.id);
-  const ws01Gpus = await sql`
-    select id, local_index from gpus where workstation_id = ${ws01.id} and active order by local_index
-  `;
-  const [ws02Gpu] = await sql`
-    select id from gpus where workstation_id = ${ws02.id} and active order by local_index limit 1
-  `;
-  assert.equal(ws01Gpus.length, 2);
-  assert.ok(ws02Gpu?.id);
-
-  const suffix = Date.now().toString(36).slice(-7);
-  const firstUsername = `m5a-${suffix}`;
-  const secondUsername = `m5b-${suffix}`;
-  const disabledUsername = `m5d-${suffix}`;
-  const first = await createReadyUser(admin, firstUsername, ws01.id);
-  const second = await createReadyUser(admin, secondUsername, ws01.id);
+  const [policy] = await sql`select * from reservation_policy where id = 1`;
+  if (policy && policy.time_zone !== 'UTC')
+    throw new Error('This smoke test requires UTC scheduling.');
+  const [workstation] =
+    await sql`select id from workstations where status = 'active' and deleted_at is null order by name limit 1`;
+  assert.ok(workstation?.id, 'An active workstation is required.');
+  const gpus =
+    await sql`select id from gpus where workstation_id = ${workstation.id} and active order by local_index`;
+  assert.ok(gpus.length >= 2, 'At least two active GPUs are required.');
+  const suffix = Date.now().toString(36).slice(-8);
+  const first = await createReadyUser(admin, `slot-a-${suffix}`, workstation.id);
+  const second = await createReadyUser(admin, `slot-b-${suffix}`, workstation.id);
   userIds.push(first.userId, second.userId);
-
-  result = await actionResult(
-    await admin.form('/admin/users?/create', {
-      username: disabledUsername,
-      displayName: `Reservation ${disabledUsername}`,
-      role: 'user'
-    })
-  );
-  assert.equal(result.success, true);
-  const disabledUserId = result.createdUserId;
-  userIds.push(disabledUserId);
-  result = await actionResult(
-    await admin.form('/admin/users?/assignWorkstation', {
-      userId: disabledUserId,
-      workstationId: ws01.id
-    })
-  );
-  assert.equal(result.success, true);
-  await sql`update users set status = 'disabled' where id = ${disabledUserId}`;
-
-  const start = new Date(Math.ceil((Date.now() + 60 * 60_000) / 1_800_000) * 1_800_000);
-  const end = new Date(start.getTime() + 2 * 60 * 60_000);
-  const request = {
-    gpuId: ws01Gpus[0].id,
-    startAt: localInput(start),
-    endAt: localInput(end)
-  };
+  const start = new Date();
+  start.setUTCDate(start.getUTCDate() + 1);
+  start.setUTCHours(8, 0, 0, 0);
+  const end = new Date(start.getTime() + 2 * 3600_000);
+  const request = { gpuId: gpus[0].id, startAt: start.toISOString(), endAt: end.toISOString() };
   const attempts = await Promise.all([
-    actionResult(await first.user.form('/reservations?/create', request)),
-    actionResult(await second.user.form('/reservations?/create', request))
+    first.user.form('/dashboard?/create', request).then(actionResult),
+    second.user.form('/dashboard?/create', request).then(actionResult)
   ]);
-  assert.equal(attempts.filter((attempt) => attempt.success === true).length, 1);
+  assert.equal(attempts.filter((attempt) => attempt.success).length, 1);
   assert.equal(attempts.filter((attempt) => attempt.status === 409).length, 1);
-  const [winner] = await sql`
-    select id, user_id from reservations
-    where gpu_id = ${ws01Gpus[0].id} and start_at = ${start} and status = 'active'
-  `;
-  assert.ok(winner?.id);
+  const [winner] =
+    await sql`select id, user_id, quota_kind from reservations where gpu_id = ${gpus[0].id} and start_at = ${start} and status = 'active'`;
   reservationIds.push(winner.id);
-
-  const winnerUsername = winner.user_id === first.userId ? firstUsername : secondUsername;
+  assert.equal(
+    winner.quota_kind,
+    (policy?.dynamic_slots_tomorrow ?? 2) > 0 ? 'dynamic' : 'standard'
+  );
   const loser = winner.user_id === first.userId ? second : first;
-  const loserPage = await loser.user.request('/reservations');
-  const loserHTML = await loserPage.text();
-  assert.match(loserHTML, /Reserved/);
-  assert.doesNotMatch(loserHTML, new RegExp(winnerUsername));
-
+  const page = await loser.user.request('/dashboard');
+  const html = await page.text();
+  assert.match(html, /Seven-day schedule/);
+  assert.match(html, /Seven-day reservation timeline/);
+  assert.match(html, /slot-[ab]-/);
   result = await actionResult(
-    await loser.user.form('/reservations?/create', {
-      gpuId: ws01Gpus[0].id,
-      startAt: localInput(end),
-      endAt: localInput(new Date(end.getTime() + 30 * 60_000))
+    await loser.user.form('/dashboard?/create', {
+      ...request,
+      startAt: end.toISOString(),
+      endAt: new Date(end.getTime() + 2 * 3600_000).toISOString()
     })
   );
-  assert.equal(result.success, true, 'adjacent reservation should be allowed');
-  const [adjacent] = await sql`
-    select id from reservations
-    where gpu_id = ${ws01Gpus[0].id} and start_at = ${end} and status = 'active'
-  `;
-  reservationIds.push(adjacent.id);
-
-  for (const invalid of [
-    {
-      values: {
-        gpuId: ws01Gpus[1].id,
-        startAt: localInput(new Date(start.getTime() + 15 * 60_000)),
-        endAt: localInput(new Date(start.getTime() + 60 * 60_000))
-      },
-      message: /30-minute/
-    },
-    {
-      values: {
-        gpuId: ws01Gpus[1].id,
-        startAt: localInput(start),
-        endAt: localInput(new Date(start.getTime() + 6.5 * 60 * 60_000))
-      },
-      message: /six hours/
-    },
-    {
-      values: {
-        gpuId: ws01Gpus[1].id,
-        startAt: localInput(new Date(start.getTime() + 8 * 24 * 60 * 60_000)),
-        endAt: localInput(new Date(start.getTime() + 8 * 24 * 60 * 60_000 + 30 * 60_000))
-      },
-      message: /seven days/
-    },
-    {
-      values: {
-        gpuId: ws02Gpu.id,
-        startAt: localInput(start),
-        endAt: localInput(new Date(start.getTime() + 30 * 60_000))
-      },
-      message: /not eligible/
-    }
-  ]) {
-    result = await actionResult(await first.user.form('/reservations?/create', invalid.values));
-    assert.match(result.message, invalid.message);
-  }
-
-  [inactiveGpuId] = await sql`
-    insert into gpus (
-      workstation_id, gpu_uuid, local_index, model, active, last_observed_at,
-      utilization_percent, memory_used_bytes, memory_total_bytes
-    ) values (${ws01.id}, ${`GPU-inactive-${suffix}`}, 31, 'Inactive test GPU', false, now(), 0, 0, 1)
-    returning id
-  `;
+  assert.equal(result.success, true, 'Adjacent fixed slots should be allowed.');
   result = await actionResult(
-    await first.user.form('/reservations?/create', {
-      gpuId: inactiveGpuId.id,
-      startAt: localInput(start),
-      endAt: localInput(new Date(start.getTime() + 30 * 60_000))
+    await first.user.form('/dashboard?/create', {
+      ...request,
+      gpuId: gpus[1].id,
+      startAt: new Date(start.getTime() + 1800_000).toISOString()
     })
   );
-  assert.match(result.message, /not eligible/);
-
+  assert.match(result.message, /fixed slot/);
+  const far = new Date(start);
+  far.setUTCDate(far.getUTCDate() + 8);
   result = await actionResult(
-    await admin.form('/admin/reservations?/create', {
-      target: `${disabledUserId}:${ws01Gpus[1].id}`,
-      startAt: localInput(start),
-      endAt: localInput(new Date(start.getTime() + 30 * 60_000)),
-      adminOverride: 'false',
-      overrideReason: ''
+    await first.user.form('/dashboard?/create', {
+      ...request,
+      gpuId: gpus[1].id,
+      startAt: far.toISOString(),
+      endAt: new Date(far.getTime() + 2 * 3600_000).toISOString()
     })
   );
-  assert.match(result.message, /not eligible/);
-
-  const overrideStart = new Date(start.getTime() + 8 * 24 * 60 * 60_000);
-  const overrideEnd = new Date(overrideStart.getTime() + 8 * 60 * 60_000);
-  result = await actionResult(
-    await admin.form('/admin/reservations?/create', {
-      target: `${first.userId}:${ws01Gpus[1].id}`,
-      startAt: localInput(overrideStart),
-      endAt: localInput(overrideEnd),
-      adminOverride: 'true',
-      overrideReason: 'Approved extended research run'
-    })
-  );
-  assert.equal(result.success, true);
-  const [override] = await sql`
-    select id, is_admin_override, override_reason from reservations
-    where user_id = ${first.userId} and start_at = ${overrideStart}
-  `;
-  assert.equal(override.is_admin_override, true);
-  assert.equal(override.override_reason, 'Approved extended research run');
+  assert.match(result.message, /seven days/);
+  const [actor] = await sql`select id from users where username = ${adminUsername}`;
+  const adminInput = {
+    target: `${actor.id}:${gpus[1].id}`,
+    startAt: start.toISOString().slice(0, 16),
+    endAt: end.toISOString().slice(0, 16),
+    adminOverride: 'true',
+    overrideReason: 'Fixed-slot smoke test'
+  };
+  result = await actionResult(await admin.form('/admin/reservations?/create', adminInput));
+  assert.equal(result.success, true, 'Unassigned administrators can book active GPUs.');
+  const [override] =
+    await sql`select id from reservations where user_id = ${actor.id} and gpu_id = ${gpus[1].id} and start_at = ${start}`;
   reservationIds.push(override.id);
-
+  result = await actionResult(await admin.form('/admin/reservations?/create', adminInput));
+  assert.equal(result.status, 409, 'Admin bypass must still prevent overlaps.');
   result = await actionResult(
     await admin.form('/admin/reservations?/cancel', {
       reservationId: override.id,
-      reason: 'Schedule changed after review'
+      reason: 'Smoke test completed'
     })
   );
   assert.equal(result.success, true);
-  const [cancelledOverride] = await sql`
-    select status, cancellation_reason from reservations where id = ${override.id}
-  `;
-  assert.equal(cancelledOverride.status, 'cancelled');
-  assert.equal(cancelledOverride.cancellation_reason, 'Schedule changed after review');
-
   const winnerSession = winner.user_id === first.userId ? first : second;
   result = await actionResult(
-    await winnerSession.user.form('/reservations?/cancel', { reservationId: winner.id })
+    await winnerSession.user.form('/dashboard?/cancel', { reservationId: winner.id })
   );
   assert.equal(result.success, true);
-  const [cancelledWinner] = await sql`select status from reservations where id = ${winner.id}`;
-  assert.equal(cancelledWinner.status, 'cancelled');
-
-  result = await actionResult(
-    await admin.form('/admin/users?/assignWorkstation', {
-      userId: first.userId,
-      workstationId: ws02.id
-    })
-  );
-  assert.equal(result.success, true);
-  const [ws01Assignment] = await sql`
-    select id from workstation_assignments
-    where user_id = ${first.userId} and workstation_id = ${ws01.id} and status = 'active'
-  `;
-
-  const revocationFutureStart = new Date(start.getTime() + 4 * 60 * 60_000);
-  const revocationFutureEnd = new Date(revocationFutureStart.getTime() + 30 * 60_000);
-  result = await actionResult(
-    await first.user.form('/reservations?/create', {
-      gpuId: ws01Gpus[1].id,
-      startAt: localInput(revocationFutureStart),
-      endAt: localInput(revocationFutureEnd)
-    })
-  );
-  assert.equal(result.success, true);
-  result = await actionResult(
-    await first.user.form('/reservations?/create', {
-      gpuId: ws02Gpu.id,
-      startAt: localInput(revocationFutureStart),
-      endAt: localInput(revocationFutureEnd)
-    })
-  );
-  assert.equal(result.success, true);
-  const [ws01Future] = await sql`
-    select id from reservations
-    where user_id = ${first.userId} and gpu_id = ${ws01Gpus[1].id}
-      and start_at = ${revocationFutureStart}
-  `;
-  const [ws02Future] = await sql`
-    select id from reservations
-    where user_id = ${first.userId} and gpu_id = ${ws02Gpu.id}
-      and start_at = ${revocationFutureStart}
-  `;
-  reservationIds.push(ws01Future.id, ws02Future.id);
-
-  const currentStart = new Date(Math.floor(Date.now() / 1_800_000) * 1_800_000);
-  const currentEnd = new Date(currentStart.getTime() + 30 * 60_000);
-  const [currentReservation] = await sql`
-    insert into reservations (gpu_id, user_id, created_by_user_id, start_at, end_at)
-    values (${ws01Gpus[1].id}, ${first.userId}, ${first.userId}, ${currentStart}, ${currentEnd})
-    returning id
-  `;
-  reservationIds.push(currentReservation.id);
-
-  result = await actionResult(
-    await admin.form('/admin/users?/revokeWorkstation', {
-      assignmentId: ws01Assignment.id
-    })
-  );
-  assert.equal(result.success, true);
-  assert.match(result.message, /Cancelled 1 future reservation/);
-  const revocationReservations = await sql`
-    select id, status, cancellation_reason from reservations
-    where id in (${ws01Future.id}, ${ws02Future.id}, ${currentReservation.id})
-  `;
-  assert.deepEqual(
-    revocationReservations.find((reservation) => reservation.id === ws01Future.id),
-    {
-      id: ws01Future.id,
-      status: 'cancelled',
-      cancellation_reason: 'Workstation access revoked.'
-    }
-  );
-  assert.equal(
-    revocationReservations.find((reservation) => reservation.id === ws02Future.id)?.status,
-    'active'
-  );
-  assert.equal(
-    revocationReservations.find((reservation) => reservation.id === currentReservation.id)?.status,
-    'active'
-  );
-
-  const [auditSummary] = await sql`
-    select count(*) filter (where action = 'reservation.override_created')::int as overrides,
-      count(*) filter (where action = 'reservation.admin_cancelled')::int as admin_cancellations,
-      count(*) filter (where action = 'reservation.cancelled')::int as owner_cancellations,
-      count(*) filter (where action = 'reservation.cancelled_for_assignment_revocation')::int
-        as assignment_cancellations
-    from audit_events where target_id = any(${reservationIds})
-  `;
-  assert.equal(auditSummary.overrides, 1);
-  assert.equal(auditSummary.admin_cancellations, 1);
-  assert.equal(auditSummary.owner_cancellations, 1);
-  assert.equal(auditSummary.assignment_cancellations, 1);
-
   console.log(
-    'Reservation eligibility, targeted revocation cancellation, audit, and current-session retention passed.'
+    'Fixed-slot booking, timeline, conflict, assignment bypass, and cancellation smoke checks passed.'
   );
 } finally {
-  if (reservationIds.length > 0) {
-    await sql`delete from audit_events where target_type = 'reservation' and target_id = any(${reservationIds})`;
+  if (reservationIds.length) {
+    await sql`delete from audit_events where target_id = any(${reservationIds})`;
+    await sql`delete from reservations where id = any(${reservationIds})`;
   }
-  if (userIds.length > 0) {
+  if (userIds.length) {
+    await sql`delete from audit_events where actor_user_id = any(${userIds}) or target_id = any(${userIds})`;
     await sql`delete from reservations where user_id = any(${userIds}) or created_by_user_id = any(${userIds})`;
-    await sql`delete from audit_events where target_type = 'user' and target_id = any(${userIds})`;
+    await sql`delete from workstation_assignments where user_id = any(${userIds})`;
     await sql`delete from users where id = any(${userIds})`;
   }
-  if (inactiveGpuId?.id) await sql`delete from gpus where id = ${inactiveGpuId.id}`;
   await sql.end();
 }

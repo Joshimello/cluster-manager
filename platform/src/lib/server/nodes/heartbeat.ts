@@ -1,3 +1,4 @@
+import { isIP } from 'node:net';
 import type { WorkstationInventory } from '$lib/server/db/schema';
 
 export const onlineAfterMilliseconds = 45_000;
@@ -11,8 +12,17 @@ export type HeartbeatReport = {
   capabilities: string[];
   diagnosticsImageDigest: string | null;
   hostname: string;
+  ipAddresses: string[] | null;
   bootId: string;
   uptimeSeconds: number;
+  reportIntervalSeconds: number;
+  userStorage: Array<{
+    username: string;
+    uid: number;
+    observedAt: Date;
+    bytes: number | null;
+    status: string;
+  }>;
   inventory: WorkstationInventory;
   gpus: Array<{
     uuid: string;
@@ -78,8 +88,59 @@ export function parseHeartbeatReport(value: unknown): HeartbeatReport | null {
   const observedAtText = text(root?.observedAt, 64);
   const observedAt = observedAtText ? new Date(observedAtText) : null;
 
+  const reportIntervalSeconds = number(root?.reportIntervalSeconds ?? 30, 1, 600);
+  if (reportIntervalSeconds === null) return null;
+  const storageReports = root?.userStorage ?? [];
+  if (!Array.isArray(storageReports) || storageReports.length > 4096) return null;
+  const userStorage: HeartbeatReport['userStorage'] = [];
+  const storageUsers = new Set<string>();
+  for (const candidate of storageReports) {
+    const entry = object(candidate);
+    const username = text(entry?.username, 32);
+    const uid = number(entry?.uid, 20000, 59999);
+    const sampleTime = text(entry?.observedAt, 64);
+    const sampleDate = sampleTime ? new Date(sampleTime) : null;
+    const storageBytes = entry?.bytes === null ? null : bytes(entry?.bytes);
+    const status = entry?.status;
+    if (
+      !username ||
+      uid === null ||
+      !Number.isInteger(uid) ||
+      !sampleDate ||
+      !Number.isFinite(sampleDate.getTime()) ||
+      !observedAt ||
+      sampleDate.getTime() > observedAt.getTime() ||
+      storageUsers.has(username) ||
+      !['measured', 'identity_mismatch', 'scan_failed', 'scan_deferred'].includes(String(status)) ||
+      (status === 'measured' ? storageBytes === null : entry?.bytes !== null)
+    )
+      return null;
+    storageUsers.add(username);
+    userStorage.push({
+      username,
+      uid,
+      observedAt: sampleDate,
+      bytes: storageBytes,
+      status: String(status)
+    });
+  }
   const nodeVersion = text(root?.nodeVersion, 64);
   const hostname = text(root?.hostname, 255);
+  const ipAddresses = root?.ipAddresses ?? null;
+  if (
+    ipAddresses !== null &&
+    (!Array.isArray(ipAddresses) ||
+      ipAddresses.length > 64 ||
+      ipAddresses.some(
+        (address) =>
+          typeof address !== 'string' ||
+          address.length > 45 ||
+          !isIP(address) ||
+          address.includes('%')
+      ) ||
+      new Set(ipAddresses).size !== ipAddresses.length)
+  )
+    return null;
   const bootId = text(root?.bootId, 128);
   const uptimeSeconds = number(root?.uptimeSeconds, 0);
   const operatingSystem = text(inventory?.operatingSystem, 255);
@@ -144,7 +205,14 @@ export function parseHeartbeatReport(value: unknown): HeartbeatReport | null {
     const remoteHostValue = session?.remoteHost;
     const remoteHost = remoteHostValue === undefined ? undefined : text(remoteHostValue, 255);
     if (!username || !terminal || (remoteHostValue !== undefined && !remoteHost)) return null;
-    parsedSessions.push({ username, terminal, ...(remoteHost ? { remoteHost } : {}) });
+    const uid = session?.uid === undefined ? undefined : number(session.uid, 0, 4294967295);
+    if (uid === null || (uid !== undefined && !Number.isInteger(uid))) return null;
+    parsedSessions.push({
+      username,
+      terminal,
+      ...(remoteHost ? { remoteHost } : {}),
+      ...(uid !== undefined ? { uid } : {})
+    });
   }
 
   const parsedGpus: HeartbeatReport['gpus'] = [];
@@ -238,6 +306,9 @@ export function parseHeartbeatReport(value: unknown): HeartbeatReport | null {
     capabilities,
     diagnosticsImageDigest,
     hostname,
+    ipAddresses,
+    reportIntervalSeconds,
+    userStorage,
     bootId,
     uptimeSeconds,
     inventory: {

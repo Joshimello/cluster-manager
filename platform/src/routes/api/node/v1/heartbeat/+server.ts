@@ -11,6 +11,7 @@ import {
 } from '$lib/server/db/schema';
 import { hashNodeSecret, readBearerCredential } from '$lib/server/nodes/credentials';
 import { parseHeartbeatReport } from '$lib/server/nodes/heartbeat';
+import { recordUserUsage } from '$lib/server/nodes/user-usage';
 
 import type { RequestHandler } from './$types';
 
@@ -61,6 +62,7 @@ export const POST: RequestHandler = async ({ request }) => {
               nodeCapabilities: report.capabilities,
               diagnosticsImageDigest: report.diagnosticsImageDigest,
               hostname: report.hostname,
+              ...(report.ipAddresses !== null ? { ipAddresses: report.ipAddresses } : {}),
               bootId: report.bootId,
               uptimeSeconds: Math.floor(report.uptimeSeconds),
               inventory: report.inventory
@@ -68,6 +70,13 @@ export const POST: RequestHandler = async ({ request }) => {
           : {})
       })
       .where(eq(workstations.id, workstation.id));
+
+    if (
+      inventoryAccepted &&
+      (!workstation.inventoryObservedAt || report.observedAt > workstation.inventoryObservedAt)
+    ) {
+      await recordUserUsage(transaction, workstation, report);
+    }
 
     if (inventoryAccepted) {
       await transaction

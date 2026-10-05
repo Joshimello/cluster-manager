@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
 import { json } from '@sveltejs/kit';
 
 import { parseMonitoringRange } from '$lib/monitoring-history';
@@ -57,7 +57,7 @@ export const GET: RequestHandler = async ({ locals, url }) => {
       ? await database
           .select({ id: workstations.id })
           .from(workstations)
-          .where(requestedFilter)
+          .where(and(isNull(workstations.deletedAt), requestedFilter))
           .orderBy(asc(workstations.name))
       : await database
           .select({ id: workstations.id })

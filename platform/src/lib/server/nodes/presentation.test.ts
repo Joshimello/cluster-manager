@@ -6,6 +6,8 @@ import { presentWorkstation } from './presentation';
 describe('presentWorkstation', () => {
   it('does not expose stored secret hashes', () => {
     const workstation = {
+      ipAddresses: ['192.168.1.50'],
+      sshAddressOverride: null,
       credentialHash: 'credential-hash',
       enrollmentTokenHash: 'enrollment-hash'
     } as Workstation;
@@ -13,5 +15,6 @@ describe('presentWorkstation', () => {
     expect(presented).not.toHaveProperty('credentialHash');
     expect(presented).not.toHaveProperty('enrollmentTokenHash');
     expect(presented.enrolled).toBe(true);
+    expect(presented.sshAddress).toBe('192.168.1.50');
   });
 });

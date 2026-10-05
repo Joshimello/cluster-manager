@@ -10,8 +10,12 @@ type LocalParts = {
   minute: number;
 };
 
+const formatters = new Map<string, Intl.DateTimeFormat>();
+
 function formatter(timeZone: string) {
-  return new Intl.DateTimeFormat('en-CA', {
+  let value = formatters.get(timeZone);
+  if (value) return value;
+  value = new Intl.DateTimeFormat('en-CA', {
     timeZone,
     year: 'numeric',
     month: '2-digit',
@@ -20,6 +24,8 @@ function formatter(timeZone: string) {
     minute: '2-digit',
     hourCycle: 'h23'
   });
+  formatters.set(timeZone, value);
+  return value;
 }
 
 function partsAt(date: Date, timeZone: string): LocalParts {

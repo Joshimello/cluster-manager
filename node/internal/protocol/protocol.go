@@ -3,9 +3,10 @@ package protocol
 import "time"
 
 type Session struct {
-	Username   string `json:"username"`
-	Terminal   string `json:"terminal"`
-	RemoteHost string `json:"remoteHost,omitempty"`
+	Username   string  `json:"username"`
+	UID        *uint32 `json:"uid,omitempty"`
+	Terminal   string  `json:"terminal"`
+	RemoteHost string  `json:"remoteHost,omitempty"`
 }
 type CPU struct {
 	LogicalCores       int     `json:"logicalCores"`
@@ -52,15 +53,26 @@ type Inventory struct {
 	GPUs            []GPU        `json:"gpus"`
 	GPUProcesses    []GPUProcess `json:"gpuProcesses"`
 }
+type UserStorage struct {
+	Username   string    `json:"username"`
+	UID        uint32    `json:"uid"`
+	ObservedAt time.Time `json:"observedAt"`
+	Bytes      *uint64   `json:"bytes"`
+	Status     string    `json:"status"`
+}
+
 type Heartbeat struct {
-	ObservedAt             time.Time `json:"observedAt"`
-	NodeVersion            string    `json:"nodeVersion"`
-	Capabilities           []string  `json:"capabilities,omitempty"`
-	DiagnosticsImageDigest string    `json:"diagnosticsImageDigest,omitempty"`
-	Hostname               string    `json:"hostname"`
-	BootID                 string    `json:"bootId"`
-	UptimeSeconds          uint64    `json:"uptimeSeconds"`
-	Inventory              Inventory `json:"inventory"`
+	ObservedAt             time.Time     `json:"observedAt"`
+	NodeVersion            string        `json:"nodeVersion"`
+	Capabilities           []string      `json:"capabilities,omitempty"`
+	DiagnosticsImageDigest string        `json:"diagnosticsImageDigest,omitempty"`
+	Hostname               string        `json:"hostname"`
+	IPAddresses            []string      `json:"ipAddresses"`
+	ReportIntervalSeconds  float64       `json:"reportIntervalSeconds,omitempty"`
+	UserStorage            []UserStorage `json:"userStorage,omitempty"`
+	BootID                 string        `json:"bootId"`
+	UptimeSeconds          uint64        `json:"uptimeSeconds"`
+	Inventory              Inventory     `json:"inventory"`
 }
 
 type DesiredUser struct {

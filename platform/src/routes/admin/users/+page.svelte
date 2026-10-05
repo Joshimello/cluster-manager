@@ -14,6 +14,7 @@
     sortFn_text,
     tableFeatures
   } from '@tanstack/svelte-table';
+  import DeleteConfirmation from '$lib/components/delete-confirmation.svelte';
   import CredentialDisplay from '$lib/components/credential-display.svelte';
   import FeedbackAlert from '$lib/components/feedback-alert.svelte';
   import PageHeader from '$lib/components/page-header.svelte';
@@ -388,6 +389,14 @@
                           {user.status === 'active' ? 'Disable' : 'Enable'}
                         </Button>
                       </form>
+                      <DeleteConfirmation
+                        kind="user"
+                        name={user.username}
+                        targetId={user.id}
+                        field="userId"
+                        disabled={user.id === data.user.id}
+                        description="This removes the user from management, closes their sessions, revokes workstation access on the next node synchronization, and cancels current and upcoming reservations. Existing processes and home files remain. History and the username are retained."
+                      />
                       <form method="POST" action="?/resetPassword">
                         <input type="hidden" name="userId" value={user.id} />
                         <Button variant="outline" type="submit">Reset password</Button>

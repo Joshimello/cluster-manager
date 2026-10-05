@@ -1,5 +1,55 @@
 # Production operations
 
+## Booking slots and limits
+
+The shared schedule defaults to UTC, independently of account display timezone
+preferences. It shows today and the next six days, with time running horizontally
+and days vertically. Click a colored reservation bar to view its owner, GPU,
+times, and slot type.
+
+Regular bookings take one fixed slot: 00:00–04:00, 04:00–08:00, then two-hour slots
+from 08:00 through midnight. Administrators can change the following global limits
+in **Administration → Reservations → Booking limits**:
+
+- Six standard slots per Monday–Sunday week.
+- Three dynamic slots for today, two for tomorrow, and one for the day after.
+- Two overnight slots per week, including both dynamic and standard bookings.
+
+Dynamic slots are used first. Their usage is cumulative for the booking date: two
+dynamic reservations made for tomorrow leave one available when that date becomes
+today. Slots booked farther ahead use standard quota. Quotas span all GPUs and
+workstations assigned to a user. Canceling before a slot starts restores quota;
+a slot already used remains counted. Existing reservations keep their times, and
+each occupied fixed slot counts as standard usage.
+
+Admins can reserve any active GPU without an assignment. An explicit, audited
+bypass can skip quota, slot-size, and booking-horizon restrictions. It consumes no
+user quota and requires a reason. It still cannot overlap another reservation,
+bypass a diagnostic safety window, or book in the past. The shared scheduling
+timezone is also adjustable in Booking limits.
+
+## Deleting users and workstations
+
+Administrators can delete a user from **Administration → Users → Manage**, or a
+workstation from its card or its **Settings** tab. Both actions require a confirmation
+dialog, remove the entry from management, and cancel current and upcoming GPU
+reservations. Deletion is permanent in the UI; it cannot be undone with Enable.
+
+User deletion closes platform sessions immediately and revokes workstation
+assignments. Nodes lock the managed Linux account on their next successful
+synchronization. Existing processes and home files remain. Administrators cannot
+delete their own account or the last active administrator.
+
+Workstation deletion revokes node credentials and enrollment tokens, removes
+assignments, and cancels queued updates and diagnostics. A dispatched update or
+running diagnostic must finish before deletion. Deletion does not uninstall the
+node service or change local accounts, processes, or files; use the documented node
+uninstall workflow when retiring the physical machine.
+
+Deleted database records are retained for audit and reservation history and for
+safe Linux account reconciliation. Usernames, workstation names, and POSIX
+identities remain reserved and cannot be reused.
+
 This runbook covers the first single-management-host deployment. Keep the repository,
 `.env`, database backups, and node credentials accessible only to trusted operators.
 
@@ -236,3 +286,62 @@ arguments, or process environments.
 
 Before escalating, record the platform/node versions, request ID, workstation name,
 connection state, relevant audit event, and a narrow log window. Do not paste secrets.
+
+### SSH instruction addresses
+
+Nodes report existing non-loopback, non-link-local IP addresses with their heartbeats.
+The address on the default IPv4 route is preferred, with IPv4 addresses preferred
+within an interface. This reads interface and route information without probing or
+changing networking. The first detected address is used in assigned users' dashboard
+SSH commands.
+
+Under **Administration → Workstations → select a workstation → Settings**, an admin
+can set **SSH instruction address** to an IP address or hostname users can reach.
+This override affects only displayed SSH instructions; it is never sent to the node
+as desired configuration and does not change interfaces, routing, DNS, firewalls,
+or SSH settings. Clearing it restores automatic selection. Heartbeats cannot replace
+an override. Machines behind NAT, VPNs, or with multiple interfaces may need an override.
+
+Existing nodes need the updated node binary to report IPs. Until an address is reported
+or an admin sets one, the dashboard explains that the SSH address is unavailable.
+
+### Managed workstation user metrics
+
+**Administration → Workstations → select a workstation → Users** lists all platform
+accounts and their access state on that workstation, including unassigned users.
+Deleted identities with recorded usage remain labelled as deleted. Metrics include:
+
+- Observed login time: elapsed time with at least one interactive Linux session;
+  overlapping sessions count once per user.
+- Occupied GPU time: elapsed GPU-hours summed across distinct GPUs per user, based
+  on process UID and username. Multiple processes on one GPU count once. This is
+  occupancy, not GPU compute utilization; shared GPUs count for each observed user.
+- Scheduled GPU time: elapsed reservation hours and upcoming hours. Cancellations
+  truncate the elapsed interval. This includes reservations before tracking started.
+- Booked use: observed GPU time during the user's own bookings divided by reserved
+  GPU time in monitored intervals. Only GPUs reported at both sample endpoints count
+  toward this denominator. GPU time outside those bookings is shown separately.
+- Last observed activity, current interactive sessions, GPU/process counts, and VRAM.
+- Current allocated home-directory disk usage and its measurement timestamp.
+
+Usage totals start with the first accepted heartbeat after this feature is enabled;
+pre-existing activity is not reconstructed. Adjacent heartbeat samples estimate elapsed
+time by holding the previous observation until the next accepted sample. Duplicate and out-of-order samples do not add usage. Reboots and gaps longer than
+three expected heartbeat intervals (with a minimum gap threshold of two minutes) are
+excluded. Lifetime aggregates persist after raw telemetry is cleaned up. Offline
+live metrics are shown as unknown, not zero, and booking percentages exclude unobserved
+intervals rather than treating offline bookings as idle.
+
+Updated nodes include session UIDs and asynchronously scan only provenance-owned local
+homes about every five minutes. Each `du` scan is bounded to five seconds, with a
+30-second batch budget and rotation across large user lists. It reports allocated
+blocks, does not follow symlinks, and excludes other filesystems. This is a storage
+snapshot, not cumulative writes or storage outside the managed home. Invalid local
+identity, failed scans, and missing reports appear as unavailable; measurements older
+than 15 minutes are marked stale. No files or account settings are changed.
+
+Older nodes still provide session and GPU observations. They cannot supply home storage
+until their node binary is updated. A legacy session without a UID is attributed only
+when that platform account has an applied assignment. GPU and storage observations
+must match both the platform username and its immutable POSIX UID. Simulated nodes
+label their metrics as simulated in this tab.

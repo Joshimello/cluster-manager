@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/user"
 	"runtime"
 	"strconv"
 	"strings"
@@ -15,9 +16,15 @@ import (
 	"github.com/Joshimello/cluster-manager/node/internal/protocol"
 )
 
-type System struct{ startedAt time.Time }
+type System struct {
+	startedAt   time.Time
+	homeStorage *homeStorageCollector
+}
 
-func NewSystem() *System { return &System{startedAt: time.Now()} }
+func NewSystem() *System { return NewSystemForWorkstation("") }
+func NewSystemForWorkstation(name string) *System {
+	return &System{startedAt: time.Now(), homeStorage: newHomeStorageCollector(name, "/var/lib/cluster-manager/managed-state.json")}
+}
 
 func (s *System) Collect(ctx context.Context, version string) (protocol.Heartbeat, error) {
 	hostname, err := os.Hostname()
@@ -47,7 +54,11 @@ func (s *System) Collect(ctx context.Context, version string) (protocol.Heartbea
 		return protocol.Heartbeat{}, err
 	}
 	gpuStatus, gpus, gpuProcesses := collectNVIDIA(ctx)
-	return protocol.Heartbeat{ObservedAt: time.Now().UTC(), NodeVersion: version, Hostname: hostname, BootID: bootID, UptimeSeconds: uptime, Inventory: protocol.Inventory{OperatingSystem: operatingSystem(), CPU: protocol.CPU{LogicalCores: runtime.NumCPU(), Model: cpuModel(), UtilizationPercent: cpuPercent}, Memory: memory, Storage: storage, Sessions: sessions(ctx), GPUStatus: gpuStatus, GPUs: gpus, GPUProcesses: gpuProcesses}}, nil
+	report := protocol.Heartbeat{NodeVersion: version, Hostname: hostname, IPAddresses: ipAddresses(), UserStorage: s.homeStorage.snapshot(ctx), BootID: bootID, UptimeSeconds: uptime, Inventory: protocol.Inventory{OperatingSystem: operatingSystem(), CPU: protocol.CPU{LogicalCores: runtime.NumCPU(), Model: cpuModel(), UtilizationPercent: cpuPercent}, Memory: memory, Storage: storage, Sessions: sessions(ctx), GPUStatus: gpuStatus, GPUs: gpus, GPUProcesses: gpuProcesses}}
+	// Stamp the complete report after reading cached scans so no measurement can
+	// be newer than the heartbeat that carries it.
+	report.ObservedAt = time.Now().UTC()
+	return report, nil
 }
 
 func firstField(path string) (string, error) {
@@ -205,6 +216,12 @@ func sessions(ctx context.Context) []protocol.Session {
 			continue
 		}
 		session := protocol.Session{Username: fields[0], Terminal: fields[1]}
+		if account, lookupErr := user.Lookup(fields[0]); lookupErr == nil {
+			if uid, parseErr := strconv.ParseUint(account.Uid, 10, 32); parseErr == nil {
+				value := uint32(uid)
+				session.UID = &value
+			}
+		}
 		if len(fields) > 4 {
 			session.RemoteHost = strings.Trim(fields[len(fields)-1], "()")
 		}

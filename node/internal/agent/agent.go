@@ -37,7 +37,7 @@ func New(cfg config.Config, version string, logger *log.Logger) (*Agent, error) 
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
-	var collector inventory.Collector = inventory.NewSystem()
+	var collector inventory.Collector = inventory.NewSystemForWorkstation(cfg.WorkstationName)
 	var reconciler reconcile.Reconciler = reconcile.NewLinux(cfg.WorkstationName)
 	var terminator termination.Executor = termination.NewLinux(inventory.CollectGPUProcesses)
 	if cfg.Simulate {
@@ -100,6 +100,7 @@ func (a *Agent) Run(ctx context.Context) error {
 		}
 		if err == nil {
 			report.Capabilities = []string{"managed-update-v1"}
+			report.ReportIntervalSeconds = a.config.HeartbeatInterval.Seconds()
 			if digest, available := a.diagnostics.Available(ctx); available {
 				report.Capabilities = append(report.Capabilities, diagnostics.Capability)
 				report.DiagnosticsImageDigest = digest
@@ -154,9 +155,14 @@ func (a *Agent) Run(ctx context.Context) error {
 			results, reconcileErr := a.reconciler.Apply(ctx, state)
 			if reconcileErr != nil {
 				a.logger.Printf("desired state rejected; leaving local accounts unchanged: %v", reconcileErr)
-			} else if len(results) > 0 {
-				if err := a.client.ReportReconciliation(ctx, nodeCredential, results); err != nil {
-					a.logger.Printf("reconciliation status report failed: %v", err)
+			} else {
+				if simulated, ok := a.collector.(interface{ SetManagedUsers([]protocol.DesiredUser) }); ok {
+					simulated.SetManagedUsers(state.Users)
+				}
+				if len(results) > 0 {
+					if err := a.client.ReportReconciliation(ctx, nodeCredential, results); err != nil {
+						a.logger.Printf("reconciliation status report failed: %v", err)
+					}
 				}
 			}
 		}

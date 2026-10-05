@@ -3,11 +3,18 @@ import { fail } from '@sveltejs/kit';
 
 import { requireReadyUser } from '$lib/server/auth/guards';
 import { getDatabase } from '$lib/server/db';
-import { gpus, reservations, workstationAssignments, workstations } from '$lib/server/db/schema';
-import { hourlyCalendar, isHourlyWindow } from '$lib/server/reservations/calendar';
+import {
+  gpus,
+  reservations,
+  workstationAssignments,
+  workstations,
+  users
+} from '$lib/server/db/schema';
+import { workstationSshAddress } from '$lib/server/nodes/ssh-address';
+import { slotCalendar } from '$lib/server/reservations/calendar';
 import { cancelReservation, createReservation } from '$lib/server/reservations/service';
 import { localDateKey } from '$lib/reservation-week';
-import { defaultTimeZone } from '$lib/time-zone';
+import { loadReservationPolicy, loadReservationUsage } from '$lib/server/reservations/policy';
 
 import type { Actions, PageServerLoad } from './$types';
 
@@ -17,14 +24,16 @@ function formString(formData: FormData, name: string): string {
 
 export const load: PageServerLoad = async ({ locals }) => {
   const user = requireReadyUser(locals);
-  const timeZone = user.timeZone ?? defaultTimeZone;
+  const policy = await loadReservationPolicy();
+  const timeZone = policy.timeZone;
   const now = new Date();
   const assignments = await getDatabase()
     .select({
       workstationId: workstations.id,
       workstationName: workstations.name,
       workstationDisplayName: workstations.displayName,
-      hostname: workstations.hostname,
+      ipAddresses: workstations.ipAddresses,
+      sshAddressOverride: workstations.sshAddressOverride,
       provisioningStatus: workstationAssignments.provisioningStatus,
       provisioningMessage: workstationAssignments.provisioningMessage
     })
@@ -34,7 +43,15 @@ export const load: PageServerLoad = async ({ locals }) => {
       and(eq(workstationAssignments.userId, user.id), eq(workstationAssignments.status, 'active'))
     );
 
-  const workstationIds = assignments.map((assignment) => assignment.workstationId);
+  const workstationIds =
+    user.role === 'admin'
+      ? (
+          await getDatabase()
+            .select({ id: workstations.id })
+            .from(workstations)
+            .where(eq(workstations.status, 'active'))
+        ).map((row) => row.id)
+      : assignments.map((assignment) => assignment.workstationId);
   const availableGpus = workstationIds.length
     ? await getDatabase()
         .select({
@@ -65,11 +82,17 @@ export const load: PageServerLoad = async ({ locals }) => {
       gpuModel: gpus.model,
       workstationName: workstations.name,
       userId: reservations.userId,
+      username: users.username,
+      displayName: users.displayName,
+      quotaKind: reservations.quotaKind,
+      overnightSlot: reservations.overnightSlot,
+      overrideReason: reservations.overrideReason,
       startAt: reservations.startAt,
       endAt: reservations.endAt,
       isAdminOverride: reservations.isAdminOverride
     })
     .from(reservations)
+    .innerJoin(users, eq(reservations.userId, users.id))
     .innerJoin(gpus, eq(reservations.gpuId, gpus.id))
     .innerJoin(workstations, eq(gpus.workstationId, workstations.id))
     .where(
@@ -78,7 +101,10 @@ export const load: PageServerLoad = async ({ locals }) => {
           ? or(inArray(gpus.workstationId, workstationIds), eq(reservations.userId, user.id))
           : eq(reservations.userId, user.id),
         eq(reservations.status, 'active'),
-        gt(reservations.endAt, now)
+        gt(
+          reservations.endAt,
+          new Date(Date.parse(slotCalendar(now, timeZone, 1)[0].slots[0].startAt))
+        )
       )
     )
     .orderBy(asc(reservations.startAt), asc(gpus.localIndex));
@@ -113,25 +139,29 @@ export const load: PageServerLoad = async ({ locals }) => {
 
   return {
     user,
-    assignments,
+    assignments: assignments.map((assignment) => ({
+      ...assignment,
+      sshAddress: workstationSshAddress(assignment)
+    })),
     gpus: availableGpus,
     schedule: schedule.map((reservation) => ({
       ...reservation,
-      owner: reservation.userId === user.id ? 'You' : 'Reserved',
+      owner: reservation.userId === user.id ? 'You' : reservation.displayName,
       mine: reservation.userId === user.id,
       state: reservation.startAt <= now ? 'current' : 'upcoming'
     })),
     history,
     timeZone,
     todayKey: localDateKey(now, timeZone),
-    calendarDays: hourlyCalendar(now, timeZone)
+    calendarDays: slotCalendar(now, timeZone),
+    policy,
+    usage: await loadReservationUsage(user.id, now, policy)
   };
 };
 
 export const actions: Actions = {
   create: async ({ locals, request }) => {
     const actor = requireReadyUser(locals);
-    const timeZone = actor.timeZone ?? defaultTimeZone;
     const formData = await request.formData();
     const gpuId = formString(formData, 'gpuId');
     const start = formString(formData, 'startAt');
@@ -140,11 +170,17 @@ export const actions: Actions = {
       /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value) ? new Date(value) : null;
     const startAt = parseSlot(start);
     const endAt = parseSlot(end);
-    if (!startAt || !endAt || !isHourlyWindow(startAt, endAt, timeZone)) {
+    if (!startAt || !endAt) {
       return fail(400, {
         action: 'create',
-        message: 'Select one to six consecutive hourly slots from the calendar.',
-        values: { gpuId, startAt: start, endAt: end }
+        message: 'Select a fixed booking slot from the schedule.',
+        values: {
+          gpuId,
+          startAt: start,
+          endAt: end,
+          adminOverride: formData.get('adminOverride') === 'true',
+          overrideReason: formString(formData, 'overrideReason')
+        }
       });
     }
     const result = await createReservation({
@@ -152,13 +188,21 @@ export const actions: Actions = {
       userId: actor.id,
       gpuId,
       startAt,
-      endAt
+      endAt,
+      adminOverride: actor.role === 'admin' && formData.get('adminOverride') === 'true',
+      overrideReason: formString(formData, 'overrideReason')
     });
     if (!result.ok) {
       return fail(result.status, {
         action: 'create',
         message: result.message,
-        values: { gpuId, startAt: start, endAt: end }
+        values: {
+          gpuId,
+          startAt: start,
+          endAt: end,
+          adminOverride: formData.get('adminOverride') === 'true',
+          overrideReason: formString(formData, 'overrideReason')
+        }
       });
     }
     return { action: 'create', success: true, message: 'GPU reservation created.' };

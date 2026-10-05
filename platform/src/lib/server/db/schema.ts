@@ -10,6 +10,7 @@ import {
   pgEnum,
   pgSequence,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -92,6 +93,7 @@ export const users = pgTable(
     displayName: varchar('display_name', { length: 120 }).notNull(),
     role: userRole('role').notNull().default('user'),
     status: userStatus('status').notNull().default('active'),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
     posixUid: integer('posix_uid').notNull(),
     posixGid: integer('posix_gid').notNull(),
     passwordHash: text('password_hash').notNull(),
@@ -154,9 +156,19 @@ export type WorkstationInventory = {
     username: string;
     terminal: string;
     remoteHost?: string;
+    uid?: number;
   }>;
   gpuStatus: 'available' | 'unavailable';
   operatingSystem: string;
+};
+
+export type UserUsageSnapshot = {
+  observedAt: string;
+  bootId: string;
+  reportIntervalSeconds: number;
+  gpuKnown: boolean;
+  gpuUuids: string[];
+  users: Array<{ userId: string; loggedIn: boolean; gpuUuids: string[] }>;
 };
 
 export const workstations = pgTable(
@@ -166,6 +178,7 @@ export const workstations = pgTable(
     name: varchar('name', { length: 32 }).notNull(),
     displayName: varchar('display_name', { length: 120 }).notNull(),
     status: workstationStatus('status').notNull().default('active'),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
     enrollmentTokenHash: varchar('enrollment_token_hash', { length: 64 }),
     enrollmentExpiresAt: timestamp('enrollment_expires_at', { withTimezone: true }),
     enrollmentUsedAt: timestamp('enrollment_used_at', { withTimezone: true }),
@@ -178,9 +191,13 @@ export const workstations = pgTable(
     nodeCapabilities: jsonb('node_capabilities').$type<string[]>().notNull().default([]),
     diagnosticsImageDigest: varchar('diagnostics_image_digest', { length: 255 }),
     hostname: varchar('hostname', { length: 255 }),
+    ipAddresses: jsonb('ip_addresses').$type<string[]>().notNull().default([]),
+    sshAddressOverride: varchar('ssh_address_override', { length: 253 }),
     bootId: varchar('boot_id', { length: 128 }),
     uptimeSeconds: bigint('uptime_seconds', { mode: 'number' }),
     inventory: jsonb('inventory').$type<WorkstationInventory>(),
+    userUsageStartedAt: timestamp('user_usage_started_at', { withTimezone: true }),
+    userUsageSnapshot: jsonb('user_usage_snapshot').$type<UserUsageSnapshot>(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
   },
@@ -244,6 +261,37 @@ export const workstationAssignments = pgTable(
       .where(sql`${table.status} = 'active'`),
     index('workstation_assignments_workstation_index').on(table.workstationId),
     index('workstation_assignments_status_index').on(table.status)
+  ]
+);
+
+export const workstationUserUsage = pgTable(
+  'workstation_user_usage',
+  {
+    workstationId: uuid('workstation_id')
+      .notNull()
+      .references(() => workstations.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    loginMilliseconds: bigint('login_milliseconds', { mode: 'number' }).notNull().default(0),
+    gpuMilliseconds: bigint('gpu_milliseconds', { mode: 'number' }).notNull().default(0),
+    bookedGpuMilliseconds: bigint('booked_gpu_milliseconds', { mode: 'number' })
+      .notNull()
+      .default(0),
+    observedScheduledMilliseconds: bigint('observed_scheduled_milliseconds', { mode: 'number' })
+      .notNull()
+      .default(0),
+    firstObservedAt: timestamp('first_observed_at', { withTimezone: true }).notNull(),
+    lastObservedAt: timestamp('last_observed_at', { withTimezone: true }).notNull(),
+    lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
+    lastGpuAt: timestamp('last_gpu_at', { withTimezone: true }),
+    storageBytes: bigint('storage_bytes', { mode: 'number' }),
+    storageObservedAt: timestamp('storage_observed_at', { withTimezone: true }),
+    storageStatus: varchar('storage_status', { length: 32 })
+  },
+  (table) => [
+    primaryKey({ columns: [table.workstationId, table.userId] }),
+    index('workstation_user_usage_user_index').on(table.userId)
   ]
 );
 
@@ -333,6 +381,8 @@ export const reservations = pgTable(
     startAt: timestamp('start_at', { withTimezone: true }).notNull(),
     endAt: timestamp('end_at', { withTimezone: true }).notNull(),
     isAdminOverride: boolean('is_admin_override').notNull().default(false),
+    quotaKind: varchar('quota_kind', { length: 16 }).notNull().default('legacy'),
+    overnightSlot: boolean('overnight_slot').notNull().default(false),
     overrideReason: text('override_reason'),
     cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
     cancelledByUserId: uuid('cancelled_by_user_id').references(() => users.id, {
@@ -345,12 +395,33 @@ export const reservations = pgTable(
   (table) => [
     check('reservations_end_after_start', sql`${table.endAt} > ${table.startAt}`),
     check(
-      'reservations_half_hour_boundaries',
-      sql`mod(extract(epoch from ${table.startAt})::bigint, 1800) = 0 and mod(extract(epoch from ${table.endAt})::bigint, 1800) = 0`
+      'reservations_whole_minute_boundaries',
+      sql`date_trunc('minute', ${table.startAt}) = ${table.startAt} and date_trunc('minute', ${table.endAt}) = ${table.endAt}`
     ),
     index('reservations_gpu_start_index').on(table.gpuId, table.startAt),
     index('reservations_user_start_index').on(table.userId, table.startAt),
     index('reservations_status_end_index').on(table.status, table.endAt)
+  ]
+);
+
+export const reservationPolicy = pgTable(
+  'reservation_policy',
+  {
+    id: integer('id').primaryKey().default(1),
+    standardSlotsPerWeek: integer('standard_slots_per_week').notNull().default(6),
+    dynamicSlotsToday: integer('dynamic_slots_today').notNull().default(3),
+    dynamicSlotsTomorrow: integer('dynamic_slots_tomorrow').notNull().default(2),
+    dynamicSlotsDayAfter: integer('dynamic_slots_day_after').notNull().default(1),
+    overnightSlotsPerWeek: integer('overnight_slots_per_week').notNull().default(2),
+    timeZone: varchar('time_zone', { length: 64 }).notNull().default('UTC'),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => [
+    check('reservation_policy_singleton', sql`${table.id} = 1`),
+    check(
+      'reservation_policy_nonnegative',
+      sql`${table.standardSlotsPerWeek} >= 0 and ${table.dynamicSlotsToday} >= 0 and ${table.dynamicSlotsTomorrow} >= 0 and ${table.dynamicSlotsDayAfter} >= 0 and ${table.overnightSlotsPerWeek} >= 0`
+    )
   ]
 );
 

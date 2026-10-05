@@ -1,11 +1,13 @@
-import { asc } from 'drizzle-orm';
+import { asc, isNull } from 'drizzle-orm';
 import { fail } from '@sveltejs/kit';
 
 import { recordAudit } from '$lib/server/audit';
 import { requireAdmin } from '$lib/server/auth/guards';
 import { getDatabase } from '$lib/server/db';
+import { deleteWorkstation } from '$lib/server/deletion';
 import { workstations } from '$lib/server/db/schema';
 import {
+  isWorkstationId,
   issueEnrollmentToken,
   normalizeWorkstationDisplayName,
   normalizeWorkstationName,
@@ -28,7 +30,11 @@ function uniqueViolation(error: unknown): boolean {
 
 export const load: PageServerLoad = async ({ locals }) => {
   requireAdmin(locals);
-  const rows = await getDatabase().select().from(workstations).orderBy(asc(workstations.name));
+  const rows = await getDatabase()
+    .select()
+    .from(workstations)
+    .where(isNull(workstations.deletedAt))
+    .orderBy(asc(workstations.name));
   const now = new Date();
   return {
     workstations: await Promise.all(
@@ -57,6 +63,26 @@ export const load: PageServerLoad = async ({ locals }) => {
 };
 
 export const actions: Actions = {
+  delete: async ({ locals, request }) => {
+    const actor = requireAdmin(locals);
+    const formData = await request.formData();
+    const workstationId = formString(formData, 'workstationId');
+    if (!isWorkstationId(workstationId))
+      return fail(400, { action: 'delete', message: 'Invalid workstation.' });
+    const outcome = await deleteWorkstation({
+      actorId: actor.id,
+      targetId: workstationId,
+      confirmation: formString(formData, 'confirmation')
+    });
+    if ('error' in outcome)
+      return fail(outcome.status, { action: 'delete', message: outcome.error });
+    return {
+      action: 'delete',
+      success: true,
+      message: `Deleted ${outcome.name}. Node credentials and enrollment tokens were revoked.`
+    };
+  },
+
   create: async ({ locals, request }) => {
     const actor = requireAdmin(locals);
     const formData = await request.formData();

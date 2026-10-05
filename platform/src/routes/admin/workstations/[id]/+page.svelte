@@ -6,10 +6,12 @@
   import { onMount } from 'svelte';
   import { invalidateAll } from '$app/navigation';
   import { resolve } from '$app/paths';
+  import DeleteConfirmation from '$lib/components/delete-confirmation.svelte';
   import CredentialDisplay from '$lib/components/credential-display.svelte';
   import FeedbackAlert from '$lib/components/feedback-alert.svelte';
   import GpuMonitor from '$lib/components/gpu-monitor.svelte';
   import HostMonitor from '$lib/components/host-monitor.svelte';
+  import WorkstationUsers from '$lib/components/workstation-users.svelte';
   import MonitoringHistoryProvider from '$lib/components/monitoring-history-provider.svelte';
   import MonitoringRangeSelector from '$lib/components/monitoring-range-selector.svelte';
   import PageHeader from '$lib/components/page-header.svelte';
@@ -20,16 +22,22 @@
   import { Label } from '$lib/components/ui/label/index.js';
   import * as Table from '$lib/components/ui/table/index.js';
 
-  type DetailTab = 'overview' | 'monitoring' | 'updates' | 'diagnostics' | 'settings';
+  type DetailTab = 'overview' | 'monitoring' | 'users' | 'updates' | 'diagnostics' | 'settings';
   const sections: { id: DetailTab; label: string }[] = [
     { id: 'overview', label: 'Overview' },
     { id: 'monitoring', label: 'Monitoring' },
+    { id: 'users', label: 'Users' },
     { id: 'updates', label: 'Software updates' },
     { id: 'diagnostics', label: 'GPU diagnostics' },
     { id: 'settings', label: 'Settings' }
   ];
   const tabForAction = (action?: string): DetailTab | null => {
-    if (action === 'issueEnrollment' || action === 'revoke' || action === 'setStatus')
+    if (
+      action === 'issueEnrollment' ||
+      action === 'revoke' ||
+      action === 'setStatus' ||
+      action === 'setSshAddress'
+    )
       return 'settings';
     if (action === 'queueUpdate' || action === 'cancelUpdate') return 'updates';
     if (action === 'queueDiagnostic' || action === 'cancelDiagnostic') return 'diagnostics';
@@ -118,6 +126,14 @@
       </nav>
 
       <div class="grid min-w-0 content-start gap-6">
+        {#if activeTab === 'users'}
+          <WorkstationUsers
+            users={data.managedUsers}
+            startedAt={data.userUsageStartedAt}
+            timeZone={data.user.timeZone ?? 'UTC'}
+            simulated={ws.inventory?.operatingSystem.startsWith('Simulated') ?? false}
+          />
+        {/if}
         {#if activeTab === 'overview'}
           <section class="grid gap-3" aria-labelledby="node-facts-heading">
             <div>
@@ -626,11 +642,60 @@
                 Workstation settings
               </h2>
               <p class="text-muted-foreground text-sm">
-                Manage enrollment, credentials, and availability for {ws.name}.
+                Manage SSH instructions, enrollment, credentials, and availability for {ws.name}.
               </p>
             </div>
             <Card.Root>
               <Card.Content class="grid gap-4">
+                <form
+                  method="POST"
+                  action="?/setSshAddress"
+                  class="grid gap-4 rounded-lg border p-4"
+                >
+                  <div class="grid gap-1">
+                    <strong>SSH instruction address</strong>
+                    <p class="text-muted-foreground text-sm">
+                      Users see this address in their SSH command. This only changes the
+                      instructions; it does not change networking or SSH configuration.
+                    </p>
+                  </div>
+                  <div class="grid gap-1 text-sm">
+                    <span
+                      >Detected IP addresses: <span class="break-all font-mono"
+                        >{ws.ipAddresses.length
+                          ? ws.ipAddresses.join(', ')
+                          : 'Not reported yet'}</span
+                      ></span
+                    >
+                    <span
+                      >Address shown to users: <span class="break-all font-mono"
+                        >{ws.sshAddress ?? 'Not available'}</span
+                      ></span
+                    >
+                  </div>
+                  <div class="grid gap-2">
+                    <Label for="ssh-address">Address override (optional)</Label>
+                    <Input
+                      id="ssh-address"
+                      name="sshAddress"
+                      maxlength={253}
+                      placeholder={ws.ipAddresses[0] ?? '192.168.1.50'}
+                      value={form?.action === 'setSshAddress' &&
+                      form.values &&
+                      'sshAddress' in form.values
+                        ? String(form.values.sshAddress)
+                        : (ws.sshAddressOverride ?? '')}
+                      aria-describedby="ssh-address-help"
+                    />
+                    <p id="ssh-address-help" class="text-muted-foreground text-sm">
+                      Enter an IP address or hostname reachable by your users. Leave blank to use
+                      the first detected IP automatically. New node heartbeats update detection and
+                      keep your override.
+                    </p>
+                  </div>
+                  <div><Button type="submit">Save SSH address</Button></div>
+                </form>
+
                 <div
                   class="flex flex-wrap items-center justify-between gap-4 rounded-lg border p-4"
                 >
@@ -691,6 +756,23 @@
                       {ws.status === 'active' ? 'Disable workstation' : 'Enable workstation'}
                     </Button>
                   </form>
+                </div>
+                <div
+                  class="flex flex-wrap items-center justify-between gap-4 rounded-lg border p-4"
+                >
+                  <div class="grid gap-1">
+                    <strong>Delete workstation</strong>
+                    <p class="text-muted-foreground text-sm">
+                      Remove this machine from management permanently.
+                    </p>
+                  </div>
+                  <DeleteConfirmation
+                    kind="workstation"
+                    name={ws.name}
+                    targetId={ws.id}
+                    field="workstationId"
+                    description="This removes the workstation from management, revokes its credentials and enrollment tokens, removes assignments, and cancels current and upcoming reservations. The node service, local accounts, processes, and files remain on the machine. History and the workstation name are retained."
+                  />
                 </div>
               </Card.Content>
             </Card.Root>

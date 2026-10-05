@@ -9,6 +9,31 @@ import (
 	"github.com/Joshimello/cluster-manager/node/internal/protocol"
 )
 
+func TestSimulatedManagedUserMetrics(t *testing.T) {
+	s := NewSimulated("ws01", "busy-gpus")
+	s.SetManagedUsers([]protocol.DesiredUser{{Username: "alice", UID: 20001, Enabled: true}})
+	report, err := s.Collect(context.Background(), "test")
+	if err != nil || len(report.UserStorage) != 1 || report.UserStorage[0].Bytes == nil || report.UserStorage[0].UID != 20001 || len(report.Inventory.Sessions) != 1 || *report.Inventory.Sessions[0].UID != 20001 {
+		t.Fatalf("missing managed metrics: %#v, %v", report, err)
+	}
+	for _, process := range report.Inventory.GPUProcesses {
+		if process.Username != "alice" || process.UID != 20001 {
+			t.Fatalf("wrong process identity: %#v", process)
+		}
+	}
+	s.SetManagedUsers([]protocol.DesiredUser{{Username: "alice", UID: 20001, Enabled: false}})
+	report, _ = s.Collect(context.Background(), "test")
+	if len(report.Inventory.Sessions) != 0 || len(report.Inventory.GPUProcesses) != 0 || len(report.UserStorage) != 1 {
+		t.Fatalf("disabled simulated user lost home or kept activity: %#v", report)
+	}
+	unknown := NewSimulated("ws01", "unknown-owner")
+	unknown.SetManagedUsers([]protocol.DesiredUser{{Username: "alice", UID: 20001, Enabled: true}})
+	report, _ = unknown.Collect(context.Background(), "test")
+	if report.Inventory.GPUProcesses[0].Username != "unknown" {
+		t.Fatal("unknown-owner scenario was incorrectly reassigned")
+	}
+}
+
 func TestSimulationScenarios(t *testing.T) {
 	highCPU, err := NewSimulated("ws01", "high-cpu").Collect(context.Background(), "test")
 	if err != nil || highCPU.Inventory.CPU.UtilizationPercent < 90 {
