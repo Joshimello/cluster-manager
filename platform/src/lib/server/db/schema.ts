@@ -86,6 +86,34 @@ export const platformMetadata = pgTable('platform_metadata', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
 });
 
+export const platformUpdates = pgTable(
+  'platform_updates',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    actorId: uuid('actor_id')
+      .notNull()
+      .references(() => users.id),
+    sourceVersion: text('source_version').notNull(),
+    targetVersion: text('target_version').notNull(),
+    status: text('status').notNull().default('pending'),
+    detail: text('detail').notNull().default('Waiting for the updater.'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    dispatchedAt: timestamp('dispatched_at', { withTimezone: true }),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp('completed_at', { withTimezone: true })
+  },
+  (table) => [
+    check(
+      'platform_update_status',
+      sql`${table.status} in ('pending','preparing','backing_up','restarting','succeeded','failed','expired')`
+    ),
+    uniqueIndex('platform_update_active')
+      .on(sql`(1)`)
+      .where(sql`${table.status} in ('pending','preparing','backing_up','restarting')`)
+  ]
+);
+
 export const users = pgTable(
   'users',
   {

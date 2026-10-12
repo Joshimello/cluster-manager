@@ -5,6 +5,7 @@
   import MonitorCogIcon from '@lucide/svelte/icons/monitor-cog';
   import ShieldAlertIcon from '@lucide/svelte/icons/shield-alert';
   import UsersIcon from '@lucide/svelte/icons/users';
+  import DownloadIcon from '@lucide/svelte/icons/download';
   import { page } from '$app/state';
   import { resolve } from '$app/paths';
   import { Button } from '$lib/components/ui/button/index.js';
@@ -15,10 +16,11 @@
     { href: '/admin/workstations', label: 'Workstations', icon: MonitorCogIcon },
     { href: '/admin/stop-requests', label: 'Stop requests', icon: ShieldAlertIcon },
     { href: '/admin/reservations', label: 'Reservations', icon: CalendarCogIcon },
-    { href: '/admin/audit', label: 'Audit history', icon: ClipboardListIcon }
+    { href: '/admin/audit', label: 'Audit history', icon: ClipboardListIcon },
+    { href: '/admin/updates', label: 'Updates', icon: DownloadIcon }
   ] as const;
 
-  let { children } = $props();
+  let { children, data } = $props();
   let mobileMenuOpen = $state(false);
   let currentSection = $derived(
     sections.find(({ href }) => page.url.pathname.startsWith(href))?.label ?? 'Administration'
@@ -52,7 +54,12 @@
           variant="ghost"
           onclick={() => (mobileMenuOpen = false)}
         >
-          <section.icon data-icon="inline-start" />{section.label}
+          <section.icon
+            data-icon="inline-start"
+          />{section.label}{#if section.href === '/admin/updates' && data.platformUpdateAvailable}<span
+              class="bg-primary ml-1 size-2 rounded-full"
+              aria-label="Update available"
+            ></span>{/if}
         </Button>
       {/each}
     </nav>
@@ -65,7 +72,12 @@
     <Separator orientation="vertical" class="mr-2 h-5" />
     {#each sections as section (section.href)}
       <Button href={resolve(section.href)} variant="ghost" size="sm">
-        <section.icon data-icon="inline-start" />{section.label}
+        <section.icon
+          data-icon="inline-start"
+        />{section.label}{#if section.href === '/admin/updates' && data.platformUpdateAvailable}<span
+            class="bg-primary ml-1 size-2 rounded-full"
+            aria-label="Update available"
+          ></span>{/if}
       </Button>
     {/each}
   </nav>

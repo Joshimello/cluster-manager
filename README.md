@@ -88,6 +88,9 @@ sudo /usr/local/sbin/cluster-node setup
 
 ## Updates
 
+For release checks and updates from **Admin → Updates**, see the
+[one-time updater setup](docs/platform-updates.md).
+
 On the management host, run these from the repository directory. If `.env` pins
 `PLATFORM_VERSION`, set it to the desired release tag first; `latest` follows the
 newest stable release.

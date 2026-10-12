@@ -134,6 +134,13 @@
       "when": 1791780000000,
       "tag": "0018_account_management",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1791802627636,
+      "tag": "0019_platform_updates",
+      "breakpoints": true
     }
   ]
 }
