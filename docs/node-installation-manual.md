@@ -143,7 +143,7 @@ Leave the following host state intact so users retain their existing access:
 - Linux accounts, password hashes, and home directories;
 - the `cluster-manager-users` group and user memberships;
 - `/etc/subuid` and `/etc/subgid` allocations used by rootless Podman;
-- `/etc/ssh/sshd_config.d/60-cluster-manager.conf`, which keeps password-only SSH
+- `/etc/ssh/sshd_config.d/60-cluster-manager.conf`, which keeps password and public-key SSH
   policy for the managed group.
 
 After retirement, users keep the last password applied to this workstation, but later
@@ -170,7 +170,18 @@ For an active assignment, the node:
 - adds the account to the `cluster-manager-users` group;
 - ensures subordinate UID/GID ranges for rootless Podman;
 - applies the Linux SHA-512 crypt hash received through authenticated desired state;
-- enables password-only SSH for the managed group and disables public-key login for it.
+- enables either password or public-key SSH for the managed group.
+
+Users manage their own SSH keys using the workstation's existing OpenSSH key-file
+configuration (normally `~/.ssh/authorized_keys`). The platform does not upload,
+replace, synchronize, or remove individual keys. Importing an account and changing
+its platform password preserve these files and their permissions. Removing an account
+with permanent home deletion also removes any keys stored inside that home.
+
+Existing installations need an updated node binary; changing the platform alone does
+not update workstation SSH policy. On reconciliation, the updated node replaces the
+old password-only policy after disabling revoked accounts, validates sshd configuration,
+and reloads SSH without terminating existing sessions.
 
 The platform password and SSH password are the same input, but plaintext is never
 stored or sent to the node. The platform keeps an Argon2id verifier for web login and a
@@ -182,8 +193,12 @@ SSH policy, or subordinate ranges. A provenance-owned account whose UID/GID no l
 matches reports `managed_identity_mismatch` and requires deliberate purge/recreation.
 Development accounts with host-assigned IDs are not migrated.
 
-Revocation locks the Linux password while preserving the account, home directory, and
-files. Existing processes and SSH sessions are not terminated. If desired state is
+Revocation locks the Linux password and expires the account, blocking new password
+and public-key logins while preserving the account, home directory, and files.
+Restoring access applies the current platform password and clears this revocation
+expiry. Account removal also disables
+both login methods before checking for running work. Existing processes and SSH
+sessions are not terminated. If desired state is
 unavailable or invalid, the node makes no account changes.
 
 ## Verification and troubleshooting
@@ -210,12 +225,14 @@ Run the disposable Ubuntu 24.04 acceptance test from the repository root:
 ```bash
 docker build -f node/integration/ubuntu.Dockerfile \
   -t cluster-manager-ubuntu-reconcile-test node
-docker run --rm cluster-manager-ubuntu-reconcile-test
+docker run --rm --init --cap-add SYS_ADMIN --security-opt apparmor=unconfined \
+  cluster-manager-ubuntu-reconcile-test
 ```
 
 It verifies exact UID/GID/private-group and home creation, idempotency, collision
-safety, real sshd password login, password replacement, public-key rejection,
-revocation, and home-data preservation.
+safety, real sshd password and user-managed public-key login, password replacement,
+key preservation through import and reconciliation, safe upgrades from password-only
+policy, revocation of both login methods, access restoration, and home-data preservation.
 
 Also validate the release binary, root-only configuration, and systemd unit on clean
 Ubuntu 24.04 and Debian 13 filesystems:

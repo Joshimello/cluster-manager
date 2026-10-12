@@ -362,7 +362,7 @@ func (l *Linux) executeAccountMutation(ctx context.Context, instruction AccountI
 		return fail(fmt.Errorf("Account identity changed before removal"))
 	}
 	if a.Exists {
-		if err := run(ctx, "", "usermod", "--lock", a.Username); err != nil {
+		if err := disableLogin(ctx, a.Username); err != nil {
 			return failed("Cannot lock account before removal")
 		}
 	}

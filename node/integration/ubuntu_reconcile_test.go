@@ -25,7 +25,7 @@ const (
 	changedHash     = "$6$changesalt$BJbELV8tSHEcNKK.GoEWOAXZ8MJa41XEYN5BvK786Oy/s0aLOrOCm6cOL0yk79hKhHjnkdQfA6ayKfB.yE3nf."
 )
 
-func TestUbuntuAccountPasswordAndRevocation(t *testing.T) {
+func TestUbuntuAccountPasswordKeysAndRevocation(t *testing.T) {
 	if os.Getenv("CLUSTER_MANAGER_UBUNTU_INTEGRATION") != "1" {
 		t.Skip("set CLUSTER_MANAGER_UBUNTU_INTEGRATION=1 inside the disposable Ubuntu test image")
 	}
@@ -66,7 +66,8 @@ func TestUbuntuAccountPasswordAndRevocation(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertPasswordLogin(t, initialPassword, true)
-	assertKeyLoginUnavailable(t, account.HomeDir)
+	key := installUserKey(t, account.Username, account.HomeDir)
+	assertKeyLogin(t, account.Username, key, true)
 
 	desired.Users[0].PasswordHash = changedHash
 	desired.Users[0].Generation = 2
@@ -75,6 +76,7 @@ func TestUbuntuAccountPasswordAndRevocation(t *testing.T) {
 	}
 	assertPasswordLogin(t, initialPassword, false)
 	assertPasswordLogin(t, changedPassword, true)
+	assertKeyLogin(t, account.Username, key, true)
 
 	desired.Users[0].Enabled = false
 	desired.Users[0].PasswordHash = ""
@@ -83,9 +85,58 @@ func TestUbuntuAccountPasswordAndRevocation(t *testing.T) {
 		t.Fatalf("revoke account: %#v, %v", results, err)
 	}
 	assertPasswordLogin(t, changedPassword, false)
+	assertKeyLogin(t, account.Username, key, false)
 	if contents, err := os.ReadFile(marker); err != nil || string(contents) != "user data" {
 		t.Fatalf("home data was not preserved: %q, %v", contents, err)
 	}
+	desired.Users[0].Enabled = true
+	desired.Users[0].PasswordHash = changedHash
+	desired.Users[0].Generation = 4
+	if results, err := runner.Apply(context.Background(), desired); err != nil || results[0].Status != "applied" {
+		t.Fatalf("restore account: %#v, %v", results, err)
+	}
+	assertPasswordLogin(t, changedPassword, true)
+	assertKeyLogin(t, account.Username, key, true)
+}
+
+func TestUbuntuKeyPolicyUpgradeDisablesPreviouslyRevokedAccountsFirst(t *testing.T) {
+	disposableAccounts(t)
+	runner := reconcile.NewLinuxWithStatePath("ubuntu-smoke", filepath.Join(t.TempDir(), "managed-state.json"))
+	desired := desiredIdentity("cmkeyupgrade", 20010)
+	revoked := desiredIdentity("cmoldrevoked", 20011).Users[0]
+	revoked.AssignmentID = "66666666-6666-4666-8666-666666666666"
+	desired.Users = append(desired.Users, revoked)
+	if results, err := runner.Apply(context.Background(), desired); err != nil || results[0].Status != "applied" || results[1].Status != "applied" {
+		t.Fatalf("create upgrade fixtures: %#v %v", results, err)
+	}
+	activeKey := installUserKey(t, "cmkeyupgrade", "/home/cmkeyupgrade")
+	revokedKey := installUserKey(t, "cmoldrevoked", "/home/cmoldrevoked")
+	// Reproduce an older node's password-only policy and password-only revocation.
+	const policyPath = "/etc/ssh/sshd_config.d/60-cluster-manager.conf"
+	const oldPolicy = "# Managed by cluster-node\nMatch Group cluster-manager-users\n    PasswordAuthentication yes\n    PubkeyAuthentication no\n    AuthenticationMethods password\n"
+	if err := os.WriteFile(policyPath, []byte(oldPolicy), 0644); err != nil {
+		t.Fatal(err)
+	}
+	hostCommand(t, "service", "ssh", "reload")
+	hostCommand(t, "usermod", "--lock", revoked.Username)
+	desired.Users[1].Enabled = false
+	desired.Users[1].PasswordHash = ""
+	// A failed revocation must not broaden the group's authentication policy.
+	desired.Users[1].UID, desired.Users[1].GID = 20012, 20012
+	results, err := runner.Apply(context.Background(), desired)
+	if err != nil || results[0].Status != "error" || results[1].Status != "error" {
+		t.Fatalf("expected blocked policy upgrade: %#v %v", results, err)
+	}
+	if contents, err := os.ReadFile(policyPath); err != nil || string(contents) != oldPolicy {
+		t.Fatalf("failed revocation changed SSH policy: %q %v", contents, err)
+	}
+	desired.Users[1].UID, desired.Users[1].GID = 20011, 20011
+	results, err = runner.Apply(context.Background(), desired)
+	if err != nil || results[0].Status != "applied" || results[1].Status != "applied" {
+		t.Fatalf("upgrade SSH policy: %#v %v", results, err)
+	}
+	assertKeyLogin(t, "cmkeyupgrade", activeKey, true)
+	assertKeyLogin(t, revoked.Username, revokedKey, false)
 }
 
 func TestUbuntuUIDCollisionChangesNothing(t *testing.T) {
@@ -405,7 +456,7 @@ func reap(command *exec.Cmd) {
 
 func assertPasswordLogin(t *testing.T, password string, shouldSucceed bool) {
 	t.Helper()
-	command := exec.Command(
+	output, err := runSSH(t,
 		"sshpass", "-p", password, "ssh",
 		"-o", "ConnectTimeout=3",
 		"-o", "PreferredAuthentications=password",
@@ -414,16 +465,15 @@ func assertPasswordLogin(t *testing.T, password string, shouldSucceed bool) {
 		"-o", "UserKnownHostsFile=/dev/null",
 		"cmtest@127.0.0.1", "true",
 	)
-	err := command.Run()
 	if shouldSucceed && err != nil {
-		t.Fatalf("password login should succeed: %v", err)
+		t.Fatalf("password login should succeed: %v: %s", err, output)
 	}
 	if !shouldSucceed && err == nil {
 		t.Fatal("password login should fail")
 	}
 }
 
-func assertKeyLoginUnavailable(t *testing.T, home string) {
+func installUserKey(t *testing.T, username, home string) string {
 	t.Helper()
 	temporary := t.TempDir()
 	key := filepath.Join(temporary, "id_ed25519")
@@ -441,19 +491,70 @@ func assertKeyLoginUnavailable(t *testing.T, home string) {
 	if err := os.WriteFile(filepath.Join(sshDirectory, "authorized_keys"), publicKey, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	account, _ := user.Lookup("cmtest")
+	account, err := user.Lookup(username)
+	if err != nil {
+		t.Fatal(err)
+	}
 	uid := numeric(t, account.Uid)
 	gid := numeric(t, account.Gid)
-	_ = os.Chown(sshDirectory, uid, gid)
-	_ = os.Chown(filepath.Join(sshDirectory, "authorized_keys"), uid, gid)
+	for _, path := range []string{sshDirectory, filepath.Join(sshDirectory, "authorized_keys")} {
+		if err := os.Chown(path, uid, gid); err != nil {
+			t.Fatal(err)
+		}
+		before, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			after, err := os.Stat(path)
+			if err != nil {
+				t.Fatalf("user-managed key path lost: %s: %v", path, err)
+			}
+			oldOwner, newOwner := before.Sys().(*syscall.Stat_t), after.Sys().(*syscall.Stat_t)
+			if before.Mode() != after.Mode() || oldOwner.Uid != newOwner.Uid || oldOwner.Gid != newOwner.Gid || !os.SameFile(before, after) {
+				t.Errorf("user-managed key permissions, ownership or identity changed: %s", path)
+			}
+		})
+	}
+	t.Cleanup(func() {
+		contents, err := os.ReadFile(filepath.Join(sshDirectory, "authorized_keys"))
+		if err != nil || string(contents) != string(publicKey) {
+			t.Errorf("user-managed authorized_keys changed: %v", err)
+		}
+	})
+	return key
+}
 
-	command := exec.Command(
+func assertKeyLogin(t *testing.T, username, key string, shouldSucceed bool) {
+	t.Helper()
+	output, err := runSSH(t,
 		"ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=3",
+		"-o", "PreferredAuthentications=publickey", "-o", "IdentitiesOnly=yes",
 		"-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
-		"-i", key, "cmtest@127.0.0.1", "true",
+		"-i", key, username+"@127.0.0.1", "true",
 	)
-	if output, err := command.CombinedOutput(); err == nil {
-		t.Fatalf("SSH public-key login unexpectedly succeeded: %s", strings.TrimSpace(string(output)))
+	if shouldSucceed && err != nil {
+		t.Fatalf("SSH public-key login should succeed: %v: %s", err, output)
+	}
+	if !shouldSucceed && err == nil {
+		t.Fatalf("SSH public-key login should fail: %s", strings.TrimSpace(string(output)))
+	}
+}
+
+func runSSH(t *testing.T, name string, args ...string) ([]byte, error) {
+	t.Helper()
+	// A service reload returns before sshd has reopened its listening socket.
+	// Retry only connection refusal, never authentication failures.
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		output, err := exec.Command(name, args...).CombinedOutput()
+		if !strings.Contains(string(output), "Connection refused") {
+			return output, err
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("SSH server did not return after reload: %s", output)
+		}
+		time.Sleep(25 * time.Millisecond)
 	}
 }
 

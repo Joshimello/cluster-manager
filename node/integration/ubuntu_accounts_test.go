@@ -61,7 +61,7 @@ func completed(t *testing.T, r reconcile.AccountResult) {
 }
 func sshLogin(t *testing.T, name, password string) {
 	t.Helper()
-	if out, err := exec.Command("sshpass", "-p", password, "ssh", "-o", "ConnectTimeout=3", "-o", "PreferredAuthentications=password", "-o", "PubkeyAuthentication=no", "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", name+"@127.0.0.1", "true").CombinedOutput(); err != nil {
+	if out, err := runSSH(t, "sshpass", "-p", password, "ssh", "-o", "ConnectTimeout=3", "-o", "PreferredAuthentications=password", "-o", "PubkeyAuthentication=no", "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", name+"@127.0.0.1", "true"); err != nil {
 		t.Fatalf("SSH password login: %v: %s", err, out)
 	}
 }
@@ -100,6 +100,7 @@ func TestUbuntuImportTransfersOwnershipAndPreservesRunningWork(t *testing.T) {
 	if err := os.WriteFile(marker, []byte("existing data"), 0600); err != nil {
 		t.Fatal(err)
 	}
+	key := installUserKey(t, name, "/home/"+name)
 	before := snapshotIdentityFiles(t, name)
 	a := discovered(t, runner, name)
 	if !a.Eligible || a.OwnerWorkstationID != prior.WorkstationID {
@@ -142,6 +143,7 @@ func TestUbuntuImportTransfersOwnershipAndPreservesRunningWork(t *testing.T) {
 		t.Fatal("import changed files")
 	}
 	sshLogin(t, name, changedPassword)
+	assertKeyLogin(t, name, key, true)
 	hostCommand(t, "kill", "-0", fmt.Sprint(work.Process.Pid))
 }
 
@@ -152,6 +154,14 @@ func TestUbuntuRemovalRefusesBusyAndRequiresExplicitRetry(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "managed-state.json")
 	runner := reconcile.NewLinuxWithStatePath("ubuntu-smoke", path)
 	completed(t, runner.ExecuteAccount(context.Background(), operation(discovered(t, runner, name), "adopt", 10)))
+	desired := desiredIdentity(name, 40004)
+	desired.Workstation.ID = accountWS
+	desired.Users[0].AssignmentID = accountAssignment
+	if applied, err := runner.Apply(context.Background(), desired); err != nil || applied[0].Status != "applied" {
+		t.Fatalf("enable removal fixture: %#v %v", applied, err)
+	}
+	key := installUserKey(t, name, "/home/"+name)
+	assertKeyLogin(t, name, key, true)
 	a := discovered(t, runner, name)
 	work := runningWork(t, a.UID)
 	instruction := operation(a, "remove", 11)
@@ -159,9 +169,22 @@ func TestUbuntuRemovalRefusesBusyAndRequiresExplicitRetry(t *testing.T) {
 	if r.Status != "blocked" || !strings.Contains(r.Detail, "running processes") {
 		t.Fatalf("expected busy refusal: %#v", r)
 	}
+	assertKeyLogin(t, name, key, false)
 	hostCommand(t, "kill", "-0", fmt.Sprint(work.Process.Pid))
 	_ = work.Process.Kill()
 	_ = work.Wait()
+	// The successful SSH probe may still be finishing its session cleanup.
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		out, err := exec.Command("pgrep", "-u", fmt.Sprint(a.UID)).Output()
+		if exit, ok := err.(*exec.ExitError); ok && exit.ExitCode() == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("test session did not exit: %s %v", out, err)
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
 	if runner.ExecuteAccount(context.Background(), instruction).Status != "blocked" {
 		t.Fatal("busy command silently executed later")
 	}

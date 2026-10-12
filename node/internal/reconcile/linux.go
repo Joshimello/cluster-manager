@@ -20,7 +20,7 @@ import (
 
 const (
 	managedGroup = "cluster-manager-users"
-	sshPolicy    = "# Managed by cluster-node\nMatch Group " + managedGroup + "\n    PasswordAuthentication yes\n    PubkeyAuthentication no\n    AuthenticationMethods password\n"
+	sshPolicy    = "# Managed by cluster-node; authorized keys remain user-managed\nMatch Group " + managedGroup + "\n    PasswordAuthentication yes\n    PubkeyAuthentication yes\n    AuthenticationMethods publickey password\n"
 )
 
 func SSHPolicy() string { return sshPolicy }
@@ -63,6 +63,8 @@ func (l *Linux) Apply(ctx context.Context, state protocol.DesiredState) ([]proto
 		return nil, err
 	}
 	results := make([]protocol.ReconciliationResult, 0, len(state.Users))
+	policyReady := true
+	hasEnabled := false
 	for _, desired := range state.Users {
 		if removed := journal.Removed[state.Workstation.ID+":"+desired.AssignmentID]; removed > 0 && desired.Enabled && desired.Generation <= removed {
 			results = append(results, result(desired, "error", "Account removal forbids stale automatic creation", "managed_identity_mismatch"))
@@ -71,9 +73,30 @@ func (l *Linux) Apply(ctx context.Context, state protocol.DesiredState) ([]proto
 		message, errorCode, err := l.applyUser(ctx, &managedState, desired)
 		if err != nil {
 			results = append(results, result(desired, "error", err.Error(), errorCode))
+			if !desired.Enabled {
+				policyReady = false
+			}
 			continue
 		}
 		results = append(results, result(desired, "applied", message))
+		hasEnabled = hasEnabled || desired.Enabled
+	}
+	if hasEnabled {
+		// Older nodes only locked passwords. Expire every revoked account before
+		// enabling keys for the group, regardless of desired-state ordering.
+		var policyErr error
+		if !policyReady {
+			policyErr = errors.New("cannot apply SSH policy until revoked accounts are disabled")
+		} else {
+			policyErr = ensureSSHPolicy(ctx)
+		}
+		if policyErr != nil {
+			for i, desired := range state.Users {
+				if desired.Enabled && results[i].Status == "applied" {
+					results[i] = result(desired, "error", policyErr.Error(), "local_apply_failed")
+				}
+			}
+		}
 	}
 	return results, nil
 }
@@ -139,7 +162,7 @@ func (l *Linux) applyUser(ctx context.Context, state *ManagedState, desired prot
 			}
 			return "Login disabled; no local account or data was removed.", "", nil
 		}
-		if err := run(ctx, "", "usermod", "--lock", desired.Username); err != nil {
+		if err := disableLogin(ctx, desired.Username); err != nil {
 			return "", "local_apply_failed", fmt.Errorf("disable login: %w", err)
 		}
 		return "Login disabled; home data preserved.", "", nil
@@ -224,14 +247,8 @@ func (l *Linux) applyUser(ctx context.Context, state *ManagedState, desired prot
 		if err := saveManagedState(l.managedStatePath, *state); err != nil {
 			return "", "local_apply_failed", err
 		}
-		if err := ensureSSHPolicy(ctx); err != nil {
-			return "", "local_apply_failed", err
-		}
 	} else {
 		if err := ensureGroup(ctx); err != nil {
-			return "", "local_apply_failed", err
-		}
-		if err := ensureSSHPolicy(ctx); err != nil {
 			return "", "local_apply_failed", err
 		}
 		if err := run(ctx, "", "usermod", "--append", "--groups", managedGroup, desired.Username); err != nil {
@@ -280,7 +297,7 @@ func (l *Linux) applyUser(ctx context.Context, state *ManagedState, desired prot
 		return "", "local_apply_failed", err
 	}
 
-	currentHash, err := shadowHash(desired.Username)
+	currentHash, expiry, err := shadowCredentials(desired.Username)
 	if err != nil {
 		return "", "local_apply_failed", err
 	}
@@ -289,7 +306,17 @@ func (l *Linux) applyUser(ctx context.Context, state *ManagedState, desired prot
 			return "", "local_apply_failed", fmt.Errorf("apply synchronized password: %w", err)
 		}
 	}
+	if expiry == "1" {
+		if err := run(ctx, "", "usermod", "--expiredate", "-1", desired.Username); err != nil {
+			return "", "local_apply_failed", fmt.Errorf("restore account login: %w", err)
+		}
+	}
 	return "Linux account and synchronized SSH password applied.", "", nil
+}
+
+func disableLogin(ctx context.Context, username string) error {
+	// Password locking alone does not block public-key authentication with PAM.
+	return run(ctx, "", "usermod", "--lock", "--expiredate", "1", username)
 }
 
 func (l *Linux) rollbackCreationRace(ctx context.Context, state *ManagedState, managed ManagedUser, newlyRecorded, createdPrivateGroup, createdManagedGroup bool) error {
@@ -437,22 +464,22 @@ func ensureSSHPolicy(ctx context.Context) error {
 	return nil
 }
 
-func shadowHash(username string) (string, error) {
+func shadowCredentials(username string) (hash, expiry string, err error) {
 	contents, err := os.ReadFile("/etc/shadow")
 	if err != nil {
-		return "", fmt.Errorf("read shadow database: %w", err)
+		return "", "", fmt.Errorf("read shadow database: %w", err)
 	}
 	scanner := bufio.NewScanner(bytes.NewReader(contents))
 	for scanner.Scan() {
 		fields := strings.Split(scanner.Text(), ":")
-		if len(fields) >= 2 && fields[0] == username {
-			return fields[1], nil
+		if len(fields) >= 8 && fields[0] == username {
+			return fields[1], fields[7], nil
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return "", fmt.Errorf("scan shadow database: %w", err)
+		return "", "", fmt.Errorf("scan shadow database: %w", err)
 	}
-	return "", fmt.Errorf("shadow entry for %s was not found", username)
+	return "", "", fmt.Errorf("shadow entry for %s was not found", username)
 }
 
 func ensureSubordinateIDs(ctx context.Context, username string) (*IDRange, *IDRange, error) {
