@@ -52,7 +52,11 @@ export const handle: Handle = async ({ event, resolve }) => {
     }
   }
 
-  const response = await resolve(event);
+  const response = await resolve(event, {
+    // JavaScript preloads can overflow reverse-proxy header buffers on larger pages.
+    // Keep CSS/font preloads; the client still imports its JavaScript normally.
+    preload: ({ type }) => type !== 'js'
+  });
   response.headers.set('x-request-id', requestId);
   structuredLog('info', 'http.request', {
     requestId,
