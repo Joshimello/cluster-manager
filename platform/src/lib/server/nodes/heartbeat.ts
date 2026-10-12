@@ -1,3 +1,4 @@
+import { parseAccountSnapshot, type AccountSnapshot } from '$lib/account-management';
 import { isIP } from 'node:net';
 import type { WorkstationInventory } from '$lib/server/db/schema';
 
@@ -7,6 +8,7 @@ export const offlineAfterMilliseconds = 120_000;
 export type ConnectionState = 'never' | 'online' | 'stale' | 'offline';
 
 export type HeartbeatReport = {
+  accounts: AccountSnapshot | null;
   observedAt: Date;
   nodeVersion: string;
   capabilities: string[];
@@ -72,6 +74,8 @@ function utilization(value: unknown): number | null {
 
 export function parseHeartbeatReport(value: unknown): HeartbeatReport | null {
   const root = object(value);
+  const accounts = root?.accounts === undefined ? null : parseAccountSnapshot(root.accounts);
+  if (root?.accounts !== undefined && !accounts) return null;
   const inventory = object(root?.inventory);
   const cpu = object(inventory?.cpu);
   const memory = object(inventory?.memory);
@@ -301,6 +305,7 @@ export function parseHeartbeatReport(value: unknown): HeartbeatReport | null {
   }
 
   return {
+    accounts,
     observedAt,
     nodeVersion,
     capabilities,

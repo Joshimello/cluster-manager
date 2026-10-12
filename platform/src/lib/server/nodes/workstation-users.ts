@@ -103,6 +103,8 @@ export async function loadWorkstationUsers(
         .sort((a, b) => b.getTime() - a.getTime())[0] ?? null;
     return {
       ...account,
+      assignmentId: assignment?.id ?? null,
+      accountState: assignment?.accountState ?? null,
       assignmentStatus: assignment?.status ?? 'unassigned',
       provisioningStatus: assignment?.provisioningStatus ?? null,
       currentSessions,

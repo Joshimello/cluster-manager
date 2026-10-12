@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Joshimello/cluster-manager/node/internal/protocol"
+	"github.com/Joshimello/cluster-manager/node/internal/reconcile"
 )
 
 type Client struct {
@@ -233,4 +234,33 @@ func (c *Client) postJSON(ctx context.Context, path, credential string, body, ou
 		return fmt.Errorf("decode response from %s: %w", path, err)
 	}
 	return nil
+}
+
+func (c *Client) NextAccount(ctx context.Context, credential string) (*reconcile.AccountInstruction, error) {
+	request, err := http.NewRequestWithContext(ctx, "GET", c.baseURL+"/api/node/v1/accounts/next", nil)
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("Authorization", "Bearer "+credential)
+	response, err := c.httpClient.Do(request)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode == http.StatusNoContent {
+		return nil, nil
+	}
+	if response.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("account operation request returned %s", response.Status)
+	}
+	var instruction reconcile.AccountInstruction
+	decoder := json.NewDecoder(io.LimitReader(response.Body, 1<<20))
+	decoder.DisallowUnknownFields()
+	if err = decoder.Decode(&instruction); err != nil {
+		return nil, err
+	}
+	return &instruction, nil
+}
+func (c *Client) ReportAccount(ctx context.Context, credential string, result reconcile.AccountResult) error {
+	return c.post(ctx, "/api/node/v1/accounts/result", credential, result)
 }

@@ -14,7 +14,7 @@ RUN CGO_ENABLED=0 go build -trimpath \
 FROM ${RUNTIME_IMAGE}
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates openssh-server systemd uidmap \
+    && apt-get install -y --no-install-recommends ca-certificates openssh-server systemd uidmap procps \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=build /out/cluster-node /usr/local/sbin/cluster-node
 COPY deploy/config.example.json /etc/cluster-manager/node.json

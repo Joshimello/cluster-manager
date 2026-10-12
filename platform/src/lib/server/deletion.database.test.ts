@@ -90,6 +90,7 @@ describe.skipIf(!runDatabaseTests)('administrative deletion database integration
       workstationInput,
       credential,
       async cleanup() {
+        await client`delete from account_operations where workstation_id = ${workstation.id}`;
         await client`delete from audit_events where actor_user_id = ${actor.id}`;
         await client`delete from gpu_diagnostic_runs where workstation_id = ${workstation.id}`;
         await client`delete from node_updates where workstation_id = ${workstation.id}`;

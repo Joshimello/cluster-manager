@@ -1,6 +1,12 @@
 import { and, asc, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
 import { fail } from '@sveltejs/kit';
 
+import { accountOperations } from '$lib/server/db/schema';
+import {
+  accountOperationError,
+  retryAccount,
+  expireAccountOperations
+} from '$lib/server/nodes/accounts';
 import { recordAudit } from '$lib/server/audit';
 import { requireAdmin } from '$lib/server/auth/guards';
 import { generateTemporaryPassword, hashPasswordPair } from '$lib/server/auth/password';
@@ -51,6 +57,10 @@ export const load: PageServerLoad = async ({ locals }) => {
   requireAdmin(locals);
 
   const database = getDatabase();
+  await database.transaction(async (tx) => {
+    await lockUserAdministration(tx);
+    await expireAccountOperations(tx);
+  });
   const [platformUsers, availableWorkstations, activeAssignments] = await Promise.all([
     database
       .select({
@@ -134,7 +144,19 @@ export const load: PageServerLoad = async ({ locals }) => {
     }
   }
 
+  const cleanup = await database
+    .select({ operation: accountOperations, workstationName: workstations.name })
+    .from(accountOperations)
+    .innerJoin(workstations, eq(workstations.id, accountOperations.workstationId))
+    .where(eq(accountOperations.kind, 'remove'))
+    .orderBy(asc(accountOperations.createdAt));
   return {
+    cleanupTargets: await database
+      .selectDistinct({ userId: workstationAssignments.userId, workstationName: workstations.name })
+      .from(workstationAssignments)
+      .innerJoin(workstations, eq(workstations.id, workstationAssignments.workstationId))
+      .where(sql`${workstationAssignments.accountState} <> 'removed'`),
+    cleanup: cleanup.map((r) => ({ ...r.operation, workstationName: r.workstationName })),
     users: platformUsers.map((user) => ({
       ...user,
       gpuProcessCount: processCounts.get(user.username) ?? 0,
@@ -154,6 +176,23 @@ export const load: PageServerLoad = async ({ locals }) => {
 };
 
 export const actions: Actions = {
+  retryAccount: async ({ locals, request }) => {
+    const actor = requireAdmin(locals);
+    const data = await request.formData();
+    try {
+      await retryAccount({
+        actorId: actor.id,
+        operationId: formString(data, 'operationId'),
+        confirmation: formString(data, 'confirmation')
+      });
+      return { action: 'retryAccount', success: true, message: 'Cleanup retry requested.' };
+    } catch (e) {
+      return fail(400, {
+        action: 'retryAccount',
+        message: accountOperationError(e)
+      });
+    }
+  },
   delete: async ({ locals, request }) => {
     const actor = requireAdmin(locals);
     const formData = await request.formData();
@@ -162,7 +201,8 @@ export const actions: Actions = {
     const outcome = await deleteUser({
       actorId: actor.id,
       targetId: userId,
-      confirmation: formString(formData, 'confirmation')
+      confirmation: formString(formData, 'confirmation'),
+      deleteHome: formData.get('deleteHome') === 'on'
     });
     if ('error' in outcome)
       return fail(outcome.status, { action: 'delete', message: outcome.error });
@@ -492,6 +532,7 @@ export const actions: Actions = {
     }
 
     const outcome = await getDatabase().transaction(async (transaction) => {
+      await lockUserAdministration(transaction);
       const [targetUser] = await transaction
         .select()
         .from(users)
@@ -529,6 +570,38 @@ export const actions: Actions = {
         } as const;
       }
 
+      const cleanup = await transaction
+        .select()
+        .from(workstationAssignments)
+        .where(
+          and(
+            eq(workstationAssignments.userId, userId),
+            eq(workstationAssignments.workstationId, workstationId),
+            inArray(workstationAssignments.accountState, ['adopting', 'removing'])
+          )
+        );
+      if (cleanup.length)
+        return {
+          error:
+            'Complete or resolve the existing account operation before assigning this workstation.'
+        } as const;
+      const local = targetWorkstation.accountSnapshot?.accounts.find(
+        (a) =>
+          a.username === targetUser.username ||
+          a.uid === targetUser.posixUid ||
+          a.gid === targetUser.posixGid
+      );
+      if (
+        local &&
+        (local.ownerWorkstationId !== targetWorkstation.id ||
+          local.username !== targetUser.username ||
+          local.uid !== targetUser.posixUid ||
+          local.gid !== targetUser.posixGid)
+      )
+        return {
+          error:
+            'Existing local account conflicts with this assignment. Import the matching identity from the workstation Users tab.'
+        } as const;
       const changedAt = new Date();
       const [created] = await transaction
         .insert(workstationAssignments)
@@ -571,6 +644,7 @@ export const actions: Actions = {
     }
 
     const outcome = await getDatabase().transaction(async (transaction) => {
+      await lockUserAdministration(transaction);
       const [current] = await transaction
         .select({
           id: workstationAssignments.id,
@@ -588,7 +662,7 @@ export const actions: Actions = {
             eq(workstationAssignments.status, 'active')
           )
         )
-        .for('update')
+        .for('update', { of: workstationAssignments })
         .limit(1);
 
       if (!current) return { error: 'Active workstation assignment was not found.' } as const;
@@ -648,6 +722,21 @@ export const actions: Actions = {
           });
         }
       }
+
+      await transaction
+        .update(accountOperations)
+        .set({
+          status: 'blocked',
+          detail: 'Import cancelled because access was revoked.',
+          updatedAt: revokedAt
+        })
+        .where(
+          and(
+            eq(accountOperations.assignmentId, current.id),
+            eq(accountOperations.kind, 'adopt'),
+            inArray(accountOperations.status, ['pending', 'dispatched', 'adopted'])
+          )
+        );
 
       await recordAudit((query) => transaction.execute(query), {
         actorUserId: actor.id,

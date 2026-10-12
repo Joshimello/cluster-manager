@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -21,7 +22,12 @@ import (
 	"github.com/Joshimello/cluster-manager/node/internal/termination"
 )
 
+type accountManager interface {
+	DiscoverAccounts() reconcile.AccountSnapshot
+	ExecuteAccount(context.Context, reconcile.AccountInstruction) reconcile.AccountResult
+}
 type Agent struct {
+	accounts    accountManager
 	config      config.Config
 	version     string
 	logger      *log.Logger
@@ -46,11 +52,17 @@ func New(cfg config.Config, version string, logger *log.Logger) (*Agent, error) 
 		reconciler = reconcile.NewSimulated(cfg.WorkstationName)
 		terminator = simulated
 	}
+	var accounts accountManager
+	if cfg.Simulate {
+		accounts = collector.(*inventory.Simulated)
+	} else {
+		accounts = reconciler.(*reconcile.Linux)
+	}
 	diagnosticManager := diagnostics.New(logger)
 	if cfg.Simulate {
 		diagnosticManager = diagnostics.NewSimulated(logger)
 	}
-	return &Agent{config: cfg, version: version, logger: logger, client: controlplane.New(cfg.PlatformURL), collector: collector, reconciler: reconciler, terminator: terminator, updater: lifecycle.New(version, os.Stdin, io.Discard, io.Discard), diagnostics: diagnosticManager}, nil
+	return &Agent{config: cfg, version: version, logger: logger, client: controlplane.New(cfg.PlatformURL), collector: collector, reconciler: reconciler, terminator: terminator, updater: lifecycle.New(version, os.Stdin, io.Discard, io.Discard), diagnostics: diagnosticManager, accounts: accounts}, nil
 }
 
 func (a *Agent) Run(ctx context.Context) error {
@@ -100,6 +112,10 @@ func (a *Agent) Run(ctx context.Context) error {
 		}
 		if err == nil {
 			report.Capabilities = []string{"managed-update-v1"}
+			if a.accounts != nil {
+				report.Capabilities = append(report.Capabilities, reconcile.AccountCapability)
+				report.Accounts, _ = json.Marshal(a.accounts.DiscoverAccounts())
+			}
 			report.ReportIntervalSeconds = a.config.HeartbeatInterval.Seconds()
 			if digest, available := a.diagnostics.Available(ctx); available {
 				report.Capabilities = append(report.Capabilities, diagnostics.Capability)
@@ -148,6 +164,27 @@ func (a *Agent) Run(ctx context.Context) error {
 				a.logger.Printf("termination instruction %s completed with outcome %s", instruction.InstructionID, result.Outcome)
 			}
 		}
+		if a.accounts != nil {
+			if receipts, ok := a.accounts.(interface {
+				PendingAccountResults() []reconcile.AccountResult
+				AcknowledgeAccountResult(string)
+			}); ok {
+				for _, result := range receipts.PendingAccountResults() {
+					if a.client.ReportAccount(ctx, nodeCredential, result) == nil {
+						receipts.AcknowledgeAccountResult(result.ID)
+					}
+				}
+			}
+			instruction, err := a.client.NextAccount(ctx, nodeCredential)
+			if err != nil {
+				a.logger.Printf("account operation unavailable: %v", err)
+			} else if instruction != nil {
+				result := a.accounts.ExecuteAccount(ctx, *instruction)
+				if err := a.client.ReportAccount(ctx, nodeCredential, result); err != nil {
+					a.logger.Printf("account result report failed: %v", err)
+				}
+			}
+		}
 		state, desiredErr := a.client.DesiredState(ctx, nodeCredential)
 		if desiredErr != nil {
 			a.logger.Printf("desired state unavailable; leaving local accounts unchanged: %v", desiredErr)
@@ -156,8 +193,10 @@ func (a *Agent) Run(ctx context.Context) error {
 			if reconcileErr != nil {
 				a.logger.Printf("desired state rejected; leaving local accounts unchanged: %v", reconcileErr)
 			} else {
-				if simulated, ok := a.collector.(interface{ SetManagedUsers([]protocol.DesiredUser) }); ok {
-					simulated.SetManagedUsers(state.Users)
+				if simulated, ok := a.collector.(interface {
+					SetDesiredUsers(string, []protocol.DesiredUser)
+				}); ok {
+					simulated.SetDesiredUsers(state.Workstation.ID, state.Users)
 				}
 				if len(results) > 0 {
 					if err := a.client.ReportReconciliation(ctx, nodeCredential, results); err != nil {

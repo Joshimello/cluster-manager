@@ -46,10 +46,10 @@ immutable UID and same-valued private primary GID, then creates that exact ident
 every assigned workstation. Do not let local account tooling, LDAP, or other
 provisioners allocate from this range.
 
-Cluster Manager does not renumber or adopt development accounts previously created
-with a host-selected UID/GID. On a disposable development node, use the destructive uninstall
-to purge those provenance-confirmed accounts, then set up the node again. Deleting only
-the ledger is unsafe: retained usernames become unowned collisions.
+Cluster Manager never renumbers existing accounts. Compatible local accounts can be
+explicitly imported through the workstation Users tab, preserving their numeric
+identity and files. See [account management and migration](account-management.md).
+Do not delete the ownership ledger: retained provenance is needed for safe migration.
 
 To inspect the installer first:
 
@@ -160,7 +160,8 @@ sudo cluster-node uninstall
 
 Disable or revoke the workstation separately in the platform. Reinstalling can trust
 retained provenance only when enrollment returns the same platform workstation ID. A
-different identity treats retained usernames as collisions. Never delete the retained
+different identity requires explicit import through the new platform before managing
+retained accounts. Never delete the retained
 provenance ledger casually: without it the node cannot prove ownership, so every
 existing matching username becomes a collision.
 
@@ -174,9 +175,10 @@ sudo cluster-node uninstall --purge-created-users
 The destructive form lists provenance-confirmed users, IDs, homes, sizes, process and
 session activity, and mounts. It refuses busy or identity-mismatched accounts, requires
 typing `DELETE <hostname>`, rechecks immediately before deletion, and never terminates
-processes. Only accounts proven to have been created by this node are eligible. A
+processes. Accounts created or explicitly imported into the current workstation
+registration are eligible; foreign ownership records are preserved. A
 same-name private group is removed only after its recorded user and only when its GID
-still exactly matches provenance. Modified
+still exactly matches provenance and the group is unused by other accounts. Modified
 or unrecognized host state is preserved and reported. Platform history is never deleted.
 
 ## Optional shared NFS storage

@@ -2,6 +2,13 @@ import { and, asc, desc, eq, gt, inArray, isNull, lt } from 'drizzle-orm';
 import { error, fail, redirect } from '@sveltejs/kit';
 
 import { parseMonitoringRange } from '$lib/monitoring-history';
+import {
+  accountOperationError,
+  loadAccountManagement,
+  importAccount,
+  removeAccount,
+  retryAccount
+} from '$lib/server/nodes/accounts';
 import { recordAudit } from '$lib/server/audit';
 import { requireAdmin } from '$lib/server/auth/guards';
 import { getDatabase } from '$lib/server/db';
@@ -86,6 +93,7 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
       connectionState: deriveConnectionState(workstation.lastHeartbeatAt)
     },
     gpus: gpuState,
+    accountManagement: await loadAccountManagement(workstation),
     managedUsers: await loadWorkstationUsers(workstation, gpuState),
     userUsageStartedAt: workstation.userUsageStartedAt,
     updates,
@@ -100,6 +108,76 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
 };
 
 export const actions: Actions = {
+  importAccount: async ({ locals, params, request }) => {
+    const actor = requireAdmin(locals);
+    const data = await request.formData();
+    try {
+      const result = await importAccount({
+        actorId: actor.id,
+        workstationId: params.id,
+        username: formString(data, 'username'),
+        fingerprint: formString(data, 'fingerprint'),
+        confirmation: formString(data, 'confirmation')
+      });
+      return {
+        action: 'importAccount',
+        success: true,
+        message: `Import requested for ${result.username}.`,
+        credentialUsername: result.username,
+        temporaryPassword: result.temporaryPassword
+      };
+    } catch (e) {
+      return fail(400, {
+        action: 'importAccount',
+        message: accountOperationError(e)
+      });
+    }
+  },
+  removeAccount: async ({ locals, params, request }) => {
+    const actor = requireAdmin(locals);
+    const data = await request.formData();
+    try {
+      await removeAccount({
+        actorId: actor.id,
+        workstationId: params.id,
+        userId: formString(data, 'userId'),
+        confirmation: formString(data, 'confirmation'),
+        deleteHome: data.get('deleteHome') === 'on'
+      });
+      return {
+        action: 'removeAccount',
+        success: true,
+        message: 'Account removal requested. See operation progress below.'
+      };
+    } catch (e) {
+      return fail(400, {
+        action: 'removeAccount',
+        message: accountOperationError(e)
+      });
+    }
+  },
+  retryAccount: async ({ locals, params, request }) => {
+    const actor = requireAdmin(locals);
+    const data = await request.formData();
+    try {
+      await retryAccount({
+        actorId: actor.id,
+        operationId: formString(data, 'operationId'),
+        confirmation: formString(data, 'confirmation'),
+        workstationId: params.id
+      });
+      return {
+        action: 'retryAccount',
+        success: true,
+        message: 'Account operation retry requested.'
+      };
+    } catch (e) {
+      return fail(400, {
+        action: 'retryAccount',
+        message: accountOperationError(e)
+      });
+    }
+  },
   setSshAddress: async ({ locals, params, request }) => {
     const actor = requireAdmin(locals);
     if (!isWorkstationId(params.id))

@@ -1,9 +1,11 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, lte } from 'drizzle-orm';
 import { json } from '@sveltejs/kit';
 
+import { lockAccounts } from '$lib/server/nodes/accounts';
+import { isLinuxPasswordHash } from '$lib/server/auth/linux-password';
 import { recordAudit } from '$lib/server/audit';
 import { getDatabase } from '$lib/server/db';
-import { workstationAssignments } from '$lib/server/db/schema';
+import { accountOperations, workstationAssignments, users } from '$lib/server/db/schema';
 import { authenticateNode } from '$lib/server/nodes/authentication';
 import { isWorkstationId } from '$lib/server/nodes/credentials';
 
@@ -84,13 +86,18 @@ export const POST: RequestHandler = async ({ request }) => {
   const reconciledAt = new Date();
   let accepted = 0;
   await getDatabase().transaction(async (transaction) => {
+    await lockAccounts(transaction);
     for (const result of results) {
       const [current] = await transaction
         .select({
           id: workstationAssignments.id,
-          errorCode: workstationAssignments.provisioningErrorCode
+          errorCode: workstationAssignments.provisioningErrorCode,
+          assignmentStatus: workstationAssignments.status,
+          userStatus: users.status,
+          passwordHash: users.linuxPasswordHash
         })
         .from(workstationAssignments)
+        .innerJoin(users, eq(users.id, workstationAssignments.userId))
         .where(
           and(
             eq(workstationAssignments.id, result.assignmentId),
@@ -98,7 +105,7 @@ export const POST: RequestHandler = async ({ request }) => {
             eq(workstationAssignments.desiredGeneration, result.generation)
           )
         )
-        .for('update')
+        .for('update', { of: workstationAssignments })
         .limit(1);
       if (!current) continue;
       await transaction
@@ -118,6 +125,38 @@ export const POST: RequestHandler = async ({ request }) => {
             eq(workstationAssignments.desiredGeneration, result.generation)
           )
         );
+      if (
+        result.status === 'applied' &&
+        current.assignmentStatus === 'active' &&
+        current.userStatus === 'active' &&
+        current.passwordHash &&
+        isLinuxPasswordHash(current.passwordHash)
+      ) {
+        const completed = await transaction
+          .update(accountOperations)
+          .set({
+            status: 'completed',
+            detail: 'Account imported and password synchronized.',
+            updatedAt: reconciledAt
+          })
+          .where(
+            and(
+              eq(accountOperations.assignmentId, result.assignmentId),
+              eq(accountOperations.kind, 'adopt'),
+              eq(accountOperations.status, 'adopted'),
+              lte(accountOperations.generation, result.generation)
+            )
+          )
+          .returning({ id: accountOperations.id });
+        for (const op of completed)
+          await recordAudit((q) => transaction.execute(q), {
+            actorUserId: null,
+            action: 'account.import_completed',
+            targetType: 'account_operation',
+            targetId: op.id,
+            metadata: { workstationId: workstation.id }
+          });
+      }
       accepted += 1;
       if (
         result.errorCode !== null &&

@@ -1,3 +1,4 @@
+import type { AccountSnapshot } from '$lib/account-management';
 import { relations, sql } from 'drizzle-orm';
 import {
   boolean,
@@ -196,6 +197,7 @@ export const workstations = pgTable(
     bootId: varchar('boot_id', { length: 128 }),
     uptimeSeconds: bigint('uptime_seconds', { mode: 'number' }),
     inventory: jsonb('inventory').$type<WorkstationInventory>(),
+    accountSnapshot: jsonb('account_snapshot').$type<AccountSnapshot>(),
     userUsageStartedAt: timestamp('user_usage_started_at', { withTimezone: true }),
     userUsageSnapshot: jsonb('user_usage_snapshot').$type<UserUsageSnapshot>(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -247,6 +249,7 @@ export const workstationAssignments = pgTable(
     status: assignmentStatus('status').notNull().default('active'),
     desiredGeneration: integer('desired_generation').notNull().default(1),
     appliedGeneration: integer('applied_generation').notNull().default(0),
+    accountState: text('account_state').notNull().default('managed'),
     provisioningStatus: provisioningStatus('provisioning_status').notNull().default('pending'),
     provisioningMessage: text('provisioning_message'),
     provisioningErrorCode: varchar('provisioning_error_code', { length: 64 }),
@@ -260,7 +263,11 @@ export const workstationAssignments = pgTable(
       .on(table.userId, table.workstationId)
       .where(sql`${table.status} = 'active'`),
     index('workstation_assignments_workstation_index').on(table.workstationId),
-    index('workstation_assignments_status_index').on(table.status)
+    index('workstation_assignments_status_index').on(table.status),
+    check(
+      'assignment_account_state',
+      sql`${table.accountState} in ('managed','adopting','removing','removed')`
+    )
   ]
 );
 
@@ -815,3 +822,54 @@ export type NodeUpdateStatus = NodeUpdate['status'];
 export type GpuDiagnosticRun = typeof gpuDiagnosticRuns.$inferSelect;
 export type GpuDiagnosticStatus = GpuDiagnosticRun['status'];
 export type GpuDiagnosticResult = typeof gpuDiagnosticResults.$inferSelect;
+
+export const posixIdentityReservations = pgTable(
+  'posix_identity_reservations',
+  {
+    posixId: integer('posix_id').primaryKey(),
+    username: text('username').notNull(),
+    conflicted: boolean('conflicted').notNull().default(false)
+  },
+  (t) => [
+    check('posix_identity_reservations_posix_id_check', sql`${t.posixId} between 20000 and 59999`)
+  ]
+);
+export const accountOperations = pgTable(
+  'account_operations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    workstationId: uuid('workstation_id')
+      .notNull()
+      .references(() => workstations.id),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id),
+    assignmentId: uuid('assignment_id')
+      .notNull()
+      .references(() => workstationAssignments.id),
+    actorId: uuid('actor_id')
+      .notNull()
+      .references(() => users.id),
+    kind: text('kind').notNull(),
+    account: jsonb('account').$type<import('$lib/account-management').LocalAccount>().notNull(),
+    generation: integer('generation').notNull(),
+    deleteHome: boolean('delete_home').notNull().default(false),
+    status: text('status').notNull().default('pending'),
+    detail: text('detail').notNull().default(''),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+  },
+  (t) => [
+    index('account_operations_workstation_status_idx').on(t.workstationId, t.status),
+    uniqueIndex('account_operations_active_assignment')
+      .on(t.assignmentId)
+      .where(sql`${t.status} in ('pending','dispatched','adopted')`),
+    check('account_operations_kind_check', sql`${t.kind} in ('adopt','remove')`),
+    check('account_operations_generation_check', sql`${t.generation} > 0`),
+    check(
+      'account_operations_status_check',
+      sql`${t.status} in ('pending','dispatched','adopted','completed','blocked','failed','expired')`
+    )
+  ]
+);

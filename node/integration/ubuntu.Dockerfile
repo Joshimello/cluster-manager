@@ -10,7 +10,7 @@ RUN go test -c -o /out/ubuntu-reconcile.test ./integration
 FROM ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates openssh-client openssh-server sshpass \
+    && apt-get install -y --no-install-recommends ca-certificates openssh-client openssh-server sshpass procps util-linux \
     && mkdir -p /run/sshd \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=build /out/ubuntu-reconcile.test /usr/local/bin/ubuntu-reconcile.test

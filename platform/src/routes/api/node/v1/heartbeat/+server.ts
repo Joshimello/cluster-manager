@@ -11,6 +11,7 @@ import {
 } from '$lib/server/db/schema';
 import { hashNodeSecret, readBearerCredential } from '$lib/server/nodes/credentials';
 import { parseHeartbeatReport } from '$lib/server/nodes/heartbeat';
+import { lockAccounts, reserveSnapshotIds } from '$lib/server/nodes/accounts';
 import { recordUserUsage } from '$lib/server/nodes/user-usage';
 
 import type { RequestHandler } from './$types';
@@ -32,12 +33,17 @@ export const POST: RequestHandler = async ({ request }) => {
 
   const report = parseHeartbeatReport(body);
   const receivedAt = new Date();
-  if (!report || report.observedAt.getTime() > receivedAt.getTime() + 5 * 60_000) {
+  if (
+    !report ||
+    report.observedAt.getTime() > receivedAt.getTime() + 5 * 60_000 ||
+    (report.accounts && Date.parse(report.accounts.observedAt) > receivedAt.getTime() + 5000)
+  ) {
     return json({ error: 'Invalid heartbeat report.' }, { status: 400 });
   }
 
   const credentialHash = hashNodeSecret(credential);
   const outcome = await getDatabase().transaction(async (transaction) => {
+    if (report.accounts) await lockAccounts(transaction);
     const [workstation] = await transaction
       .select()
       .from(workstations)
@@ -65,12 +71,16 @@ export const POST: RequestHandler = async ({ request }) => {
               ...(report.ipAddresses !== null ? { ipAddresses: report.ipAddresses } : {}),
               bootId: report.bootId,
               uptimeSeconds: Math.floor(report.uptimeSeconds),
+              ...(report.accounts ? { accountSnapshot: report.accounts } : {}),
               inventory: report.inventory
             }
           : {})
       })
       .where(eq(workstations.id, workstation.id));
 
+    if (inventoryAccepted && report.accounts) {
+      await reserveSnapshotIds(transaction, report.accounts);
+    }
     if (
       inventoryAccepted &&
       (!workstation.inventoryObservedAt || report.observedAt > workstation.inventoryObservedAt)

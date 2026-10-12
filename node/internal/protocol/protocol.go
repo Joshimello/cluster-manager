@@ -1,6 +1,9 @@
 package protocol
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 type Session struct {
 	Username   string  `json:"username"`
@@ -62,17 +65,18 @@ type UserStorage struct {
 }
 
 type Heartbeat struct {
-	ObservedAt             time.Time     `json:"observedAt"`
-	NodeVersion            string        `json:"nodeVersion"`
-	Capabilities           []string      `json:"capabilities,omitempty"`
-	DiagnosticsImageDigest string        `json:"diagnosticsImageDigest,omitempty"`
-	Hostname               string        `json:"hostname"`
-	IPAddresses            []string      `json:"ipAddresses"`
-	ReportIntervalSeconds  float64       `json:"reportIntervalSeconds,omitempty"`
-	UserStorage            []UserStorage `json:"userStorage,omitempty"`
-	BootID                 string        `json:"bootId"`
-	UptimeSeconds          uint64        `json:"uptimeSeconds"`
-	Inventory              Inventory     `json:"inventory"`
+	Accounts               json.RawMessage `json:"accounts,omitempty"`
+	ObservedAt             time.Time       `json:"observedAt"`
+	NodeVersion            string          `json:"nodeVersion"`
+	Capabilities           []string        `json:"capabilities,omitempty"`
+	DiagnosticsImageDigest string          `json:"diagnosticsImageDigest,omitempty"`
+	Hostname               string          `json:"hostname"`
+	IPAddresses            []string        `json:"ipAddresses"`
+	ReportIntervalSeconds  float64         `json:"reportIntervalSeconds,omitempty"`
+	UserStorage            []UserStorage   `json:"userStorage,omitempty"`
+	BootID                 string          `json:"bootId"`
+	UptimeSeconds          uint64          `json:"uptimeSeconds"`
+	Inventory              Inventory       `json:"inventory"`
 }
 
 type DesiredUser struct {

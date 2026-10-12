@@ -26,7 +26,7 @@ test:
 
 test-ubuntu-reconcile:
 	docker build -f node/integration/ubuntu.Dockerfile -t cluster-manager-ubuntu-reconcile-test node
-	docker run --rm cluster-manager-ubuntu-reconcile-test
+	docker run --rm --cap-add SYS_ADMIN --security-opt apparmor=unconfined cluster-manager-ubuntu-reconcile-test
 
 test-ubuntu-deploy:
 	docker build -f node/integration/ubuntu-deploy.Dockerfile -t cluster-manager-ubuntu-deploy-test node

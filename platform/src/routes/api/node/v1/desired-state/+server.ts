@@ -1,4 +1,4 @@
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import { json } from '@sveltejs/kit';
 
 import { isLinuxPasswordHash } from '$lib/server/auth/linux-password';
@@ -28,7 +28,12 @@ export const GET: RequestHandler = async ({ request }) => {
     })
     .from(workstationAssignments)
     .innerJoin(users, eq(workstationAssignments.userId, users.id))
-    .where(eq(workstationAssignments.workstationId, workstation.id))
+    .where(
+      and(
+        eq(workstationAssignments.workstationId, workstation.id),
+        inArray(workstationAssignments.accountState, ['managed', 'removing'])
+      )
+    )
     .orderBy(desc(workstationAssignments.assignedAt));
 
   const selected = new Map<string, (typeof assignments)[number]>();

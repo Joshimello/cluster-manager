@@ -8,17 +8,22 @@ import (
 	"sync/atomic"
 	"time"
 
+	"crypto/sha256"
 	"github.com/Joshimello/cluster-manager/node/internal/protocol"
+	"github.com/Joshimello/cluster-manager/node/internal/reconcile"
 )
 
 type Simulated struct {
-	Name       string
-	Scenario   string
-	StartedAt  time.Time
-	samples    atomic.Uint64
-	mu         sync.Mutex
-	terminated map[string]struct{}
-	managed    []simulatedIdentity
+	localAccounts      map[string]reconcile.LocalAccount
+	accountResults     map[string]reconcile.AccountResult
+	accountIncarnation uint64
+	Name               string
+	Scenario           string
+	StartedAt          time.Time
+	samples            atomic.Uint64
+	mu                 sync.Mutex
+	terminated         map[string]struct{}
+	managed            []simulatedIdentity
 }
 
 func NewSimulated(name, scenario string) *Simulated {
@@ -32,11 +37,19 @@ type simulatedIdentity struct {
 }
 
 func (s *Simulated) SetManagedUsers(users []protocol.DesiredUser) {
+	s.SetDesiredUsers("", users)
+}
+func (s *Simulated) SetDesiredUsers(workstationID string, users []protocol.DesiredUser) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.initAccounts()
 	s.managed = nil
 	for _, entry := range users {
 		s.managed = append(s.managed, simulatedIdentity{entry.Username, uint32(entry.UID), entry.Enabled})
+		if _, exists := s.localAccounts[entry.Username]; !exists && entry.Enabled {
+			s.accountIncarnation++
+			s.localAccounts[entry.Username] = reconcile.LocalAccount{Username: entry.Username, UID: entry.UID, GID: entry.GID, Home: "/home/" + entry.Username, PrimaryGroup: entry.Username, Fingerprint: fmt.Sprintf("%x", sha256.Sum256([]byte(fmt.Sprintf("%s:%s:%d", s.Name, entry.Username, s.accountIncarnation)))), Eligible: true, Exists: true, OwnerWorkstationID: workstationID}
+		}
 	}
 	sort.Slice(s.managed, func(i, j int) bool { return s.managed[i].username < s.managed[j].username })
 }
@@ -204,4 +217,55 @@ func (s *Simulated) Execute(_ context.Context, instruction protocol.TerminationI
 
 func simulatedProcessKey(pid int, uid uint32, startTicks uint64) string {
 	return fmt.Sprintf("%d:%d:%d", pid, uid, startTicks)
+}
+
+func (s *Simulated) DiscoverAccounts() reconcile.AccountSnapshot {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.initAccounts()
+	accounts := []reconcile.LocalAccount{}
+	for _, a := range s.localAccounts {
+		accounts = append(accounts, a)
+	}
+	return reconcile.AccountSnapshot{ObservedAt: time.Now().UTC(), Complete: true, Accounts: accounts}
+}
+func (s *Simulated) ExecuteAccount(_ context.Context, i reconcile.AccountInstruction) reconcile.AccountResult {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.accountResults == nil {
+		s.accountResults = map[string]reconcile.AccountResult{}
+	}
+	if previous, ok := s.accountResults[i.ID]; ok {
+		return previous
+	}
+	result := reconcile.AccountResult{ID: i.ID, Status: "blocked", Detail: "Simulated identity changed"}
+	if a, ok := s.localAccounts[i.Account.Username]; ok && a.Fingerprint == i.Account.Fingerprint && i.WorkstationName == s.Name && time.Now().Before(i.ExpiresAt) {
+		if i.Kind == "adopt" {
+			a.OwnerWorkstationID = i.WorkstationID
+			s.localAccounts[a.Username] = a
+			result.Status = "completed"
+			result.Detail = "Simulated ownership transferred"
+		} else if i.Kind == "remove" && a.OwnerWorkstationID == i.WorkstationID {
+			if s.Scenario == "account-busy" {
+				result.Detail = "Account has running processes; explicit retry required"
+				s.accountResults[i.ID] = result
+				return result
+			}
+			delete(s.localAccounts, a.Username)
+			result.Status = "completed"
+			result.Detail = "Simulated account removed"
+		}
+	}
+	s.accountResults[i.ID] = result
+	return result
+}
+
+func (s *Simulated) initAccounts() {
+	if s.localAccounts == nil {
+		s.localAccounts = map[string]reconcile.LocalAccount{}
+		for i, name := range []string{"migrant", "migration-test"} {
+			uid := 20500 + i
+			s.localAccounts[name] = reconcile.LocalAccount{Username: name, UID: uid, GID: uid, Home: "/home/" + name, PrimaryGroup: name, Fingerprint: fmt.Sprintf("%x", sha256.Sum256([]byte(s.Name+name))), Eligible: true, Exists: true}
+		}
+	}
 }

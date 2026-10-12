@@ -1,5 +1,6 @@
 import { and, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
 
+import { queueAccountRemoval, expireAccountOperations } from '$lib/server/nodes/accounts';
 import { recordAudit } from '$lib/server/audit';
 import { getDatabase } from '$lib/server/db';
 import {
@@ -21,7 +22,12 @@ export async function lockUserAdministration(transaction: Transaction) {
   await transaction.execute(sql`select pg_advisory_xact_lock(48712, 1)`);
 }
 
-type DeletionInput = { actorId: string; targetId: string; confirmation: string };
+type DeletionInput = {
+  actorId: string;
+  targetId: string;
+  confirmation: string;
+  deleteHome?: boolean;
+};
 type DeletionResult = { name: string } | { error: string; status: number };
 
 async function cancelReservations(
@@ -113,6 +119,24 @@ export async function deleteUser(
     if (input.confirmation !== target.username)
       return { error: 'Confirm the user you want to delete.', status: 400 };
 
+    await expireAccountOperations(transaction);
+    const assignedNodes = await transaction
+      .selectDistinct({ workstationId: workstationAssignments.workstationId })
+      .from(workstationAssignments)
+      .where(
+        and(
+          eq(workstationAssignments.userId, target.id),
+          sql`${workstationAssignments.accountState} <> 'removed'`
+        )
+      );
+    for (const node of assignedNodes)
+      await queueAccountRemoval(transaction, {
+        actorId: input.actorId,
+        userId: target.id,
+        workstationId: node.workstationId,
+        deleteHome: input.deleteHome ?? false,
+        cancelFutureReservations: false
+      });
     const now = new Date();
     const reason = 'User deleted.';
     await transaction

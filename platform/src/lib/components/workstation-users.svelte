@@ -1,4 +1,5 @@
 <script lang="ts">
+  import AccountConfirmation from './account-confirmation.svelte';
   import { Badge } from '$lib/components/ui/badge/index.js';
   import { Input } from '$lib/components/ui/input/index.js';
   import * as Table from '$lib/components/ui/table/index.js';
@@ -9,8 +10,17 @@
     users,
     startedAt,
     timeZone,
+    workstationName = '',
+    accountManagementSupported = false,
     simulated = false
-  }: { users: UserRow[]; startedAt: Date | null; timeZone: string; simulated?: boolean } = $props();
+  }: {
+    users: UserRow[];
+    startedAt: Date | null;
+    timeZone: string;
+    workstationName?: string;
+    accountManagementSupported?: boolean;
+    simulated?: boolean;
+  } = $props();
   let query = $state('');
   let visible = $derived(
     users.filter((user) =>
@@ -110,6 +120,16 @@
                         : 'Unassigned'}</Badge
                   >
                 </div>
+                {#if user.assignmentId && user.accountState !== 'removed'}<AccountConfirmation
+                    action="?/removeAccount"
+                    username={user.username}
+                    label="Remove workstation account"
+                    description="Revoke access and remove only this workstation’s Linux account. The platform user and other workstation assignments remain. Offline or busy cleanup requires explicit retry."
+                    fields={{ userId: user.id }}
+                    targets={[`${workstationName} · /home/${user.username}`]}
+                    allowHomeDeletion
+                    disabled={!accountManagementSupported}
+                  />{/if}
               </div></Table.Cell
             >
             <Table.Cell class="align-top whitespace-nowrap"

@@ -11,6 +11,7 @@
   import FeedbackAlert from '$lib/components/feedback-alert.svelte';
   import GpuMonitor from '$lib/components/gpu-monitor.svelte';
   import HostMonitor from '$lib/components/host-monitor.svelte';
+  import WorkstationAccounts from '$lib/components/workstation-accounts.svelte';
   import WorkstationUsers from '$lib/components/workstation-users.svelte';
   import MonitoringHistoryProvider from '$lib/components/monitoring-history-provider.svelte';
   import MonitoringRangeSelector from '$lib/components/monitoring-range-selector.svelte';
@@ -39,6 +40,7 @@
       action === 'setSshAddress'
     )
       return 'settings';
+    if (['importAccount', 'removeAccount', 'retryAccount'].includes(action ?? '')) return 'users';
     if (action === 'queueUpdate' || action === 'cancelUpdate') return 'updates';
     if (action === 'queueDiagnostic' || action === 'cancelDiagnostic') return 'diagnostics';
     return null;
@@ -107,6 +109,14 @@
       />
     {/if}
 
+    {#if form?.temporaryPassword}<CredentialDisplay
+        title="Copy this temporary password now"
+        description="Shown only in this response. The user must change it at first platform login."
+        entries={[
+          { label: 'Username', value: form.credentialUsername },
+          { label: 'Temporary password', value: form.temporaryPassword }
+        ]}
+      />{/if}
     <div class="grid min-w-0 gap-6 lg:grid-cols-[12rem_minmax(0,1fr)]">
       <nav
         class="grid grid-cols-2 gap-1 sm:flex sm:flex-wrap lg:sticky lg:top-4 lg:self-start lg:flex-col"
@@ -127,8 +137,11 @@
 
       <div class="grid min-w-0 content-start gap-6">
         {#if activeTab === 'users'}
+          <WorkstationAccounts management={data.accountManagement} />
           <WorkstationUsers
             users={data.managedUsers}
+            workstationName={ws.name}
+            accountManagementSupported={data.accountManagement.supported}
             startedAt={data.userUsageStartedAt}
             timeZone={data.user.timeZone ?? 'UTC'}
             simulated={ws.inventory?.operatingSystem.startsWith('Simulated') ?? false}

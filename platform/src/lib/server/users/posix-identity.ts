@@ -28,14 +28,24 @@ export async function allocatePosixIdentity(
   execute: PosixIdentityExecutor
 ): Promise<PosixIdentity> {
   try {
-    const rows = await execute(sql<PosixIdentityRow>`
+    await execute(sql`select pg_advisory_xact_lock(48712, 1)`);
+    for (;;) {
+      const rows = await execute(sql<PosixIdentityRow>`
       select nextval('user_posix_identity_sequence')::integer as "posixId"
     `);
-    const value = rows[0]?.posixId;
-    if (!Number.isInteger(value) || value < posixIdentityMinimum || value > posixIdentityMaximum) {
-      throw new Error('The POSIX identity allocator returned an invalid value.');
+      const value = rows[0]?.posixId;
+      if (
+        !Number.isInteger(value) ||
+        value < posixIdentityMinimum ||
+        value > posixIdentityMaximum
+      ) {
+        throw new Error('The POSIX identity allocator returned an invalid value.');
+      }
+      const reserved = await execute(
+        sql<PosixIdentityRow>`select posix_id as "posixId" from posix_identity_reservations where posix_id = ${value} union all select posix_uid as "posixId" from users where posix_uid = ${value}`
+      );
+      if (reserved.length === 0) return { uid: value, gid: value };
     }
-    return { uid: value, gid: value };
   } catch (error) {
     if (databaseErrorCode(error) === '2200H') {
       throw new PosixIdentityPoolExhaustedError();

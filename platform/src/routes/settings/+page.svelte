@@ -43,6 +43,21 @@
         <span class="text-muted-foreground text-sm">POSIX UID:GID</span>
         <strong class="font-mono">{data.user.posixUid}:{data.user.posixGid}</strong>
       </div>
+      <form method="POST" action="?/displayName" class="grid gap-2 sm:col-span-2">
+        <Label for="display-name">Display name</Label>
+        <Input
+          id="display-name"
+          name="displayName"
+          required
+          maxlength={120}
+          value={form?.action === 'displayName' ? form.displayName : data.user.displayName}
+        />
+        {#if form?.action === 'displayName'}<FeedbackAlert
+            message={form.message}
+            success={form.success}
+          />{/if}
+        <Button type="submit" class="w-fit">Save display name</Button>
+      </form>
     </Card.Content>
   </Card.Root>
 
@@ -54,8 +69,15 @@
       </Card.Description>
     </Card.Header>
     <Card.Content class="gap-4">
-      {#if form?.message}<FeedbackAlert message={form.message} success={form.success} />{/if}
-      <form method="POST" class="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-end">
+      {#if form?.action === 'timeZone' && form?.message}<FeedbackAlert
+          message={form.message}
+          success={form.success}
+        />{/if}
+      <form
+        method="POST"
+        action="?/timeZone"
+        class="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-end"
+      >
         <div class="grid gap-2">
           <Label for="time-zone">IANA time zone</Label>
           <Input

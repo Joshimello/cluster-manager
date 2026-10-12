@@ -49,9 +49,15 @@ try {
       throw new Error('Bootstrap refused: at least one platform user already exists');
     }
 
-    const [posixIdentity] = await transaction`
-      select nextval('user_posix_identity_sequence')::integer as id
-    `;
+    await transaction`select pg_advisory_xact_lock(48712, 1)`;
+    let posixIdentity;
+    for (;;) {
+      [posixIdentity] =
+        await transaction`select nextval('user_posix_identity_sequence')::integer as id`;
+      const [reserved] =
+        await transaction`select posix_id from posix_identity_reservations where posix_id=${posixIdentity.id}`;
+      if (!reserved) break;
+    }
 
     const [createdUser] = await transaction`
       insert into users (

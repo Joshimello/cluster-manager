@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -38,6 +39,8 @@ func NewLinuxWithStatePath(workstationName, managedStatePath string) *Linux {
 }
 
 func (l *Linux) Apply(ctx context.Context, state protocol.DesiredState) ([]protocol.ReconciliationResult, error) {
+	accountMutation.Lock()
+	defer accountMutation.Unlock()
 	if err := Validate(state, l.workstationName); err != nil {
 		return nil, err
 	}
@@ -51,8 +54,20 @@ func (l *Linux) Apply(ctx context.Context, state protocol.DesiredState) ([]proto
 	managedState.WorkstationID = state.Workstation.ID
 	managedState.WorkstationName = state.Workstation.Name
 
+	journal := accountJournal{}
+	if data, err := os.ReadFile(filepath.Join(filepath.Dir(l.managedStatePath), "account-operations.json")); err == nil {
+		if json.Unmarshal(data, &journal) != nil {
+			return nil, errors.New("unreadable account operation journal")
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
 	results := make([]protocol.ReconciliationResult, 0, len(state.Users))
 	for _, desired := range state.Users {
+		if removed := journal.Removed[state.Workstation.ID+":"+desired.AssignmentID]; removed > 0 && desired.Enabled && desired.Generation <= removed {
+			results = append(results, result(desired, "error", "Account removal forbids stale automatic creation", "managed_identity_mismatch"))
+			continue
+		}
 		message, errorCode, err := l.applyUser(ctx, &managedState, desired)
 		if err != nil {
 			results = append(results, result(desired, "error", err.Error(), errorCode))
@@ -232,13 +247,23 @@ func (l *Linux) applyUser(ctx context.Context, state *ManagedState, desired prot
 	if err != nil {
 		return "", "local_apply_failed", fmt.Errorf("parse account GID: %w", err)
 	}
-	if err := os.MkdirAll(account.HomeDir, 0o700); err != nil {
-		return "", "local_apply_failed", fmt.Errorf("create home directory: %w", err)
+	if !managed.Adopted {
+		if err := os.MkdirAll(account.HomeDir, 0o700); err != nil {
+			return "", "local_apply_failed", fmt.Errorf("create home directory: %w", err)
+		}
+		if err := os.Chown(account.HomeDir, uid, gid); err != nil {
+			return "", "local_apply_failed", fmt.Errorf("set home ownership: %w", err)
+		}
 	}
-	if err := os.Chown(account.HomeDir, uid, gid); err != nil {
-		return "", "local_apply_failed", fmt.Errorf("set home ownership: %w", err)
+	var uidRange, gidRange *IDRange
+	if managed.Adopted {
+		uidRange, err = userSubordinateRange("/etc/subuid", desired.Username)
+		if err == nil {
+			gidRange, err = userSubordinateRange("/etc/subgid", desired.Username)
+		}
+	} else {
+		uidRange, gidRange, err = ensureSubordinateIDs(ctx, desired.Username)
 	}
-	uidRange, gidRange, err := ensureSubordinateIDs(ctx, desired.Username)
 	if err != nil {
 		return "", "local_apply_failed", err
 	}

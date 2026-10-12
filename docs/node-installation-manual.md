@@ -2,7 +2,9 @@
 
 These instructions install the privileged Cluster Manager node directly on a supported
 Debian or Ubuntu workstation. The node uses narrowly scoped reconciliation; it does not expose
-an arbitrary command API and never deletes Linux accounts, home directories, or user data.
+an arbitrary command API. Accounts and homes are preserved during ordinary reconciliation
+and uninstall; explicitly confirmed account operations can remove platform-managed
+accounts. See [account management and migration](account-management.md).
 
 ## Before installation
 
@@ -19,7 +21,7 @@ Install the operating-system prerequisites:
 
 ```bash
 sudo apt update
-sudo apt install openssh-server uidmap
+sudo apt install openssh-server uidmap procps
 ```
 
 Rootless Podman is recommended for researchers and may be installed now or later:

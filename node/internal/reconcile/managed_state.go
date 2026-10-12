@@ -27,6 +27,7 @@ type ManagedUser struct {
 	GID             int       `json:"gid"`
 	HomeDirectory   string    `json:"homeDirectory"`
 	PrimaryGroup    string    `json:"primaryGroup"`
+	Adopted         bool      `json:"adopted,omitempty"`
 	GroupCreated    bool      `json:"groupCreated"`
 	CreationPhase   string    `json:"creationPhase"`
 	GroupAdded      bool      `json:"groupAdded"`
@@ -84,9 +85,23 @@ func saveManagedState(path string, state ManagedState) error {
 		_ = os.Remove(temporary)
 		return fmt.Errorf("secure managed account state: %w", err)
 	}
+	f, err := os.OpenFile(temporary, os.O_RDWR, 0600)
+	if err != nil {
+		return err
+	}
+	err = f.Sync()
+	f.Close()
+	if err != nil {
+		return err
+	}
 	if err := os.Rename(temporary, path); err != nil {
 		_ = os.Remove(temporary)
 		return fmt.Errorf("install managed account state: %w", err)
 	}
-	return nil
+	dir, err := os.Open(filepath.Dir(path))
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+	return dir.Sync()
 }

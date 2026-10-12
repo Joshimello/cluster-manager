@@ -14,7 +14,8 @@
     sortFn_text,
     tableFeatures
   } from '@tanstack/svelte-table';
-  import DeleteConfirmation from '$lib/components/delete-confirmation.svelte';
+  import AccountConfirmation from '$lib/components/account-confirmation.svelte';
+  import AccountOperations from '$lib/components/account-operations.svelte';
   import CredentialDisplay from '$lib/components/credential-display.svelte';
   import FeedbackAlert from '$lib/components/feedback-alert.svelte';
   import PageHeader from '$lib/components/page-header.svelte';
@@ -389,13 +390,17 @@
                           {user.status === 'active' ? 'Disable' : 'Enable'}
                         </Button>
                       </form>
-                      <DeleteConfirmation
-                        kind="user"
-                        name={user.username}
-                        targetId={user.id}
-                        field="userId"
+                      <AccountConfirmation
+                        action="?/delete"
+                        username={user.username}
+                        label="Delete user"
+                        description="Disable platform access immediately, cancel reservations, and remove managed Linux accounts on the listed workstations. Busy or offline cleanup requires explicit retry. Home files are preserved unless selected below."
+                        fields={{ userId: user.id }}
+                        targets={data.cleanupTargets
+                          .filter((t) => t.userId === user.id)
+                          .map((t) => `${t.workstationName} · /home/${user.username}`)}
+                        allowHomeDeletion
                         disabled={user.id === data.user.id}
-                        description="This removes the user from management, closes their sessions, revokes workstation access on the next node synchronization, and cancels current and upcoming reservations. Existing processes and home files remain. History and the username are retained."
                       />
                       <form method="POST" action="?/resetPassword">
                         <input type="hidden" name="userId" value={user.id} />
@@ -580,4 +585,5 @@
       {/if}
     {/if}
   </Card.Root>
+  <AccountOperations operations={data.cleanup} />
 </main>

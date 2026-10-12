@@ -115,6 +115,7 @@ and [node installation](docs/node-installation.md) for rollback and troubleshoot
 ## Documentation
 
 - [Development guide](docs/development.md)
+- [Account management and migration](docs/account-management.md)
 - [Node installation and lifecycle](docs/node-installation.md)
 - [Manual node installation](docs/node-installation-manual.md)
 - [Production operations](docs/operations.md)

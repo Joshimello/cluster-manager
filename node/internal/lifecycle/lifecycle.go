@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -897,34 +898,49 @@ func (m *Manager) Uninstall(ctx context.Context, dryRun, purge bool) error {
 		if err := m.printPurgeScan(ctx, managed); err != nil {
 			return fmt.Errorf("activity changed before deletion: %w", err)
 		}
-		for username := range managed.Users {
-			if err := command(ctx, "userdel", "--remove", username); err != nil {
-				return fmt.Errorf("delete %s failed; stop and inspect the host before retrying: %w", username, err)
+		runner := reconcile.NewLinuxWithStatePath(managed.WorkstationName, m.Paths.State)
+		for username, record := range managed.Users {
+			if record.WorkstationID != managed.WorkstationID || record.WorkstationName != managed.WorkstationName {
+				continue
 			}
-			record := managed.Users[username]
-			if record.GroupCreated {
-				group, lookupErr := user.LookupGroup(record.PrimaryGroup)
-				if lookupErr == nil {
-					gid, gidErr := strconv.Atoi(group.Gid)
-					if gidErr != nil || gid != record.GID || group.Name != record.PrimaryGroup {
-						return fmt.Errorf("private group %s differs from provenance after deleting %s; preserve it and inspect manually", record.PrimaryGroup, username)
-					}
-					if err := command(ctx, "groupdel", record.PrimaryGroup); err != nil {
-						return fmt.Errorf("delete private group %s failed after deleting %s: %w", record.PrimaryGroup, username, err)
-					}
-				} else {
-					var unknown user.UnknownGroupError
-					if !errors.As(lookupErr, &unknown) {
-						return fmt.Errorf("inspect private group %s: %w", record.PrimaryGroup, lookupErr)
-					}
+			snapshot := runner.DiscoverAccounts()
+			if !snapshot.Complete {
+				return errors.New("purge requires a fresh complete account scan")
+			}
+			var account *reconcile.LocalAccount
+			for index := range snapshot.Accounts {
+				if snapshot.Accounts[index].Username == username {
+					account = &snapshot.Accounts[index]
+					break
 				}
 			}
+			if account == nil {
+				return fmt.Errorf("cannot verify %s before purge", username)
+			}
+			idBytes := make([]byte, 16)
+			if _, err := rand.Read(idBytes); err != nil {
+				return err
+			}
+			idBytes[6] = (idBytes[6] & 0x0f) | 0x40
+			idBytes[8] = (idBytes[8] & 0x3f) | 0x80
+			id := fmt.Sprintf("%x-%x-%x-%x-%x", idBytes[:4], idBytes[4:6], idBytes[6:8], idBytes[8:10], idBytes[10:])
+			result := runner.ExecuteAccount(ctx, reconcile.AccountInstruction{APIVersion: "v1", ID: id, WorkstationID: managed.WorkstationID, WorkstationName: managed.WorkstationName, AssignmentID: record.AssignmentID, Generation: 2147483647, Kind: "remove", Account: *account, DeleteHome: true, ExpiresAt: time.Now().Add(time.Minute)})
+			if result.Status != "completed" {
+				return fmt.Errorf("delete %s refused: %s", username, result.Detail)
+			}
+			runner.AcknowledgeAccountResult(id)
 		}
 		if err := m.removeUnusedPolicy(ctx); err != nil {
 			return err
 		}
-		if err := os.Remove(m.Paths.State); err != nil && !errors.Is(err, os.ErrNotExist) {
+		remaining, err := reconcile.LoadManagedState(m.Paths.State)
+		if err != nil {
 			return err
+		}
+		if len(remaining.Users) == 0 {
+			if err := os.Remove(m.Paths.State); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return err
+			}
 		}
 	}
 	for _, service := range []string{"cluster-node.service", "cluster-manager-node.service"} {
@@ -946,6 +962,10 @@ func (m *Manager) Uninstall(ctx context.Context, dryRun, purge bool) error {
 func (m *Manager) printPurgeScan(ctx context.Context, state reconcile.ManagedState) error {
 	fmt.Fprintln(m.Out, "Eligible provenance-confirmed users:")
 	for username, record := range state.Users {
+		if record.WorkstationID != state.WorkstationID || record.WorkstationName != state.WorkstationName {
+			fmt.Fprintf(m.Out, "Preserved foreign provenance: %s (explicit import required)\n", username)
+			continue
+		}
 		account, err := user.Lookup(username)
 		if err != nil {
 			return fmt.Errorf("managed user %s is missing or unreadable", username)
@@ -1037,7 +1057,7 @@ func (m *Manager) installSelf() error {
 
 func (m *Manager) ensurePackages(ctx context.Context) error {
 	missing := []string{}
-	for _, name := range []string{"openssh-server", "uidmap"} {
+	for _, name := range []string{"openssh-server", "uidmap", "procps"} {
 		output, err := exec.CommandContext(ctx, "dpkg-query", "-W", "-f=${Status}", name).CombinedOutput()
 		if err != nil || strings.TrimSpace(string(output)) != "install ok installed" {
 			missing = append(missing, name)
