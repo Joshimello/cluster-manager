@@ -9,6 +9,7 @@
   import * as Card from '$lib/components/ui/card/index.js';
   import * as Table from '$lib/components/ui/table/index.js';
   let { data, form } = $props();
+  let checking = $state(false);
   let reconnecting = $state(false);
   let active = $derived(
     data.history.find((update) =>
@@ -101,8 +102,24 @@
         </p>{/if}
       {#if data.check.error}<p role="status" class="text-sm">{data.check.error}</p>{/if}
       <div class="flex flex-wrap gap-2">
-        <form method="POST" action="?/check" use:enhance>
-          <Button variant="outline">Check for updates</Button>
+        <form
+          method="POST"
+          action="?/check"
+          aria-busy={checking}
+          use:enhance={() => {
+            checking = true;
+            return async ({ update }) => {
+              try {
+                await update();
+              } finally {
+                checking = false;
+              }
+            };
+          }}
+        >
+          <Button type="submit" variant="outline" disabled={checking}
+            >{checking ? 'Checking…' : 'Check for updates'}</Button
+          >
         </form>
         {#if data.available}<AccountConfirmation
             action="?/install"
