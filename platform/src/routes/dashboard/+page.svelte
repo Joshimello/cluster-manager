@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { invalidateAll } from '$app/navigation';
-  import { allocateReservationSlot, dynamicAllowance, quotaWeek } from '$lib/reservation-limits';
+  import { allocateReservationSlots, dynamicAllowance, quotaWeek } from '$lib/reservation-limits';
   import ReservationTimeline from '$lib/components/reservation-timeline.svelte';
   import FeedbackAlert from '$lib/components/feedback-alert.svelte';
   import StatusBadge from '$lib/components/status-badge.svelte';
@@ -17,7 +17,7 @@
   let reserveDialog = $state<HTMLDialogElement>();
   let gpuChoice = $state<string | null>(null);
   let dayChoice = $state<string | null>(null);
-  let slotChoice = $state<string | null>(null);
+  let slotChoices = $state<string[] | null>(null);
   let bypass = $state(false);
   let nowMs = $state(Date.now());
   let selectedGpuId = $derived(
@@ -28,33 +28,46 @@
   );
   let selectedDayKey = $derived(
     dayChoice ??
+      data.calendarDays.find(
+        (day) => day.key === (form?.action === 'create' ? form.values?.dayKey : null)
+      )?.key ??
       data.calendarDays.find((day) =>
-        day.slots.some((slot) => slot.startAt === form?.values?.startAt)
+        day.slots.some((slot) => selectedStarts.includes(slot.startAt))
       )?.key ??
       data.todayKey
   );
   let currentDay = $derived(data.calendarDays.find((day) => day.key === selectedDayKey));
-  let selectedSlot = $derived(
-    currentDay?.slots.find(
-      (slot) =>
-        slot.startAt === (slotChoice ?? (form?.action === 'create' ? form.values?.startAt : null))
+  let selectedStarts = $derived(
+    slotChoices ?? (form?.action === 'create' ? form.values?.startAts : undefined) ?? []
+  );
+  let selectedSlots = $derived(
+    data.calendarDays.flatMap((day) =>
+      day.slots
+        .filter((slot) => selectedStarts.includes(slot.startAt))
+        .map((slot) => ({ ...slot, date: day.key, dayLabel: day.label }))
     )
   );
   let allocation = $derived(
-    selectedSlot
-      ? allocateReservationSlot(
-          selectedDayKey,
-          selectedSlot.overnight,
-          data.todayKey,
-          data.usage,
-          data.policy
-        )
+    selectedSlots.length
+      ? allocateReservationSlots(selectedSlots, data.todayKey, data.usage, data.policy)
       : null
   );
   let selectedValid = $derived(
-    !!selectedSlot &&
-      slotAvailable(selectedSlot) &&
+    selectedSlots.length > 0 &&
+      selectedSlots.length === selectedStarts.length &&
+      selectedSlots.every(slotAvailable) &&
       ((data.user.role === 'admin' && bypass) || (!!allocation && !('error' in allocation)))
+  );
+  let unavailableSelection = $derived(selectedSlots.some((slot) => !slotAvailable(slot)));
+  let dynamicCount = $derived(
+    allocation && 'kinds' in allocation
+      ? allocation.kinds.filter((kind) => kind === 'dynamic').length
+      : 0
+  );
+  let standardCount = $derived(
+    allocation && 'kinds' in allocation
+      ? allocation.kinds.filter((kind) => kind === 'standard').length
+      : 0
   );
   let week = $derived(quotaWeek(selectedDayKey));
   let dateTime = $derived(
@@ -74,9 +87,20 @@
   function slotAvailable(slot: { startAt: string; endAt: string }) {
     return Date.parse(slot.startAt) > nowMs && !reservationAt(slot);
   }
+  function toggleSlot(slot: { startAt: string; endAt: string }) {
+    if (selectedStarts.includes(slot.startAt))
+      slotChoices = selectedStarts.filter((start) => start !== slot.startAt);
+    else if (slotAvailable(slot)) slotChoices = [...selectedStarts, slot.startAt];
+  }
+  function openReservationDialog() {
+    nowMs = Date.now();
+    reserveDialog?.showModal();
+  }
   $effect(() => {
-    if (form?.action === 'create' && !form.success && reserveDialog && !reserveDialog.open)
+    if (form?.action === 'create' && !form.success && reserveDialog && !reserveDialog.open) {
+      bypass = form.values?.adminOverride ?? false;
       reserveDialog.showModal();
+    }
   });
   onMount(() => {
     const timer = window.setInterval(() => {
@@ -91,9 +115,7 @@
 <main class="mx-auto grid w-full max-w-7xl gap-6 px-4 py-8 sm:px-6 lg:px-8">
   <div class="flex flex-wrap items-start justify-between gap-4">
     <h1 class="text-3xl font-semibold tracking-tight sm:text-4xl">Dashboard</h1>
-    <Button disabled={data.gpus.length === 0} onclick={() => reserveDialog?.showModal()}
-      >Reserve a GPU</Button
-    >
+    <Button disabled={data.gpus.length === 0} onclick={openReservationDialog}>Reserve a GPU</Button>
   </div>
   {#if form?.message}<FeedbackAlert message={form.message} success={form.success} />{/if}
 
@@ -108,7 +130,8 @@
         <div>
           <h2 id="reserve-gpu-title" class="text-xl font-semibold">Reserve a GPU</h2>
           <p class="text-muted-foreground mt-1 text-sm">
-            Choose one slot. Daytime slots are 2 hours; overnight slots are 4 hours. All times are {data.timeZone}.
+            Select one or more slots across the dates below. Daytime slots are 2 hours; overnight
+            slots are 4 hours. All times are {data.timeZone}.
           </p>
         </div>
         <Button variant="outline" onclick={() => reserveDialog?.close()}>Close</Button>
@@ -158,7 +181,7 @@
           value={selectedGpuId}
           onValueChange={(value) => {
             gpuChoice = value;
-            slotChoice = null;
+            slotChoices = [];
           }}
           items={data.gpus.map((gpu) => ({
             value: gpu.id,
@@ -179,7 +202,6 @@
             aria-pressed={selectedDayKey === day.key}
             onclick={() => {
               dayChoice = day.key;
-              slotChoice = null;
             }}>{day.label}</Button
           >{/each}
       </div>
@@ -187,11 +209,11 @@
         {#each currentDay?.slots ?? [] as slot (slot.startAt)}
           {@const booking = reservationAt(slot)}
           <Button
-            variant={selectedSlot?.startAt === slot.startAt ? 'default' : 'outline'}
+            variant={selectedStarts.includes(slot.startAt) ? 'default' : 'outline'}
             class="h-auto min-h-16 flex-col gap-1 py-3"
             disabled={!slotAvailable(slot)}
-            aria-pressed={selectedSlot?.startAt === slot.startAt}
-            onclick={() => (slotChoice = slot.startAt)}
+            aria-pressed={selectedStarts.includes(slot.startAt)}
+            onclick={() => toggleSlot(slot)}
           >
             <span>{slot.label}</span><span class="text-xs opacity-75"
               >{booking
@@ -205,12 +227,43 @@
           </Button>
         {/each}
       </div>
+      {#if selectedSlots.length}
+        <div class="mt-4 grid gap-2" aria-label="Selected reservation slots" aria-live="polite">
+          <div class="flex items-center justify-between gap-2">
+            <strong class="text-sm"
+              >{selectedSlots.length}
+              {selectedSlots.length === 1 ? 'slot selected' : 'slots selected'}</strong
+            >
+            <Button variant="ghost" size="sm" onclick={() => (slotChoices = [])}
+              >Clear selection</Button
+            >
+          </div>
+          <div class="flex flex-wrap gap-2">
+            {#each selectedSlots as slot (slot.startAt)}
+              <Button
+                variant="outline"
+                size="sm"
+                aria-label={`Remove ${slot.dayLabel} ${slot.label}`}
+                onclick={() => toggleSlot(slot)}
+                >{slot.dayLabel} · {slot.label} <span aria-hidden="true">×</span></Button
+              >
+            {/each}
+          </div>
+          <p class="text-muted-foreground text-sm">
+            Each slot creates a separate reservation. All selected slots are reserved together.
+          </p>
+          {#if unavailableSelection}<p class="text-destructive text-sm">
+              Some selected slots are no longer available. Remove them before reserving.
+            </p>{/if}
+        </div>
+      {/if}
       <form method="POST" action="?/create" class="mt-5 grid gap-4">
-        <input type="hidden" name="gpuId" value={selectedGpuId} /><input
-          type="hidden"
-          name="startAt"
-          value={selectedSlot?.startAt ?? ''}
-        /><input type="hidden" name="endAt" value={selectedSlot?.endAt ?? ''} />
+        <input type="hidden" name="gpuId" value={selectedGpuId} />
+        <input type="hidden" name="dayKey" value={selectedDayKey} />
+        {#each selectedSlots as slot (slot.startAt)}
+          <input type="hidden" name="startAt" value={slot.startAt} />
+          <input type="hidden" name="endAt" value={slot.endAt} />
+        {/each}
         {#if data.user.role === 'admin'}
           <Label class="flex items-center gap-2"
             ><input type="checkbox" name="adminOverride" value="true" bind:checked={bypass} />Bypass
@@ -223,6 +276,7 @@
                 required
                 minlength={3}
                 maxlength={500}
+                value={form?.action === 'create' ? (form.values?.overrideReason ?? '') : ''}
               />
             </div>{/if}
         {/if}
@@ -230,13 +284,17 @@
           class="bg-muted/40 flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4"
         >
           <div class="text-sm">
-            {#if data.user.role === 'admin' && bypass}Admin bypass — no quota consumed.{:else if allocation && 'kind' in allocation}<strong
-                >{allocation.kind === 'dynamic' ? 'Dynamic' : 'Standard'} slot</strong
-              > will be used.{:else if allocation && 'error' in allocation}<span
+            {#if data.user.role === 'admin' && bypass}Admin bypass — no quota consumed.{:else if allocation && 'kinds' in allocation}<strong
+                >{dynamicCount} dynamic · {standardCount} standard</strong
+              > slots will be used.{:else if allocation && 'error' in allocation}<span
                 class="text-destructive">{allocation.error}</span
-              >{:else}Choose a slot to see which allowance it uses.{/if}
+              >{:else}Choose slots to see which allowances they use.{/if}
           </div>
-          <Button type="submit" disabled={!selectedValid}>Reserve GPU</Button>
+          <Button type="submit" disabled={!selectedValid}
+            >{selectedSlots.length > 1
+              ? `Reserve ${selectedSlots.length} slots`
+              : 'Reserve GPU'}</Button
+          >
         </div>
       </form>
     </dialog>

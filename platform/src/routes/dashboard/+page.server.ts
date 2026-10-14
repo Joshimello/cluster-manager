@@ -12,7 +12,8 @@ import {
 } from '$lib/server/db/schema';
 import { workstationSshAddress, workstationSshCommand } from '$lib/server/nodes/ssh-address';
 import { slotCalendar } from '$lib/server/reservations/calendar';
-import { cancelReservation, createReservation } from '$lib/server/reservations/service';
+import { cancelReservation, createReservations } from '$lib/server/reservations/service';
+import { maximumReservationSlots } from '$lib/reservation-limits';
 import { localDateKey } from '$lib/reservation-week';
 import { loadReservationPolicy, loadReservationUsage } from '$lib/server/reservations/policy';
 
@@ -166,48 +167,59 @@ export const actions: Actions = {
     const actor = requireReadyUser(locals);
     const formData = await request.formData();
     const gpuId = formString(formData, 'gpuId');
-    const start = formString(formData, 'startAt');
-    const end = formString(formData, 'endAt');
+    const starts = formData
+      .getAll('startAt')
+      .map((value) => (typeof value === 'string' ? value : ''));
+    const ends = formData.getAll('endAt').map((value) => (typeof value === 'string' ? value : ''));
+    const values = {
+      gpuId,
+      startAts: starts.slice(0, maximumReservationSlots),
+      endAts: ends.slice(0, maximumReservationSlots),
+      dayKey: formString(formData, 'dayKey'),
+      adminOverride: formData.get('adminOverride') === 'true',
+      overrideReason: formString(formData, 'overrideReason')
+    };
     const parseSlot = (value: string) =>
       /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value) ? new Date(value) : null;
-    const startAt = parseSlot(start);
-    const endAt = parseSlot(end);
-    if (!startAt || !endAt) {
+    const slots = starts.map((start, index) => ({
+      startAt: parseSlot(start),
+      endAt: parseSlot(ends[index] ?? '')
+    }));
+    if (
+      starts.length === 0 ||
+      starts.length > maximumReservationSlots ||
+      starts.length !== ends.length ||
+      slots.some((slot) => !slot.startAt || !slot.endAt)
+    ) {
       return fail(400, {
         action: 'create',
-        message: 'Select a fixed booking slot from the schedule.',
-        values: {
-          gpuId,
-          startAt: start,
-          endAt: end,
-          adminOverride: formData.get('adminOverride') === 'true',
-          overrideReason: formString(formData, 'overrideReason')
-        }
+        message: 'Select fixed booking slots from the seven-day schedule.',
+        values
       });
     }
-    const result = await createReservation({
+    const result = await createReservations({
       actor,
       userId: actor.id,
       gpuId,
-      startAt,
-      endAt,
+      slots: slots.map((slot) => ({ startAt: slot.startAt!, endAt: slot.endAt! })),
       adminOverride: actor.role === 'admin' && formData.get('adminOverride') === 'true',
       overrideReason: formString(formData, 'overrideReason')
     });
     if (!result.ok) {
       return fail(result.status, {
         action: 'create',
-        message: result.message,
-        values: {
-          gpuId,
-          startAt: start,
-          endAt: end,
-          adminOverride: formData.get('adminOverride') === 'true',
-          overrideReason: formString(formData, 'overrideReason')
-        }
+        message: `No slots were reserved. ${result.message}`,
+        values
       });
     }
-    return { action: 'create', success: true, message: 'GPU reservation created.' };
+    return {
+      action: 'create',
+      success: true,
+      message:
+        result.reservationIds.length === 1
+          ? 'GPU reservation created.'
+          : `${result.reservationIds.length} GPU slots reserved.`
+    };
   },
 
   cancel: async ({ locals, request }) => {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   allocateReservationSlot,
+  allocateReservationSlots,
   defaultReservationPolicy as policy,
   dynamicAllowance,
   quotaWeek,
@@ -22,6 +23,74 @@ const booking = (overrides: Partial<QuotaBooking> = {}): QuotaBooking => ({
   ...overrides
 });
 describe('slot allowances', () => {
+  it('counts standard slots independently on each side of a Monday boundary', () => {
+    expect(
+      allocateReservationSlots(
+        [
+          { date: '2026-10-04', overnight: false },
+          { date: '2026-10-05', overnight: false }
+        ],
+        today,
+        empty(),
+        { ...policy, dynamicSlotsToday: 0, dynamicSlotsTomorrow: 0, standardSlotsPerWeek: 1 }
+      )
+    ).toMatchObject({
+      kinds: ['standard', 'standard'],
+      usage: { standardByWeek: { '2026-09-28': 1, '2026-10-05': 1 } }
+    });
+  });
+  it('plans a batch using dynamic slots first without changing existing usage', () => {
+    const usage = empty();
+    const plan = allocateReservationSlots(
+      Array.from({ length: 4 }, () => ({ date: '2026-10-05', overnight: false })),
+      today,
+      usage,
+      policy
+    );
+    expect(plan).toEqual({
+      kinds: ['dynamic', 'dynamic', 'standard', 'standard'],
+      usage: {
+        dynamicByDate: { '2026-10-05': 2 },
+        standardByWeek: { '2026-10-05': 2 },
+        overnightByWeek: {}
+      }
+    });
+    expect(usage).toEqual(empty());
+  });
+  it('applies per-date and per-week limits across a batch and refuses an over-limit selection', () => {
+    const usage = empty();
+    const plan = allocateReservationSlots(
+      [
+        { date: today, overnight: true },
+        { date: '2026-10-05', overnight: true },
+        { date: '2026-10-06', overnight: true }
+      ],
+      today,
+      usage,
+      policy
+    );
+    expect(plan).toMatchObject({
+      kinds: ['dynamic', 'dynamic', 'dynamic'],
+      usage: { overnightByWeek: { '2026-09-28': 1, '2026-10-05': 2 } }
+    });
+    expect(
+      allocateReservationSlots(
+        Array.from({ length: 3 }, () => ({ date: '2026-10-05', overnight: true })),
+        today,
+        usage,
+        policy
+      )
+    ).toMatchObject({ error: expect.stringMatching(/overnight limit/) });
+    expect(
+      allocateReservationSlots(
+        Array.from({ length: 2 }, () => ({ date: today, overnight: false })),
+        today,
+        usage,
+        { ...policy, dynamicSlotsToday: 1, standardSlotsPerWeek: 0 }
+      )
+    ).toHaveProperty('error');
+    expect(usage).toEqual(empty());
+  });
   it('uses dynamic first, falling back to standard after the date allowance is exhausted', () => {
     const usage = empty();
     expect(allocateReservationSlot(today, false, today, usage, policy)).toEqual({

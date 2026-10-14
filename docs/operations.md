@@ -7,8 +7,15 @@ preferences. It shows today and the next six days, with time running horizontall
 and days vertically. Click a colored reservation bar to view its owner, GPU,
 times, and slot type.
 
-Regular bookings take one fixed slot: 00:00–04:00, 04:00–08:00, then two-hour slots
-from 08:00 through midnight. Administrators can change the following global limits
+Regular bookings use fixed slots: 00:00–04:00, 04:00–08:00, then two-hour slots
+from 08:00 through midnight. In **Reserve a GPU**, select multiple adjacent or separate
+slots across dates for the same GPU. Selections persist when changing dates and clear
+when changing GPUs. The dialog previews the combined dynamic and standard usage.
+Submitting reserves every selected slot or none; a conflict or limit failure preserves
+the selection for correction. Each slot remains a separate reservation and can be
+cancelled individually.
+
+Administrators can change the following global limits
 in **Administration → Reservations → Booking limits**:
 
 - Six standard slots per Monday–Sunday week.

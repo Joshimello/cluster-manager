@@ -12,7 +12,7 @@ import {
   workstations
 } from '$lib/server/db/schema';
 
-import { allocateReservationSlot } from '$lib/reservation-limits';
+import { allocateReservationSlots, maximumReservationSlots } from '$lib/reservation-limits';
 import { localDateKey } from '$lib/reservation-week';
 import { loadReservationPolicy, loadReservationUsage, type ReservationDatabase } from './policy';
 import { reservationSlot } from './calendar';
@@ -20,6 +20,16 @@ import { validateReservationWindow } from './rules';
 
 export type ReservationResult =
   { ok: true; reservationId: string } | { ok: false; status: number; message: string };
+export type ReservationBatchResult =
+  { ok: true; reservationIds: string[] } | { ok: false; status: number; message: string };
+type ReservationInput = {
+  actor: AuthUser;
+  userId: string;
+  gpuId: string;
+  adminOverride?: boolean;
+  overrideReason?: string;
+};
+export type ReservationWindow = { startAt: Date; endAt: Date };
 
 export function isReservationId(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
@@ -36,22 +46,27 @@ function exclusionViolation(error: unknown): boolean {
 }
 
 export async function createReservation(
-  input: {
-    actor: AuthUser;
-    userId: string;
-    gpuId: string;
-    startAt: Date;
-    endAt: Date;
-    adminOverride?: boolean;
-    overrideReason?: string;
-  },
+  input: ReservationInput & ReservationWindow,
   database: ReservationDatabase = getDatabase()
 ): Promise<ReservationResult> {
+  const result = await createReservations(
+    { ...input, slots: [{ startAt: input.startAt, endAt: input.endAt }] },
+    database
+  );
+  return result.ok ? { ok: true, reservationId: result.reservationIds[0] } : result;
+}
+
+export async function createReservations(
+  input: ReservationInput & { slots: ReservationWindow[] },
+  database: ReservationDatabase = getDatabase()
+): Promise<ReservationBatchResult> {
   const isAdmin = input.actor.role === 'admin';
   const targetUserId = isAdmin ? input.userId : input.actor.id;
   if (!isAdmin && input.userId !== input.actor.id) {
     return { ok: false, status: 403, message: 'You can reserve GPUs only for yourself.' };
   }
+  if (!isReservationId(input.gpuId) || !isReservationId(targetUserId))
+    return { ok: false, status: 400, message: 'Choose a valid user and GPU.' };
   const adminOverride = isAdmin && input.adminOverride === true;
   const overrideReason = input.overrideReason?.trim() ?? '';
   if (adminOverride && (overrideReason.length < 3 || overrideReason.length > 500)) {
@@ -64,6 +79,21 @@ export async function createReservation(
   if (!adminOverride && overrideReason) {
     return { ok: false, status: 400, message: 'A reason is valid only for an admin override.' };
   }
+  if (input.slots.length === 0 || input.slots.length > maximumReservationSlots)
+    return { ok: false, status: 400, message: 'Select slots within the seven-day schedule.' };
+  if (
+    input.slots.some(
+      (slot) => !Number.isFinite(slot.startAt.getTime()) || !Number.isFinite(slot.endAt.getTime())
+    )
+  )
+    return { ok: false, status: 400, message: 'Enter valid slot start and end times.' };
+  const slots = [...input.slots].sort((a, b) => a.startAt.getTime() - b.startAt.getTime());
+  if (slots.some((slot, index) => index > 0 && slot.startAt < slots[index - 1].endAt))
+    return {
+      ok: false,
+      status: 400,
+      message: 'Selected slots must be distinct and must not overlap each other.'
+    };
 
   const [eligible] = await database
     .select({
@@ -95,7 +125,7 @@ export async function createReservation(
   }
 
   try {
-    const reservationId = await database.transaction(async (transaction) => {
+    const reservationIds = await database.transaction(async (transaction) => {
       const [currentUser] = await transaction
         .select({ id: users.id })
         .from(users)
@@ -129,25 +159,31 @@ export async function createReservation(
         throw new EligibilityChangedError();
       const policy = await loadReservationPolicy(transaction);
       const now = new Date();
-      const windowError = validateReservationWindow(input.startAt, input.endAt, {
-        now,
-        adminOverride,
-        timeZone: policy.timeZone
-      });
-      if (windowError) throw new ReservationRuleError(400, windowError);
-      const slot = reservationSlot(input.startAt, input.endAt, policy.timeZone);
-      let quotaKind = 'override';
+      for (const slot of slots) {
+        const windowError = validateReservationWindow(slot.startAt, slot.endAt, {
+          now,
+          adminOverride,
+          timeZone: policy.timeZone
+        });
+        if (windowError) throw new ReservationRuleError(400, windowError);
+      }
+      const overnight = slots.map(
+        (slot) => reservationSlot(slot.startAt, slot.endAt, policy.timeZone)?.overnight ?? false
+      );
+      let quotaKinds: string[] = slots.map(() => 'override');
       if (!adminOverride) {
-        const usage = await loadReservationUsage(targetUserId, input.startAt, policy, transaction);
-        const allocation = allocateReservationSlot(
-          localDateKey(input.startAt, policy.timeZone),
-          slot!.overnight,
+        const usage = await loadReservationUsage(targetUserId, now, policy, transaction);
+        const allocation = allocateReservationSlots(
+          slots.map((slot, index) => ({
+            date: localDateKey(slot.startAt, policy.timeZone),
+            overnight: overnight[index]
+          })),
           localDateKey(now, policy.timeZone),
           usage,
           policy
         );
         if ('error' in allocation) throw new ReservationRuleError(409, allocation.error);
-        quotaKind = allocation.kind;
+        quotaKinds = allocation.kinds;
       }
       const [currentGpu] = await transaction
         .select({ id: gpus.id })
@@ -155,65 +191,71 @@ export async function createReservation(
         .where(and(eq(gpus.id, eligible.gpuId), eq(gpus.active, true)))
         .for('update');
       if (!currentGpu) throw new EligibilityChangedError();
-      const [diagnostic] = await transaction
-        .select({ id: gpuDiagnosticRuns.id })
-        .from(gpuDiagnosticRuns)
-        .where(
-          and(
-            eq(gpuDiagnosticRuns.workstationId, eligible.workstationId),
-            inArray(gpuDiagnosticRuns.status, [
-              'pending',
-              'dispatched',
-              'running',
-              'cancel_requested'
-            ]),
-            or(
-              eq(gpuDiagnosticRuns.scope, 'all'),
-              eq(gpuDiagnosticRuns.targetGpuId, eligible.gpuId)
-            ),
-            lt(gpuDiagnosticRuns.createdAt, input.endAt),
-            gt(gpuDiagnosticRuns.reservedUntil, input.startAt)
+      const createdIds: string[] = [];
+      for (const [index, slot] of slots.entries()) {
+        const quotaKind = quotaKinds[index];
+        const [diagnostic] = await transaction
+          .select({ id: gpuDiagnosticRuns.id })
+          .from(gpuDiagnosticRuns)
+          .where(
+            and(
+              eq(gpuDiagnosticRuns.workstationId, eligible.workstationId),
+              inArray(gpuDiagnosticRuns.status, [
+                'pending',
+                'dispatched',
+                'running',
+                'cancel_requested'
+              ]),
+              or(
+                eq(gpuDiagnosticRuns.scope, 'all'),
+                eq(gpuDiagnosticRuns.targetGpuId, eligible.gpuId)
+              ),
+              lt(gpuDiagnosticRuns.createdAt, slot.endAt),
+              gt(gpuDiagnosticRuns.reservedUntil, slot.startAt)
+            )
           )
-        )
-        .limit(1);
-      if (diagnostic) {
-        throw new DiagnosticConflictError();
-      }
-      const [created] = await transaction
-        .insert(reservations)
-        .values({
-          gpuId: input.gpuId,
-          userId: targetUserId,
-          createdByUserId: input.actor.id,
-          startAt: input.startAt,
-          endAt: input.endAt,
-          isAdminOverride: adminOverride,
-          quotaKind,
-          overnightSlot: slot?.overnight ?? false,
-          overrideReason: adminOverride ? overrideReason : null
-        })
-        .returning({ id: reservations.id });
-      await recordAudit((query) => transaction.execute(query), {
-        actorUserId: input.actor.id,
-        action: adminOverride ? 'reservation.override_created' : 'reservation.created',
-        targetType: 'reservation',
-        targetId: created.id,
-        metadata: {
-          userId: targetUserId,
-          username: eligible.username,
-          gpuId: eligible.gpuId,
-          gpuIndex: eligible.gpuIndex,
-          workstationId: eligible.workstationId,
-          workstationName: eligible.workstationName,
-          startAt: input.startAt.toISOString(),
-          endAt: input.endAt.toISOString(),
-          adminOverride,
-          quotaKind
+          .limit(1);
+        if (diagnostic) {
+          throw new DiagnosticConflictError();
         }
-      });
-      return created.id;
+        const [created] = await transaction
+          .insert(reservations)
+          .values({
+            gpuId: input.gpuId,
+            userId: targetUserId,
+            createdByUserId: input.actor.id,
+            startAt: slot.startAt,
+            endAt: slot.endAt,
+            isAdminOverride: adminOverride,
+            quotaKind,
+            overnightSlot: overnight[index],
+            overrideReason: adminOverride ? overrideReason : null
+          })
+          .returning({ id: reservations.id });
+        await recordAudit((query) => transaction.execute(query), {
+          actorUserId: input.actor.id,
+          action: adminOverride ? 'reservation.override_created' : 'reservation.created',
+          targetType: 'reservation',
+          targetId: created.id,
+          metadata: {
+            userId: targetUserId,
+            username: eligible.username,
+            gpuId: eligible.gpuId,
+            gpuIndex: eligible.gpuIndex,
+            workstationId: eligible.workstationId,
+            workstationName: eligible.workstationName,
+            startAt: slot.startAt.toISOString(),
+            endAt: slot.endAt.toISOString(),
+            adminOverride,
+            quotaKind,
+            batchSize: slots.length
+          }
+        });
+        createdIds.push(created.id);
+      }
+      return createdIds;
     });
-    return { ok: true, reservationId };
+    return { ok: true, reservationIds };
   } catch (error) {
     if (error instanceof ReservationRuleError)
       return { ok: false, status: error.status, message: error.message };

@@ -10,6 +10,7 @@ export const defaultReservationPolicy = {
 };
 export type ReservationPolicy = typeof defaultReservationPolicy;
 export const slotBoundaries = [0, 4, 8, 10, 12, 14, 16, 18, 20, 22, 24];
+export const maximumReservationSlots = 7 * (slotBoundaries.length - 1);
 
 export function addDays(key: string, count: number): string {
   const date = new Date(`${key}T12:00:00Z`);
@@ -102,4 +103,31 @@ export function allocateReservationSlot(
   return {
     error: `The standard limit of ${policy.standardSlotsPerWeek} slots for this week has been reached, and no dynamic slots remain for this date.`
   };
+}
+
+// The caller supplies slots in chronological order so previews and saved bookings
+// consume the same dynamic/standard allowances, including across week boundaries.
+export function allocateReservationSlots(
+  slots: ReadonlyArray<{ date: string; overnight: boolean }>,
+  today: string,
+  usage: QuotaUsage,
+  policy: ReservationPolicy
+): { kinds: Array<'dynamic' | 'standard'>; usage: QuotaUsage } | { error: string } {
+  const next: QuotaUsage = {
+    standardByWeek: { ...usage.standardByWeek },
+    dynamicByDate: { ...usage.dynamicByDate },
+    overnightByWeek: { ...usage.overnightByWeek }
+  };
+  const kinds: Array<'dynamic' | 'standard'> = [];
+  for (const slot of slots) {
+    const allocation = allocateReservationSlot(slot.date, slot.overnight, today, next, policy);
+    if ('error' in allocation) return allocation;
+    kinds.push(allocation.kind);
+    const week = quotaWeek(slot.date);
+    if (allocation.kind === 'dynamic')
+      next.dynamicByDate[slot.date] = (next.dynamicByDate[slot.date] ?? 0) + 1;
+    else next.standardByWeek[week] = (next.standardByWeek[week] ?? 0) + 1;
+    if (slot.overnight) next.overnightByWeek[week] = (next.overnightByWeek[week] ?? 0) + 1;
+  }
+  return { kinds, usage: next };
 }
