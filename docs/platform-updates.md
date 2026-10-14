@@ -84,7 +84,8 @@ accounts, or node configuration need to change for this setup.
 The helper validates the published GitHub release, current deployment and requested
 source version, downloads the official versioned image, checks its release label and
 registry digest, and takes a PostgreSQL custom-format dump. It verifies the dump with
-`pg_restore --list`, saves the Compose file, `.env`, resolved configuration and old
+`pg_restore --file=/dev/null` to read the complete archive without executing SQL,
+saves the Compose file, `.env`, resolved configuration and old
 image ID, then durably records the restart intent. It pins `.env` to the target release,
 recreates only the platform service using the downloaded image, and checks that the
 new container is using that image and `/health` reports the requested version and a

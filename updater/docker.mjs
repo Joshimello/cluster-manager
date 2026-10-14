@@ -241,11 +241,13 @@ export class DockerDeployment {
       ],
       { outputFile: dump, timeout: 15 * 60_000 },
     );
-    // Verify in the database container without exposing a host backup path to Docker.
+    // Read the entire archive without executing SQL or exposing a host backup path.
+    // --list reads only the TOC: it can miss truncated data and close stdin early,
+    // causing EPIPE for larger backups on Docker daemons with smaller pipe buffers.
     const input = await open(dump, "r");
     const check = spawn(
       "docker",
-      ["exec", "-i", container, "pg_restore", "--list"],
+      ["exec", "-i", container, "pg_restore", "--file=/dev/null"],
       { stdio: ["pipe", "ignore", "ignore"] },
     );
     const timer = setTimeout(() => check.kill("SIGKILL"), 120_000);

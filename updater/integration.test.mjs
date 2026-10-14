@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { mkdtemp, writeFile, readFile, stat } from "node:fs/promises";
+import { mkdtemp, writeFile, readFile, stat, truncate } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DockerDeployment, command } from "./docker.mjs";
@@ -94,7 +94,13 @@ volumes:
         "-d",
         "rehearsal",
         "-c",
-        "CREATE TABLE updater_rehearsal (value text); INSERT INTO updater_rehearsal VALUES ('files-and-identities-preserved');",
+        `CREATE TABLE updater_rehearsal (value text);
+        INSERT INTO updater_rehearsal VALUES ('files-and-identities-preserved');
+        CREATE TABLE updater_rehearsal_payload (id integer PRIMARY KEY, value text);
+        INSERT INTO updater_rehearsal_payload
+        SELECT i, md5(random()::text) || md5(random()::text) || md5(random()::text)
+          || md5(random()::text) || md5(random()::text) || md5(random()::text)
+        FROM generate_series(1, 20000) i;`,
       ]);
       // Test-only local fixtures substitute registry download; production always
       // verifies the published GitHub release and registry image identity.
@@ -142,9 +148,42 @@ volumes:
         ]),
         "files-and-identities-preserved",
       );
-      assert(
-        (await stat(join(state, "backups", op.id, "database.dump"))).size > 0,
+      assert.equal(
+        await command([
+          "exec",
+          db,
+          "psql",
+          "-U",
+          "rehearsal",
+          "-d",
+          "rehearsal",
+          "-Atc",
+          "SELECT count(*) FROM updater_rehearsal_payload",
+        ]),
+        "20000",
       );
+      assert(
+        (await stat(join(state, "backups", op.id, "database.dump"))).size >
+          1_000_000,
+        "Backup must exceed pipe buffers to exercise full archive streaming",
+      );
+      // pg_restore --list only reads the TOC and can both close stdin early and
+      // accept archives with truncated data. Validation must read the payload too.
+      const originalRun = driver.run;
+      driver.run = async (args, options) => {
+        const result = await originalRun(args, options);
+        if (options?.outputFile) {
+          const size = (await stat(options.outputFile)).size;
+          await truncate(options.outputFile, Math.floor(size / 2));
+        }
+        return result;
+      };
+      try {
+        await assert.rejects(driver.backup({ ...op, id: randomUUID() }));
+        assert.equal(await driver.container("platform"), newContainer);
+      } finally {
+        driver.run = originalRun;
+      }
       assert(
         (
           await readFile(join(state, "backups", op.id, ".env"), "utf8")
