@@ -17,3 +17,21 @@ export function workstationSshAddress(workstation: {
 }): string | null {
   return workstation.sshAddressOverride ?? workstation.ipAddresses[0] ?? null;
 }
+
+export function validSshPort(value: string): boolean {
+  return /^\d{1,5}$/.test(value) && Number(value) >= 1 && Number(value) <= 65535;
+}
+
+export function workstationSshCommand(
+  username: string,
+  workstation: {
+    sshAddressOverride: string | null;
+    sshPortOverride: number | null;
+    ipAddresses: string[];
+  }
+): string | null {
+  const address = workstationSshAddress(workstation);
+  if (!address) return null;
+  const port = workstation.sshPortOverride ?? 22;
+  return `ssh${port === 22 ? '' : ` -p ${port}`} ${username}@${address}`;
+}

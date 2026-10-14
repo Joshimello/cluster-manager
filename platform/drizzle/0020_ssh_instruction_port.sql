@@ -1,0 +1,2 @@
+ALTER TABLE "workstations" ADD COLUMN "ssh_port_override" integer;--> statement-breakpoint
+ALTER TABLE "workstations" ADD CONSTRAINT "workstations_ssh_port_override_valid" CHECK ("workstations"."ssh_port_override" between 1 and 65535);

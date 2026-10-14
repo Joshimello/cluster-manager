@@ -8,6 +8,7 @@ describe('presentWorkstation', () => {
     const workstation = {
       ipAddresses: ['192.168.1.50'],
       sshAddressOverride: null,
+      sshPortOverride: null,
       credentialHash: 'credential-hash',
       enrollmentTokenHash: 'enrollment-hash'
     } as Workstation;
@@ -16,5 +17,7 @@ describe('presentWorkstation', () => {
     expect(presented).not.toHaveProperty('enrollmentTokenHash');
     expect(presented.enrolled).toBe(true);
     expect(presented.sshAddress).toBe('192.168.1.50');
+    expect(presented.sshPort).toBe(22);
+    expect(presentWorkstation({ ...workstation, sshPortOverride: 33400 }).sshPort).toBe(33400);
   });
 });

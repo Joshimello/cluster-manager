@@ -141,6 +141,13 @@
       "when": 1791802627636,
       "tag": "0019_platform_updates",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1791848491009,
+      "tag": "0020_ssh_instruction_port",
+      "breakpoints": true
     }
   ]
 }

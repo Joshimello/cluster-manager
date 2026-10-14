@@ -10,7 +10,7 @@ import {
   workstations,
   users
 } from '$lib/server/db/schema';
-import { workstationSshAddress } from '$lib/server/nodes/ssh-address';
+import { workstationSshAddress, workstationSshCommand } from '$lib/server/nodes/ssh-address';
 import { slotCalendar } from '$lib/server/reservations/calendar';
 import { cancelReservation, createReservation } from '$lib/server/reservations/service';
 import { localDateKey } from '$lib/reservation-week';
@@ -34,6 +34,7 @@ export const load: PageServerLoad = async ({ locals }) => {
       workstationDisplayName: workstations.displayName,
       ipAddresses: workstations.ipAddresses,
       sshAddressOverride: workstations.sshAddressOverride,
+      sshPortOverride: workstations.sshPortOverride,
       provisioningStatus: workstationAssignments.provisioningStatus,
       provisioningMessage: workstationAssignments.provisioningMessage
     })
@@ -141,7 +142,8 @@ export const load: PageServerLoad = async ({ locals }) => {
     user,
     assignments: assignments.map((assignment) => ({
       ...assignment,
-      sshAddress: workstationSshAddress(assignment)
+      sshAddress: workstationSshAddress(assignment),
+      sshCommand: workstationSshCommand(user.username, assignment)
     })),
     gpus: availableGpus,
     schedule: schedule.map((reservation) => ({

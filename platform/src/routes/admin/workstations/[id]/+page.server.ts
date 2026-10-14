@@ -35,7 +35,7 @@ import { deriveConnectionState } from '$lib/server/nodes/heartbeat';
 import { loadWorkstationGpus } from '$lib/server/nodes/gpu-monitoring';
 import { loadWorkstationUsers } from '$lib/server/nodes/workstation-users';
 import { presentWorkstation } from '$lib/server/nodes/presentation';
-import { validSshAddress } from '$lib/server/nodes/ssh-address';
+import { validSshAddress, validSshPort } from '$lib/server/nodes/ssh-address';
 import {
   expireNodeUpdates,
   isNewerStableRelease,
@@ -182,13 +182,22 @@ export const actions: Actions = {
     const actor = requireAdmin(locals);
     if (!isWorkstationId(params.id))
       return fail(400, { action: 'setSshAddress', message: 'Invalid workstation.' });
-    const address = formString(await request.formData(), 'sshAddress');
+    const formData = await request.formData();
+    const address = formString(formData, 'sshAddress');
+    const port = formString(formData, 'sshPort');
     if (address && !validSshAddress(address))
       return fail(400, {
         action: 'setSshAddress',
-        message: 'Enter an IPv4 address, IPv6 address, or hostname without a port or SSH options.',
-        values: { sshAddress: address }
+        message: 'Enter an IP address or hostname. Set the port in the separate port field.',
+        values: { sshAddress: address, sshPort: port }
       });
+    if (port && !validSshPort(port))
+      return fail(400, {
+        action: 'setSshAddress',
+        message: 'Enter a whole-number SSH port from 1 to 65535, or leave it blank to use 22.',
+        values: { sshAddress: address, sshPort: port }
+      });
+    const portOverride = port ? Number(port) : null;
     const saved = await getDatabase().transaction(async (transaction) => {
       const [target] = await transaction
         .select()
@@ -199,14 +208,23 @@ export const actions: Actions = {
       if (!target) return false;
       await transaction
         .update(workstations)
-        .set({ sshAddressOverride: address || null, updatedAt: new Date() })
+        .set({
+          sshAddressOverride: address || null,
+          sshPortOverride: portOverride,
+          updatedAt: new Date()
+        })
         .where(eq(workstations.id, target.id));
       await recordAudit((query) => transaction.execute(query), {
         actorUserId: actor.id,
         action: 'workstation.ssh_address_updated',
         targetType: 'workstation',
         targetId: target.id,
-        metadata: { previousAddress: target.sshAddressOverride, address: address || null }
+        metadata: {
+          previousAddress: target.sshAddressOverride,
+          address: address || null,
+          previousPort: target.sshPortOverride,
+          port: portOverride
+        }
       });
       return true;
     });
@@ -214,9 +232,7 @@ export const actions: Actions = {
     return {
       action: 'setSshAddress',
       success: true,
-      message: address
-        ? 'SSH instruction address saved.'
-        : 'SSH instructions will use the detected IP address.'
+      message: 'SSH instructions saved.'
     };
   },
   delete: async ({ locals, params, request }) => {

@@ -668,7 +668,7 @@
                   <div class="grid gap-1">
                     <strong>SSH instruction address</strong>
                     <p class="text-muted-foreground text-sm">
-                      Users see this address in their SSH command. This only changes the
+                      Users see this address and port in their SSH command. This only changes the
                       instructions; it does not change networking or SSH configuration.
                     </p>
                   </div>
@@ -685,6 +685,7 @@
                         >{ws.sshAddress ?? 'Not available'}</span
                       ></span
                     >
+                    <span>Port shown to users: <span class="font-mono">{ws.sshPort}</span></span>
                   </div>
                   <div class="grid gap-2">
                     <Label for="ssh-address">Address override (optional)</Label>
@@ -706,7 +707,29 @@
                       keep your override.
                     </p>
                   </div>
-                  <div><Button type="submit">Save SSH address</Button></div>
+                  <div class="grid gap-2">
+                    <Label for="ssh-port">Port override (optional)</Label>
+                    <Input
+                      id="ssh-port"
+                      name="sshPort"
+                      type="number"
+                      min={1}
+                      max={65535}
+                      step={1}
+                      placeholder="22"
+                      value={form?.action === 'setSshAddress' &&
+                      form.values &&
+                      'sshPort' in form.values
+                        ? String(form.values.sshPort)
+                        : (ws.sshPortOverride ?? '')}
+                      aria-describedby="ssh-port-help"
+                    />
+                    <p id="ssh-port-help" class="text-muted-foreground text-sm">
+                      Leave blank to use port 22. For a forwarded SSH port, enter the port users
+                      connect to.
+                    </p>
+                  </div>
+                  <div><Button type="submit">Save SSH instructions</Button></div>
                 </form>
 
                 <div

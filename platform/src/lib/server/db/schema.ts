@@ -222,6 +222,7 @@ export const workstations = pgTable(
     hostname: varchar('hostname', { length: 255 }),
     ipAddresses: jsonb('ip_addresses').$type<string[]>().notNull().default([]),
     sshAddressOverride: varchar('ssh_address_override', { length: 253 }),
+    sshPortOverride: integer('ssh_port_override'),
     bootId: varchar('boot_id', { length: 128 }),
     uptimeSeconds: bigint('uptime_seconds', { mode: 'number' }),
     inventory: jsonb('inventory').$type<WorkstationInventory>(),
@@ -235,7 +236,8 @@ export const workstations = pgTable(
     uniqueIndex('workstations_name_unique').on(table.name),
     uniqueIndex('workstations_credential_hash_unique').on(table.credentialHash),
     uniqueIndex('workstations_enrollment_token_hash_unique').on(table.enrollmentTokenHash),
-    index('workstations_last_heartbeat_at_index').on(table.lastHeartbeatAt)
+    index('workstations_last_heartbeat_at_index').on(table.lastHeartbeatAt),
+    check('workstations_ssh_port_override_valid', sql`${table.sshPortOverride} between 1 and 65535`)
   ]
 );
 

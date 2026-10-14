@@ -7,7 +7,7 @@ import * as schema from '$lib/server/db/schema';
 describe.skipIf(process.env.RUN_DATABASE_TESTS !== 'true')(
   'SSH instructions database integration',
   () => {
-    it('detects addresses, preserves admin overrides across heartbeats, and changes only displayed instructions', async () => {
+    it('preserves address and port overrides across heartbeats and changes only displayed instructions', async () => {
       if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required');
       const client = postgres(process.env.DATABASE_URL, { max: 4, prepare: false });
       const database = drizzle(client, { schema });
@@ -33,14 +33,19 @@ describe.skipIf(process.env.RUN_DATABASE_TESTS !== 'true')(
         const { GET } = await import('../../../routes/api/node/v1/desired-state/+server');
         const { actions } = await import('../../../routes/admin/workstations/[id]/+page.server');
         const { load } = await import('../../../routes/dashboard/+page.server');
-        const admin = { id: actor.id, role: 'admin', mustChangePassword: false };
+        const admin = {
+          id: actor.id,
+          username: `ssh-${suffix}`,
+          role: 'admin',
+          mustChangePassword: false
+        };
         const setAddress = actions.setSshAddress!;
-        const event = (address: string, user: unknown = admin) => ({
+        const event = (address: string, port = '', user: unknown = admin) => ({
           locals: { user },
           params: { id: workstation.id },
           request: new Request('http://localhost/admin/workstations', {
             method: 'POST',
-            body: new URLSearchParams({ sshAddress: address })
+            body: new URLSearchParams({ sshAddress: address, sshPort: port })
           })
         });
         const heartbeat = async (ipAddresses: string[] | undefined, observedAt: Date) => {
@@ -73,33 +78,58 @@ describe.skipIf(process.env.RUN_DATABASE_TESTS !== 'true')(
           } as Parameters<typeof POST>[0]);
           expect(response.status).toBe(200);
         };
-        const shownAddress = async () => {
+        const shownInstructions = async () => {
           const data = await load({ locals: { user: admin } } as Parameters<typeof load>[0]);
-          return data!.assignments[0].sshAddress;
+          return data!.assignments[0];
         };
         const now = Date.now();
         await heartbeat(['192.168.1.50'], new Date(now));
-        expect(await shownAddress()).toBe('192.168.1.50');
+        expect(await shownInstructions()).toMatchObject({
+          sshAddress: '192.168.1.50',
+          sshCommand: `ssh ssh-${suffix}@192.168.1.50`
+        });
         await expect(
           setAddress(
-            event('10.0.0.5', { ...admin, role: 'user' }) as Parameters<typeof setAddress>[0]
+            event('10.0.0.5', '33400', { ...admin, role: 'user' }) as Parameters<
+              typeof setAddress
+            >[0]
           )
         ).rejects.toMatchObject({ status: 303, location: '/dashboard' });
         expect(
           await setAddress(event('host; whoami') as Parameters<typeof setAddress>[0])
         ).toMatchObject({ status: 400 });
+        for (const port of ['0', '65536', '-22', '22.5', '2e2', '22;sh']) {
+          expect(
+            await setAddress(event('10.0.0.5', port) as Parameters<typeof setAddress>[0])
+          ).toMatchObject({
+            status: 400,
+            data: { values: { sshAddress: '10.0.0.5', sshPort: port } }
+          });
+        }
+        expect(await shownInstructions()).toMatchObject({ sshPortOverride: null });
+        // Port overrides work independently of automatic IP detection.
         expect(
-          await setAddress(event('10.0.0.5') as Parameters<typeof setAddress>[0])
+          await setAddress(event('', '33400') as Parameters<typeof setAddress>[0])
+        ).toMatchObject({ success: true });
+        expect(await shownInstructions()).toMatchObject({
+          sshCommand: `ssh -p 33400 ssh-${suffix}@192.168.1.50`
+        });
+        expect(
+          await setAddress(event('10.0.0.5', '33400') as Parameters<typeof setAddress>[0])
         ).toMatchObject({ success: true });
         await heartbeat(['192.168.1.51'], new Date(now + 1000));
-        expect(await shownAddress()).toBe('10.0.0.5');
+        expect(await shownInstructions()).toMatchObject({
+          sshAddress: '10.0.0.5',
+          sshCommand: `ssh -p 33400 ssh-${suffix}@10.0.0.5`
+        });
         await heartbeat(['192.168.1.49'], new Date(now - 1000));
         await heartbeat(undefined, new Date(now + 2000));
         const [stored] =
-          await client`select ip_addresses, ssh_address_override, credential_hash, status from workstations where id = ${workstation.id}`;
+          await client`select ip_addresses, ssh_address_override, ssh_port_override, credential_hash, status from workstations where id = ${workstation.id}`;
         expect(stored).toMatchObject({
           ip_addresses: ['192.168.1.51'],
           ssh_address_override: '10.0.0.5',
+          ssh_port_override: 33400,
           credential_hash: hash,
           status: 'active'
         });
@@ -108,22 +138,42 @@ describe.skipIf(process.env.RUN_DATABASE_TESTS !== 'true')(
             headers: { authorization: `Bearer ${credential}` }
           })
         } as Parameters<typeof GET>[0]);
-        expect((await desired.json()).workstation).toEqual({
+        const desiredBody = await desired.json();
+        expect(desiredBody.workstation).toEqual({
           id: workstation.id,
           name: workstation.name
+        });
+        expect(JSON.stringify(desiredBody)).not.toContain('sshPort');
+        // Clearing only the port retains the address override.
+        expect(
+          await setAddress(event('10.0.0.5', '') as Parameters<typeof setAddress>[0])
+        ).toMatchObject({ success: true });
+        expect(await shownInstructions()).toMatchObject({
+          sshCommand: `ssh ssh-${suffix}@10.0.0.5`,
+          sshPortOverride: null
         });
         expect(await setAddress(event('') as Parameters<typeof setAddress>[0])).toMatchObject({
           success: true
         });
-        expect(await shownAddress()).toBe('192.168.1.51');
+        expect(await shownInstructions()).toMatchObject({
+          sshAddress: '192.168.1.51',
+          sshCommand: `ssh ssh-${suffix}@192.168.1.51`
+        });
         await heartbeat([], new Date(now + 3000));
-        expect(await shownAddress()).toBeNull();
+        expect(await shownInstructions()).toMatchObject({ sshAddress: null, sshCommand: null });
         const audits =
-          await client`select action from audit_events where target_id = ${workstation.id}`;
-        expect(audits).toEqual([
-          { action: 'workstation.ssh_address_updated' },
-          { action: 'workstation.ssh_address_updated' }
-        ]);
+          await client`select action, metadata from audit_events where target_id = ${workstation.id} order by created_at`;
+        expect(audits).toHaveLength(4);
+        expect(audits.every((audit) => audit.action === 'workstation.ssh_address_updated')).toBe(
+          true
+        );
+        expect(audits[1].metadata).toMatchObject({ port: 33400, previousPort: 33400 });
+        expect(audits[2].metadata).toMatchObject({ port: null, previousPort: 33400 });
+        for (const port of [0, 65536]) {
+          await expect(
+            client`update workstations set ssh_port_override = ${port} where id = ${workstation.id}`
+          ).rejects.toMatchObject({ code: '23514' });
+        }
         await client`update workstations set deleted_at = now() where id = ${workstation.id}`;
         expect(
           await setAddress(event('10.0.0.6') as Parameters<typeof setAddress>[0])

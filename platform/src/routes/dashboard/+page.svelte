@@ -272,7 +272,7 @@
               <div><StatusBadge status={assignment.provisioningStatus} /></div>
               {#if assignment.provisioningStatus === 'applied' && assignment.sshAddress}
                 <code class="bg-muted block overflow-x-auto rounded-md border p-3 text-sm">
-                  ssh {data.user.username}@{assignment.sshAddress}
+                  {assignment.sshCommand}
                 </code>
               {:else if assignment.provisioningStatus === 'applied'}
                 <p class="text-muted-foreground text-sm">

@@ -296,11 +296,16 @@ changing networking. The first detected address is used in assigned users' dashb
 SSH commands.
 
 Under **Administration → Workstations → select a workstation → Settings**, an admin
-can set **SSH instruction address** to an IP address or hostname users can reach.
+can set **SSH instruction address** to an IP address or hostname users can reach,
+and an optional **Port override** from 1 to 65535. Leave the port blank to use 22.
+A non-default port appears in the dashboard command, for example
+`ssh -p 33400 username@gpu.example.org`. Address and port overrides are independent,
+so a custom port can also be used with an automatically detected IP address.
 This override affects only displayed SSH instructions; it is never sent to the node
 as desired configuration and does not change interfaces, routing, DNS, firewalls,
-or SSH settings. Clearing it restores automatic selection. Heartbeats cannot replace
-an override. Machines behind NAT, VPNs, or with multiple interfaces may need an override.
+or SSH settings. Clearing the address restores automatic selection; clearing the port
+restores 22. Heartbeats cannot replace either override. Machines behind NAT, VPNs,
+or with multiple interfaces may need an override.
 
 Existing nodes need the updated node binary to report IPs. Until an address is reported
 or an admin sets one, the dashboard explains that the SSH address is unavailable.

@@ -20,6 +20,8 @@ export function presentWorkstation(workstation: Workstation) {
     ipAddresses: workstation.ipAddresses,
     sshAddressOverride: workstation.sshAddressOverride,
     sshAddress: workstationSshAddress(workstation),
+    sshPortOverride: workstation.sshPortOverride,
+    sshPort: workstation.sshPortOverride ?? 22,
     bootId: workstation.bootId,
     uptimeSeconds: workstation.uptimeSeconds,
     inventory: workstation.inventory,
