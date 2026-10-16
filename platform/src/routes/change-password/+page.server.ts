@@ -1,3 +1,4 @@
+import { authDestination } from '$lib/server/auth/destination';
 import { fail, redirect } from '@sveltejs/kit';
 import { and, eq, sql } from 'drizzle-orm';
 
@@ -17,7 +18,7 @@ export const load: PageServerLoad = ({ locals }) => {
 };
 
 export const actions: Actions = {
-  default: async ({ cookies, locals, request }) => {
+  default: async ({ cookies, locals, request, url }) => {
     const user = requireUser(locals);
     const formData = await request.formData();
     const currentPassword = String(formData.get('currentPassword') ?? '');
@@ -92,6 +93,6 @@ export const actions: Actions = {
 
     const { session, token } = await createSession(user.id);
     setSessionCookie(cookies, token, session.expiresAt);
-    redirect(303, '/dashboard');
+    redirect(303, authDestination(url.searchParams.get('next')));
   }
 };

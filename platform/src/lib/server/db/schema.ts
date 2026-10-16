@@ -126,6 +126,7 @@ export const users = pgTable(
     posixUid: integer('posix_uid').notNull(),
     posixGid: integer('posix_gid').notNull(),
     passwordHash: text('password_hash').notNull(),
+    securityVersion: integer('security_version').notNull().default(1),
     linuxPasswordHash: text('linux_password_hash'),
     mustChangePassword: boolean('must_change_password').notNull().default(true),
     timeZone: varchar('time_zone', { length: 64 }),
@@ -903,3 +904,41 @@ export const accountOperations = pgTable(
     )
   ]
 );
+
+export const oidcClients = pgTable('oidc_clients', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: varchar('name', { length: 120 }).notNull(),
+  secret: text('secret').notNull(),
+  redirectUris: jsonb('redirect_uris').$type<string[]>().notNull(),
+  enabled: boolean('enabled').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+export const oidcObjects = pgTable(
+  'oidc_objects',
+  {
+    model: text('model').notNull(),
+    id: text('id').notNull(),
+    payload: text('payload').notNull(),
+    grantId: text('grant_id'),
+    userId: uuid('user_id').references(() => users.id),
+    securityVersion: integer('security_version'),
+    clientId: uuid('client_id').references(() => oidcClients.id),
+    uid: text('uid'),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    consumedAt: timestamp('consumed_at', { withTimezone: true })
+  },
+  (t) => [
+    primaryKey({ columns: [t.model, t.id] }),
+    index('oidc_objects_grant').on(t.grantId),
+    index('oidc_objects_uid').on(t.uid),
+    index('oidc_objects_expiry').on(t.expiresAt)
+  ]
+);
+
+export const oidcKeys = pgTable('oidc_keys', {
+  id: text('id').primaryKey(),
+  payload: text('payload').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+});

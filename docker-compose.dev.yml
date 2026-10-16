@@ -21,6 +21,7 @@ services:
       context: ./platform
       target: development
     environment:
+      AUTH_ENCRYPTION_KEY: ${AUTH_ENCRYPTION_KEY:-}
       DATABASE_URL: postgres://${POSTGRES_USER:-cluster_manager}:${POSTGRES_PASSWORD:-cluster_manager_development_only}@postgres:5432/${POSTGRES_DB:-cluster_manager}
       __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS: ${DEV_PLATFORM_ALLOWED_HOST:-}
       NODE_DEV_SEED_WORKSTATIONS: "true"

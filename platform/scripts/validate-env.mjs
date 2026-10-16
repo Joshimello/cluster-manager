@@ -61,3 +61,9 @@ console.log(
     telemetryRetentionHours: Number(retention)
   })
 );
+
+if (
+  process.env.AUTH_ENCRYPTION_KEY &&
+  Buffer.from(process.env.AUTH_ENCRYPTION_KEY, 'base64').length !== 32
+)
+  throw new Error('AUTH_ENCRYPTION_KEY must encode 32 random bytes');

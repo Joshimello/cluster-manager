@@ -16,6 +16,7 @@
     { href: '/admin/workstations', label: 'Workstations', icon: MonitorCogIcon },
     { href: '/admin/stop-requests', label: 'Stop requests', icon: ShieldAlertIcon },
     { href: '/admin/reservations', label: 'Reservations', icon: CalendarCogIcon },
+    { href: '/admin/applications', label: 'Connected applications', icon: UsersIcon },
     { href: '/admin/audit', label: 'Audit history', icon: ClipboardListIcon },
     { href: '/admin/updates', label: 'Updates', icon: DownloadIcon }
   ] as const;
